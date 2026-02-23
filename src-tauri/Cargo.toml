@@ -1,0 +1,19 @@
+[package]
+name = "mdpad"
+version = "0.1.0"
+description = "A lightweight single-file Markdown editor for Windows."
+authors = ["MDPad Contributors"]
+edition = "2021"
+
+[lib]
+name = "mdpad_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.5", features = [] }
+
+[dependencies]
+rfd = "0.15.2"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.2.0", features = [] }
+tauri-plugin-single-instance = "2.0.2"

@@ -1,0 +1,203 @@
+**Windows 下的“无系统标题栏（frameless / undecorated）+ 自绘标题栏（custom titlebar）”**：把系统的标题栏隐藏，然后把 **最小化 / 最大化 / 关闭** 三个按钮放进你自己的 UI 顶栏里。
+
+ **Tauri v2 + Windows** 一套可直接落地的做法（含配置、权限、React 代码与坑位）。
+
+---
+
+## 1) 关掉系统标题栏（decorations = false）
+
+Tauri v2 的配置结构里，窗口在 `app.windows` 下（schema / config reference 的示例就是这么组织的）。([Tauri Schema][1])
+
+在 `src-tauri/tauri.conf.json`（或 `Tauri.toml`）里把主窗口改成：
+
+```json
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "CC Switch",
+        "width": 1100,
+        "height": 720,
+        "resizable": true,
+        "decorations": false,
+        "shadow": true
+      }
+    ]
+  }
+}
+```
+
+`decorations: false` 就会去掉 Windows 原生标题栏（你红框那条）。([Tauri][2])
+
+> 如果你看到“1px 白边/描边 + 圆角”的现象，多半跟 `shadow` 相关：在 Windows 上，**对 undecorated 窗口开启 shadow 会带来 1px 白边，并且在 Windows 11 会有圆角**。([Tauri][3])
+> 不想要那圈边就 `shadow: false` 或运行时 `setShadow(false)`；但圆角表现也会跟着变。([Tauri][3])
+
+---
+
+## 2) 别忘了：Tauri v2 需要给窗口 API 开权限（capabilities）
+
+Tauri v2 的窗口 API（最小化/最大化/拖拽/关闭）默认不是全开放的，需要在 capabilities 里允许。官方 Window Customization 文档给了最典型的权限集合：([Tauri][2])
+
+在 `src-tauri/capabilities/default.json`（或你项目实际使用的 capability 文件）里加上：
+
+```json
+{
+  "permissions": [
+    "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
+  ]
+}
+```
+
+([Tauri][2])
+
+---
+
+## 3) React/Vite/Tailwind：自绘顶栏 + 三个窗口按钮（可直接抄）
+
+### 3.1 窗口控制 API（最小化/最大化/关闭）
+
+Tauri v2 的 JS window API 里有 `minimize()` / `toggleMaximize()` / `close()`，也有 `isMaximized()` 可用来切换图标状态。([Tauri][3])
+
+### 3.2 “可拖拽区域”的正确姿势（强烈建议用手动 startDragging）
+
+`data-tauri-drag-region` 有个坑：**它不继承**，加在父元素上不等于子元素都可拖拽。官方文档明确提到需要对每个元素单独处理，或者用 JS 手动拖拽更省心。([Tauri][2])
+
+你的顶栏里有很多可点击控件（tab、开关、按钮），如果整个顶栏都变成拖拽区会导致交互冲突；所以建议做成：
+
+* 顶栏中留一段“空白/Logo 区”作为拖拽区
+* 其它区域保持正常点击
+
+下面这段组件就是这种思路（**只有左侧区域用于拖拽**，右侧三按钮负责窗口控制）：
+
+```tsx
+import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+const win = getCurrentWindow();
+
+export function TitleBar() {
+  const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    // 初始化时读一次状态
+    win.isMaximized().then(setMaximized);
+
+    // 你也可以监听 resized / moved 等事件做更精细同步（可选）
+  }, []);
+
+  const onDragAreaMouseDown = async (e: React.MouseEvent) => {
+    // 只响应鼠标左键
+    if (e.button !== 0) return;
+
+    // 双击拖拽区：切换最大化（符合 Windows 心智）
+    if (e.detail === 2) {
+      await win.toggleMaximize();
+      setMaximized(await win.isMaximized());
+      return;
+    }
+
+    // 单击拖拽区：开始拖拽窗口
+    await win.startDragging();
+  };
+
+  const onMinimize = async () => {
+    await win.minimize();
+  };
+
+  const onToggleMaximize = async () => {
+    await win.toggleMaximize();
+    setMaximized(await win.isMaximized());
+  };
+
+  const onClose = async () => {
+    await win.close();
+  };
+
+  return (
+    <div className="h-11 w-full flex items-stretch select-none">
+      {/* 左侧：拖拽区（放 Logo / App 名称最合适） */}
+      <div
+        className="flex items-center gap-2 px-3 min-w-[160px] cursor-default"
+        onMouseDown={onDragAreaMouseDown}
+      >
+        <div className="w-5 h-5 rounded bg-black/10" />
+        <div className="font-semibold text-sm">CC Switch</div>
+      </div>
+
+      {/* 中间：你的 Tabs/工具栏（保持可点击，不要放拖拽） */}
+      <div className="flex-1 flex items-center overflow-hidden px-2">
+        {/* ... 你的 tab / toggle / 搜索框 ... */}
+      </div>
+
+      {/* 右侧：窗口控制按钮 */}
+      <div className="flex">
+        <button
+          className="w-12 hover:bg-black/5 active:bg-black/10"
+          onClick={onMinimize}
+          aria-label="Minimize"
+          title="Minimize"
+        >
+          ─
+        </button>
+
+        <button
+          className="w-12 hover:bg-black/5 active:bg-black/10"
+          onClick={onToggleMaximize}
+          aria-label="Maximize"
+          title={maximized ? "Restore" : "Maximize"}
+        >
+          {maximized ? "❐" : "□"}
+        </button>
+
+        <button
+          className="w-12 hover:bg-red-500 hover:text-white active:bg-red-600"
+          onClick={onClose}
+          aria-label="Close"
+          title="Close"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+这里用到的 `startDragging()` / `toggleMaximize()` / `minimize()` / `close()` 都是 v2 window API 的标准能力。([Tauri][3])
+
+---
+
+## 4) 你会遇到的 3 个常见坑（提前避雷）
+
+### 坑 A：`data-tauri-drag-region` 以为“父元素加了就行”
+
+不行，它不继承；官方文档明确提醒要对每个元素单独处理，所以复杂顶栏建议直接 `startDragging()`。([Tauri][2])
+
+### 坑 B：frameless 以后出现 1px 边 / 圆角行为不一致
+
+在 Windows 上，`setShadow(true)`（或配置的 `shadow: true`）对 undecorated 窗口可能带来 **1px 白边**，并且 Windows 11 会出现圆角。([Tauri][3])
+你需要在“边框观感”与“圆角/阴影”之间做取舍（或者用更深的原生定制）。
+
+### 坑 C：窗口缩放/边缘拉伸不顺手
+
+多数情况下 `resizable: true` 就够用；如果你遇到某些版本/机器上边缘不好拉（尤其早期 v2 生态里有人提过相关问题），可以考虑用 `startResizeDragging()` 自己做 resize grips。API 在 v2 JS 里是存在的。([Tauri][3])
+
+---
+
+
+* 把 **窗口三按钮固定在最右侧**（永远可点、Fitts’s Law）
+* **拖拽区只占左侧 Logo/标题一小段**（避免 tab/开关被拖拽劫持）
+* 顶栏高度用 **44px（h-11）**，Windows 视觉会更贴近原生
+
+---
+
+把 `TitleBar` 直接改成**完全贴合你这张图布局**的版本（包括：拖拽热区规划、最大化时图标切换、双击空白区最大化、按钮 hover/active 行为更像 Win11）。
+
+[1]: https://schema.tauri.app/config/2?utm_source=chatgpt.com "https://schema.tauri.app/config/2"
+[2]: https://v2.tauri.app/learn/window-customization/ "Window Customization | Tauri"
+[3]: https://v2.tauri.app/reference/javascript/api/namespacewindow/ "window | Tauri"
