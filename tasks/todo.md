@@ -74,3 +74,9 @@
 - [x] Added medium shadows to titlebar and editor surface.
 - [x] Enforced right-aligned window controls in CSS (`win-controls` at grid right edge).
 - [x] Validation passed: `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm tauri:build`.
+
+## 2026-02-24 GitHub Release v0.1.0
+- [x] Created first GitHub release: `v0.1.0` (private repo).
+- [x] Uploaded installer asset: `MDPad_0.1.0_x64-setup.exe`.
+- [x] Verified release URL and asset availability.
+- Release: https://github.com/endearqb/MDPad/releases/tag/v0.1.0

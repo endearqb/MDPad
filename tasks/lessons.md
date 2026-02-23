@@ -51,3 +51,8 @@
 - For "window larger than content by 20px", model it as a fixed 10px transparent frame on each edge.
 - Keep system shadow disabled and render shadows on custom surfaces (titlebar/editor) for consistent frameless visuals.
 - Explicitly pin `win-controls` to the right grid edge to avoid perceived left clustering when center title is absolute-positioned.
+
+## 2026-02-24 GitHub Release Operations
+- Before creating a release, check both `gh release list` and `git tag --list` to avoid duplicate tags.
+- Keep release tag aligned with app version in `src-tauri/tauri.conf.json` to avoid version confusion.
+- After upload, run `gh release view <tag> --json assets,url` to verify asset state and download URL.
