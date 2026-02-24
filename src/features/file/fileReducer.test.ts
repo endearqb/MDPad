@@ -49,6 +49,21 @@ describe("fileReducer", () => {
     expect(next.isDirty).toBe(false);
   });
 
+  it("does not mark dirty when only line endings differ", () => {
+    const initial = docReducer(createEmptyDocState(), {
+      type: "load_document",
+      path: "D:\\Docs\\note.md",
+      content: "A\r\nB\r\n"
+    });
+
+    const next = docReducer(initial, {
+      type: "update_content",
+      content: "A\nB\n"
+    });
+
+    expect(next.isDirty).toBe(false);
+  });
+
   it("marks as saved and updates path when saving as", () => {
     const initial = docReducer(createEmptyDocState(), {
       type: "load_document",
@@ -80,5 +95,22 @@ describe("fileReducer", () => {
     expect(reset.currentPath).toBeNull();
     expect(reset.content).toBe(EMPTY_DOC_CONTENT);
     expect(reset.isDirty).toBe(false);
+  });
+
+  it("updates only path when renamed", () => {
+    const initial = docReducer(createEmptyDocState(), {
+      type: "load_document",
+      path: "D:\\Docs\\old.md",
+      content: "Value"
+    });
+    const renamed = docReducer(initial, {
+      type: "rename_path",
+      path: "D:\\Docs\\new.md"
+    });
+
+    expect(renamed.currentPath).toBe("D:\\Docs\\new.md");
+    expect(renamed.content).toBe("Value");
+    expect(renamed.lastSavedContent).toBe("Value");
+    expect(renamed.isDirty).toBe(false);
   });
 });

@@ -56,3 +56,37 @@
 - Before creating a release, check both `gh release list` and `git tag --list` to avoid duplicate tags.
 - Keep release tag aligned with app version in `src-tauri/tauri.conf.json` to avoid version confusion.
 - After upload, run `gh release view <tag> --json assets,url` to verify asset state and download URL.
+
+## 2026-02-24 Filename Rename UX
+- For desktop markdown editors, rename UX should edit basename only and keep extension immutable.
+- In titlebar double-click rename flow, hide extension in the input field to prevent accidental format change.
+- If document is dirty, save first, then perform filesystem rename to keep in-memory and disk state consistent.
+
+## 2026-02-24 Scrollbar Arrow Compatibility
+- In WebView2/Chromium, hiding scrollbar arrows often needs more than `::-webkit-scrollbar-button { display: none; }`.
+- Always include `:single-button` and directional pseudo-classes (`:vertical:decrement`, `:vertical:increment`, etc.), and add transparent/borderless fallback styles.
+- When users report arrows still visible, prioritize compatibility selectors over assuming theme variables are the cause.
+
+## 2026-02-24 Markdown Callout Persistence
+- Supporting `[!TIP]/[!WARNING]` syntax requires both codec conversion and editor schema support.
+- If only codec parses callout to `data-*` HTML but node attrs are not preserved in TipTap, callout type will be lost after edit/save.
+- For attribute-backed markdown features, first ensure corresponding TipTap node extension can parse and render those attributes.
+
+## 2026-02-24 Markdown Image Path Stability
+- Do not assume `![alt](src)` is safe for all `src` values, especially Windows local paths (`C:\...`) and URLs with spaces/parentheses.
+- For unsafe sources, serialize images as raw `<img ...>` HTML to preserve renderability through parse/edit/save round trips.
+- When users report seeing literal `[]()` in editor content, check markdown serialization safety first.
+
+## 2026-02-24 Image Preview UX
+- Image zoom should be triggered by direct mouse action (left-button double click), not keyboard combos.
+- Fullscreen image preview should render the image only; avoid captions/alt text overlays unless explicitly requested.
+
+## 2026-02-24 Markdown Link Input UX
+- Markdown editors with rich-text surface should treat `[text](url)` as an input rule, not plain text.
+- Link input rules must explicitly skip image syntax (`![]()`) to avoid accidental conversion conflicts.
+- Keep link parsing support in both directions (markdown -> html -> markdown) covered by tests.
+
+## 2026-02-24 Windows Icon Resource Completeness
+- If taskbar hover preview icon updates but taskbar button/file icon does not, check ICO size coverage before blaming cache.
+- Ensure `src-tauri/icons/icon.ico` includes small sizes (`16/24/32/48`) in addition to `256`.
+- Add a build-time verification step for ICO sizes after icon replacement to avoid shipping single-size ICO files.

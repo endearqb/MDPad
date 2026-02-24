@@ -27,6 +27,16 @@ export async function writeTextFile(
   return invoke<void>("write_text_file", { path, content });
 }
 
+export async function renameFile(
+  path: string,
+  newBaseName: string
+): Promise<string> {
+  return invoke<string>("rename_file", {
+    path,
+    new_base_name: newBaseName
+  });
+}
+
 export async function focusMainWindow(): Promise<void> {
   return invoke<void>("focus_main_window");
 }

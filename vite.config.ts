@@ -11,6 +11,11 @@ export default defineConfig({
           if (!id.includes("node_modules")) {
             return;
           }
+
+          if (id.includes("@tauri-apps/api")) {
+            return "tauri-core";
+          }
+
           if (
             id.includes("@tiptap/") ||
             id.includes("prosemirror") ||
@@ -19,6 +24,16 @@ export default defineConfig({
           ) {
             return "editor-core";
           }
+
+          if (
+            id.includes("highlight.js") ||
+            id.includes("lowlight") ||
+            id.includes("katex") ||
+            id.includes("linkifyjs")
+          ) {
+            return "editor-render";
+          }
+
           if (
             id.includes("baseui") ||
             id.includes("styletron") ||
@@ -26,7 +41,12 @@ export default defineConfig({
           ) {
             return "ui-core";
           }
-          return "vendor";
+
+          if (id.includes("lucide-react")) {
+            return "icon-core";
+          }
+
+          return "vendor-misc";
         }
       }
     }

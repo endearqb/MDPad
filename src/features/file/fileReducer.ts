@@ -1,15 +1,13 @@
 import type { DocState } from "../../shared/types/doc";
+import { normalizeMarkdown } from "../../shared/utils/markdown";
 
 export const EMPTY_DOC_CONTENT = "# Untitled\n\nStart writing...";
-
-function normalizeMarkdown(value: string): string {
-  return value.replace(/\r\n/g, "\n").trimEnd();
-}
 
 export type DocAction =
   | { type: "load_document"; path: string | null; content: string }
   | { type: "update_content"; content: string }
   | { type: "mark_saved"; path?: string; content?: string }
+  | { type: "rename_path"; path: string }
   | { type: "reset_document"; content?: string };
 
 export function createEmptyDocState(): DocState {
@@ -49,6 +47,12 @@ export function docReducer(state: DocState, action: DocAction): DocState {
         content: nextContent,
         lastSavedContent: normalized,
         isDirty: false
+      };
+    }
+    case "rename_path": {
+      return {
+        ...state,
+        currentPath: action.path
       };
     }
     case "reset_document": {

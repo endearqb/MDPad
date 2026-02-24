@@ -14,8 +14,9 @@
       {
         "label": "main",
         "title": "MDPad",
-        "width": 1180,
+        "width": 960,
         "height": 780,
+        "minWidth": 420,
         "resizable": true,
         "decorations": false,
         "shadow": false,

@@ -1,32 +1,49 @@
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
-  useState,
-  type MouseEvent as ReactMouseEvent
+  useRef,
+  useState
 } from "react";
+import { Tooltip } from "baseui/tooltip";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  FolderOpen,
+  Minimize2,
+  Moon,
+  Save,
+  SaveAll,
+  SunMedium,
+  X
+} from "lucide-react";
 import type { ThemeMode } from "../../shared/types/doc";
 
 interface TopBarProps {
   fileName: string;
+  fileBaseName: string;
+  canRename: boolean;
   isDirty: boolean;
   isBusy: boolean;
   themeMode: ThemeMode;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
+  onRename: (newBaseName: string) => Promise<boolean>;
   onToggleTheme: () => void;
 }
 
 export default function TopBar({
   fileName,
+  fileBaseName,
+  canRename,
   isDirty,
   isBusy,
   themeMode,
   onOpen,
   onSave,
   onSaveAs,
+  onRename,
   onToggleTheme
 }: TopBarProps) {
   const appWindow = useMemo(() => {
@@ -36,73 +53,30 @@ export default function TopBar({
       return null;
     }
   }, []);
-  const [isMaximized, setIsMaximized] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [isSubmittingRename, setIsSubmittingRename] = useState(false);
+  const [renameDraft, setRenameDraft] = useState(fileBaseName);
 
   useEffect(() => {
-    if (!appWindow) {
+    if (isRenaming) {
       return;
     }
+    setRenameDraft(fileBaseName);
+  }, [fileBaseName, isRenaming]);
 
-    let unlistenResize: (() => void) | undefined;
-    void appWindow.isMaximized().then(setIsMaximized).catch(() => {
-      setIsMaximized(false);
+  useEffect(() => {
+    if (!isRenaming) {
+      return;
+    }
+    const frameId = window.requestAnimationFrame(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
     });
-
-    void appWindow
-      .onResized(async () => {
-        try {
-          setIsMaximized(await appWindow.isMaximized());
-        } catch {
-          setIsMaximized(false);
-        }
-      })
-      .then((unlisten) => {
-        unlistenResize = unlisten;
-      });
-
     return () => {
-      if (unlistenResize) {
-        unlistenResize();
-      }
+      window.cancelAnimationFrame(frameId);
     };
-  }, [appWindow]);
-
-  const handleDragMouseDown = useCallback(
-    async (event: ReactMouseEvent<HTMLElement>) => {
-      if (event.button !== 0 || !appWindow) {
-        return;
-      }
-
-      const target = event.target as HTMLElement;
-      if (target.closest("button")) {
-        return;
-      }
-
-      if (event.detail === 2) {
-        try {
-          await appWindow.toggleMaximize();
-          setIsMaximized(await appWindow.isMaximized());
-        } catch {
-          // ignore runtime errors in non-tauri contexts
-        }
-        return;
-      }
-
-      try {
-        await appWindow.startDragging();
-      } catch {
-        // ignore runtime errors in non-tauri contexts
-      }
-    },
-    [appWindow]
-  );
-
-  const stopDragPropagation = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
-    },
-    []
-  );
+  }, [isRenaming]);
 
   const handleMinimize = useCallback(async () => {
     if (!appWindow) {
@@ -110,18 +84,6 @@ export default function TopBar({
     }
     try {
       await appWindow.minimize();
-    } catch {
-      // ignore runtime errors in non-tauri contexts
-    }
-  }, [appWindow]);
-
-  const handleToggleMaximize = useCallback(async () => {
-    if (!appWindow) {
-      return;
-    }
-    try {
-      await appWindow.toggleMaximize();
-      setIsMaximized(await appWindow.isMaximized());
     } catch {
       // ignore runtime errors in non-tauri contexts
     }
@@ -138,104 +100,151 @@ export default function TopBar({
     }
   }, [appWindow]);
 
-  return (
-    <header
-      className="titlebar-shell"
-      onMouseDown={handleDragMouseDown}
+  const beginRename = useCallback(() => {
+    if (!canRename || isBusy || isSubmittingRename) {
+      return;
+    }
+    setRenameDraft(fileBaseName);
+    setIsRenaming(true);
+  }, [canRename, fileBaseName, isBusy, isSubmittingRename]);
+
+  const cancelRename = useCallback(() => {
+    if (isSubmittingRename) {
+      return;
+    }
+    setIsRenaming(false);
+    setRenameDraft(fileBaseName);
+  }, [fileBaseName, isSubmittingRename]);
+
+  const submitRename = useCallback(async () => {
+    if (!isRenaming || isSubmittingRename) {
+      return;
+    }
+
+    const normalized = renameDraft.trim();
+    if (!normalized || normalized === fileBaseName) {
+      setIsRenaming(false);
+      setRenameDraft(fileBaseName);
+      return;
+    }
+
+    setIsSubmittingRename(true);
+    try {
+      const renamed = await onRename(normalized);
+      if (renamed) {
+        setIsRenaming(false);
+      }
+    } finally {
+      setIsSubmittingRename(false);
+    }
+  }, [fileBaseName, isRenaming, isSubmittingRename, onRename, renameDraft]);
+
+  const IconButton = ({
+    label,
+    onClick,
+    disabled,
+    children
+  }: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    children: ReactNode;
+  }) => (
+    <Tooltip
+      content={label}
+      placement="bottom"
+      showArrow
     >
+      <button
+        aria-label={label}
+        className="titlebar-icon-btn"
+        disabled={disabled}
+        onClick={onClick}
+        type="button"
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+
+  return (
+    <header className="titlebar-shell">
+      <div
+        className="titlebar-drag-area"
+        data-tauri-drag-region
+      />
       <section className="titlebar-actions">
-        <button
-          aria-label="Open file"
-          className="titlebar-icon-btn"
+        <IconButton
+          label="Open (Ctrl+O)"
           disabled={isBusy}
           onClick={onOpen}
-          onMouseDown={stopDragPropagation}
-          title="Open (Ctrl+O)"
-          type="button"
         >
-          <svg
-            aria-hidden="true"
-            className="titlebar-icon"
-            viewBox="0 0 24 24"
-          >
-            <path d="M3 6.75A1.75 1.75 0 0 1 4.75 5h5.06a2 2 0 0 1 1.42.59l1.18 1.16c.38.37.89.59 1.42.59h5.47A1.75 1.75 0 0 1 21 9.09v7.16A2.75 2.75 0 0 1 18.25 19H5.75A2.75 2.75 0 0 1 3 16.25Z" />
-          </svg>
-        </button>
-        <button
-          aria-label="Save file"
-          className="titlebar-icon-btn"
+          <FolderOpen className="titlebar-icon" />
+        </IconButton>
+        <IconButton
+          label="Save (Ctrl+S)"
           disabled={isBusy}
           onClick={onSave}
-          onMouseDown={stopDragPropagation}
-          title="Save (Ctrl+S)"
-          type="button"
         >
-          <svg
-            aria-hidden="true"
-            className="titlebar-icon"
-            viewBox="0 0 24 24"
-          >
-            <path d="M5.75 3h10.1c.46 0 .9.18 1.23.51l2.4 2.4c.33.33.52.78.52 1.25v11.09A2.75 2.75 0 0 1 17.25 21H6.75A2.75 2.75 0 0 1 4 18.25V4.75A1.75 1.75 0 0 1 5.75 3Z" />
-            <path d="M8 3h7v5H8z" />
-            <path d="M8 15.25A1.25 1.25 0 0 1 9.25 14h5.5A1.25 1.25 0 0 1 16 15.25v3.5A1.25 1.25 0 0 1 14.75 20h-5.5A1.25 1.25 0 0 1 8 18.75z" />
-          </svg>
-        </button>
-        <button
-          aria-label="Save as"
-          className="titlebar-icon-btn"
+          <Save className="titlebar-icon" />
+        </IconButton>
+        <IconButton
+          label="Save As (Ctrl+Shift+S)"
           disabled={isBusy}
           onClick={onSaveAs}
-          onMouseDown={stopDragPropagation}
-          title="Save As (Ctrl+Shift+S)"
-          type="button"
         >
-          <svg
-            aria-hidden="true"
-            className="titlebar-icon"
-            viewBox="0 0 24 24"
-          >
-            <path d="M5.75 3h10.1c.46 0 .9.18 1.23.51l2.4 2.4c.33.33.52.78.52 1.25v11.09A2.75 2.75 0 0 1 17.25 21H6.75A2.75 2.75 0 0 1 4 18.25V4.75A1.75 1.75 0 0 1 5.75 3Z" />
-            <path d="M12 9v6" />
-            <path d="m9.5 12.5 2.5 2.5 2.5-2.5" />
-          </svg>
-        </button>
-        <button
-          aria-label={
-            themeMode === "light" ? "Switch to dark theme" : "Switch to light theme"
-          }
-          className="titlebar-icon-btn"
+          <SaveAll className="titlebar-icon" />
+        </IconButton>
+        <IconButton
+          label={themeMode === "light" ? "Switch to dark theme" : "Switch to light theme"}
           onClick={onToggleTheme}
-          onMouseDown={stopDragPropagation}
-          title={themeMode === "light" ? "Dark theme" : "Light theme"}
-          type="button"
         >
           {themeMode === "light" ? (
-            <svg
-              aria-hidden="true"
-              className="titlebar-icon"
-              viewBox="0 0 24 24"
-            >
-              <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79Z" />
-            </svg>
+            <Moon className="titlebar-icon" />
           ) : (
-            <svg
-              aria-hidden="true"
-              className="titlebar-icon"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="4"
-              />
-              <path d="M12 2.5v2.75M12 18.75v2.75M2.5 12h2.75M18.75 12h2.75M4.9 4.9l1.94 1.94M17.16 17.16l1.94 1.94M4.9 19.1l1.94-1.94M17.16 6.84l1.94-1.94" />
-            </svg>
+            <SunMedium className="titlebar-icon" />
           )}
-        </button>
+        </IconButton>
       </section>
 
       <section className="titlebar-center">
-        <span className="titlebar-doc-name">{fileName}</span>
+        {isRenaming ? (
+          <input
+            aria-label="Rename file"
+            className="titlebar-rename-input"
+            disabled={isSubmittingRename || isBusy}
+            onBlur={() => {
+              void submitRename();
+            }}
+            onChange={(event) => setRenameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void submitRename();
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelRename();
+              }
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            ref={renameInputRef}
+            type="text"
+            value={renameDraft}
+          />
+        ) : (
+          <button
+            className="titlebar-doc-name-btn"
+            disabled={!canRename || isBusy}
+            onDoubleClick={beginRename}
+            onMouseDown={(event) => event.stopPropagation()}
+            title={canRename ? "Double-click to rename file" : undefined}
+            type="button"
+          >
+            <span className="titlebar-doc-name">{fileName}</span>
+          </button>
+        )}
         {isDirty && <span className="titlebar-doc-dirty">&bull;</span>}
       </section>
 
@@ -244,31 +253,17 @@ export default function TopBar({
           aria-label="Minimize"
           className="win-btn"
           onClick={handleMinimize}
-          onMouseDown={stopDragPropagation}
-          title="Minimize"
           type="button"
         >
-          <span className="win-icon min" />
-        </button>
-        <button
-          aria-label={isMaximized ? "Restore" : "Maximize"}
-          className="win-btn"
-          onClick={handleToggleMaximize}
-          onMouseDown={stopDragPropagation}
-          title={isMaximized ? "Restore" : "Maximize"}
-          type="button"
-        >
-          <span className={`win-icon ${isMaximized ? "restore" : "max"}`} />
+          <Minimize2 className="win-icon" />
         </button>
         <button
           aria-label="Close"
           className="win-btn close"
           onClick={handleClose}
-          onMouseDown={stopDragPropagation}
-          title="Close"
           type="button"
         >
-          <span className="win-icon close" />
+          <X className="win-icon" />
         </button>
       </section>
     </header>

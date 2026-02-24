@@ -3,6 +3,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState
@@ -19,19 +20,29 @@ import {
   getInitialFile,
   openFileDialog,
   readTextFile,
+  renameFile,
   saveFileAsDialog,
   writeTextFile
 } from "./features/file/fileService";
-import UnsavedChangesModal from "./features/file/UnsavedChangesModal";
 import TopBar from "./features/window/TopBar";
-import type { OpenFilePayload, PendingAction, ThemeMode } from "./shared/types/doc";
+import StatusBar from "./features/window/StatusBar";
+import type {
+  OpenFilePayload,
+  PendingAction,
+  SaveState,
+  ThemeMode
+} from "./shared/types/doc";
 import {
+  getFileBaseName,
   getDefaultSaveName,
   getFileName,
   isMarkdownPath
 } from "./shared/utils/path";
 
 const MarkdownEditor = lazy(() => import("./features/editor/MarkdownEditor"));
+const UnsavedChangesModal = lazy(
+  () => import("./features/file/UnsavedChangesModal")
+);
 
 function getInitialThemeMode(): ThemeMode {
   if (typeof window === "undefined") {
@@ -82,6 +93,7 @@ export default function App() {
   const [isBusy, setIsBusy] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [charCount, setCharCount] = useState(0);
 
   const docRef = useRef(doc);
   const allowCloseRef = useRef(false);
@@ -94,6 +106,19 @@ export default function App() {
     const marker = doc.isDirty ? "*" : "";
     document.title = `${marker}${getFileName(doc.currentPath)} - MDPad`;
   }, [doc.currentPath, doc.isDirty]);
+
+  const saveState = useMemo<SaveState>(() => {
+    if (errorMessage) {
+      return "error";
+    }
+    if (isBusy) {
+      return "saving";
+    }
+    if (doc.isDirty) {
+      return "unsaved";
+    }
+    return "saved";
+  }, [doc.isDirty, errorMessage, isBusy]);
 
   const loadFileIntoEditor = useCallback(async (path: string) => {
     const content = await readTextFile(path);
@@ -204,6 +229,39 @@ export default function App() {
     });
   }, [runBusyTask, saveCurrentAs]);
 
+  const handleRename = useCallback(
+    async (newBaseName: string): Promise<boolean> => {
+      let renamed = false;
+      await runBusyTask(async () => {
+        const current = docRef.current;
+        if (!current.currentPath) {
+          return;
+        }
+
+        const normalizedBaseName = newBaseName.trim();
+        if (!normalizedBaseName) {
+          throw new Error("File name cannot be empty.");
+        }
+
+        if (current.isDirty) {
+          const saved = await saveCurrent();
+          if (!saved) {
+            return;
+          }
+        }
+
+        const nextPath = await renameFile(current.currentPath, normalizedBaseName);
+        dispatch({
+          type: "rename_path",
+          path: nextPath
+        });
+        renamed = true;
+      });
+      return renamed;
+    },
+    [runBusyTask, saveCurrent]
+  );
+
   const handleUnsavedSave = useCallback(async () => {
     await runBusyTask(async () => {
       const saved = await saveCurrent();
@@ -230,6 +288,13 @@ export default function App() {
     setShowUnsavedModal(false);
     setPendingAction(null);
   }, []);
+
+  const handleStatsChange = useCallback(
+    ({ charCount: count }: { charCount: number }) => {
+      setCharCount(count);
+    },
+    []
+  );
 
   useEffect(() => {
     const handleShortcuts = (event: KeyboardEvent) => {
@@ -325,16 +390,19 @@ export default function App() {
       <div
         className={[
           "app-root",
-          themeMode === "dark" ? "theme-dark" : "theme-light",
+          themeMode === "dark" ? "theme-dark dark" : "theme-light",
           errorMessage ? "has-error" : ""
         ].join(" ")}
       >
         <div className="workspace-shell">
           <TopBar
+            canRename={Boolean(doc.currentPath)}
             fileName={getFileName(doc.currentPath)}
+            fileBaseName={getFileBaseName(doc.currentPath)}
             isBusy={isBusy}
             isDirty={doc.isDirty}
             onOpen={handleOpenFileDialog}
+            onRename={handleRename}
             onSave={handleSave}
             onSaveAs={handleSaveAs}
             onToggleTheme={() =>
@@ -363,19 +431,27 @@ export default function App() {
                 onMarkdownChange={(content) =>
                   dispatch({ type: "update_content", content })
                 }
+                onStatsChange={handleStatsChange}
               />
             </Suspense>
           </main>
+
+          <StatusBar
+            saveState={saveState}
+            charCount={charCount}
+          />
         </div>
 
-        <UnsavedChangesModal
-          isBusy={isBusy}
-          isOpen={showUnsavedModal}
-          onCancel={handleUnsavedCancel}
-          onDiscard={handleUnsavedDiscard}
-          onSave={handleUnsavedSave}
-          pendingAction={pendingAction}
-        />
+        <Suspense fallback={null}>
+          <UnsavedChangesModal
+            isBusy={isBusy}
+            isOpen={showUnsavedModal}
+            onCancel={handleUnsavedCancel}
+            onDiscard={handleUnsavedDiscard}
+            onSave={handleUnsavedSave}
+            pendingAction={pendingAction}
+          />
+        </Suspense>
       </div>
     </BaseProvider>
   );

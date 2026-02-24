@@ -78,6 +78,54 @@ fn write_text_file(path: String, content: String) -> Result<(), String> {
     fs::write(path, content).map_err(|error| format!("Failed to write file: {error}"))
 }
 
+fn has_invalid_windows_name_characters(value: &str) -> bool {
+    value
+        .chars()
+        .any(|char| matches!(char, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+}
+
+#[tauri::command]
+fn rename_file(path: String, new_base_name: String) -> Result<String, String> {
+    let source_path = PathBuf::from(&path);
+    if !source_path.exists() {
+        return Err("File does not exist.".to_string());
+    }
+    if !is_markdown_file(&source_path) {
+        return Err("Only .md/.markdown files can be renamed.".to_string());
+    }
+
+    let trimmed_name = new_base_name.trim();
+    if trimmed_name.is_empty() {
+        return Err("File name cannot be empty.".to_string());
+    }
+    if has_invalid_windows_name_characters(trimmed_name) {
+        return Err("File name contains invalid characters.".to_string());
+    }
+    if trimmed_name.ends_with('.') || trimmed_name.ends_with(' ') {
+        return Err("File name cannot end with dot or space.".to_string());
+    }
+
+    let parent = source_path
+        .parent()
+        .ok_or_else(|| "Unable to resolve parent directory.".to_string())?;
+    let extension = source_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .ok_or_else(|| "Unable to resolve file extension.".to_string())?;
+
+    let target_path = parent.join(format!("{trimmed_name}.{extension}"));
+    if target_path == source_path {
+        return Ok(normalize_path(source_path));
+    }
+    if target_path.exists() {
+        return Err("A file with the same name already exists.".to_string());
+    }
+
+    fs::rename(&source_path, &target_path)
+        .map_err(|error| format!("Failed to rename file: {error}"))?;
+    Ok(normalize_path(target_path))
+}
+
 #[tauri::command]
 fn focus_main_window(window: Window) -> Result<(), String> {
     window
@@ -105,6 +153,7 @@ pub fn run() {
             save_file_as_dialog,
             read_text_file,
             write_text_file,
+            rename_file,
             focus_main_window
         ])
         .run(tauri::generate_context!())
