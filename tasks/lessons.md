@@ -90,3 +90,8 @@
 - If taskbar hover preview icon updates but taskbar button/file icon does not, check ICO size coverage before blaming cache.
 - Ensure `src-tauri/icons/icon.ico` includes small sizes (`16/24/32/48`) in addition to `256`.
 - Add a build-time verification step for ICO sizes after icon replacement to avoid shipping single-size ICO files.
+
+## 2026-02-24 SVG Background Removal Accuracy
+- When user asks for "transparent background", do not stop at removing canvas-sized white path only.
+- Also scan and verify all near-white fills (`#FEFEFD`, `#EEEFED`, `#FFFFFF`, etc.) to avoid residual white details.
+- Add a quick alpha check on generated PNG corners after icon regen to confirm transparency is preserved.

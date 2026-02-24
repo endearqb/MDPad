@@ -30,6 +30,15 @@
   "bundle": {
     "active": true,
     "targets": "nsis",
+    "windows": {
+      "nsis": {
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": true
+      }
+    },
     "fileAssociations": [
       {
         "ext": [
