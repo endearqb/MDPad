@@ -75,8 +75,15 @@
 - 验证通过：`pnpm test`（29 通过）、`pnpm build`（成功产出）。
 
 ## 新任务：推送 GitHub + 构建 EXE + 发布 Releases（2026-02-24）
-- [ ] 提交当前工作区改动到 `main`
-- [ ] 推送到 GitHub `origin/main`
-- [ ] 构建安装包（`pnpm tauri:build`）
-- [ ] 发布 GitHub Release 并上传 EXE 资产
-- [ ] 在本文件追加本次发布回顾
+- [x] 提交当前工作区改动到 `main`
+- [x] 推送到 GitHub `origin/main`
+- [x] 构建安装包（`pnpm tauri:build`）
+- [x] 发布 GitHub Release 并上传 EXE 资产
+- [x] 在本文件追加本次发布回顾
+
+### 回顾（GitHub 推送与 v0.1.2 发布）
+- 版本号已统一更新为 `0.1.2`：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`。
+- 构建产物：`src-tauri/target/release/bundle/nsis/MDPad_0.1.2_x64-setup.exe`。
+- 已推送提交到 `origin/main`，并推送标签 `v0.1.2`。
+- 已创建 Release：`https://github.com/endearqb/MDPad/releases/tag/v0.1.2`。
+- 已上传资产：`MDPad_0.1.2_x64-setup.exe`（sha256: `ae472a3096183abf3460489214bf453043f26ff904702081bb9fe38e8317eb6d`）。
