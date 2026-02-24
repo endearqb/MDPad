@@ -2,7 +2,6 @@ export type ThemeMode = "light" | "dark";
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
 
 export type PendingAction =
-  | { kind: "open"; path: string }
   | { kind: "close" }
   | null;
 

@@ -14,6 +14,7 @@ import {
   Moon,
   Save,
   SaveAll,
+  SquarePlus,
   SunMedium,
   X
 } from "lucide-react";
@@ -26,6 +27,7 @@ interface TopBarProps {
   isDirty: boolean;
   isBusy: boolean;
   themeMode: ThemeMode;
+  onNewWindow: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -40,6 +42,7 @@ export default function TopBar({
   isDirty,
   isBusy,
   themeMode,
+  onNewWindow,
   onOpen,
   onSave,
   onSaveAs,
@@ -174,6 +177,13 @@ export default function TopBar({
         data-tauri-drag-region
       />
       <section className="titlebar-actions">
+        <IconButton
+          label="New Window (Ctrl+N)"
+          disabled={isBusy}
+          onClick={onNewWindow}
+        >
+          <SquarePlus className="titlebar-icon" />
+        </IconButton>
         <IconButton
           label="Open (Ctrl+O)"
           disabled={isBusy}

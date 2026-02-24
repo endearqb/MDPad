@@ -1,16 +1,10 @@
-use serde::Serialize;
 use std::fs;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{Emitter, Manager, Window};
+use tauri::{Manager, WebviewWindowBuilder, Window};
 
-#[derive(Default)]
-struct InitialFileState(Mutex<Option<String>>);
-
-#[derive(Clone, Serialize)]
-struct OpenFilePayload {
-    path: String,
-}
+struct InitialFileState(Mutex<HashMap<String, Option<String>>>);
 
 fn is_markdown_file(path: &Path) -> bool {
     matches!(
@@ -43,12 +37,15 @@ fn extract_markdown_path(args: &[String]) -> Option<String> {
 }
 
 #[tauri::command]
-fn get_initial_file(state: tauri::State<'_, InitialFileState>) -> Result<Option<String>, String> {
-    let lock = state
+fn get_initial_file(
+    window: Window,
+    state: tauri::State<'_, InitialFileState>
+) -> Result<Option<String>, String> {
+    let mut lock = state
         .0
         .lock()
         .map_err(|_| "failed to access initial file state".to_string())?;
-    Ok(lock.clone())
+    Ok(lock.remove(window.label()).flatten())
 }
 
 #[tauri::command]
@@ -76,6 +73,78 @@ fn read_text_file(path: String) -> Result<String, String> {
 #[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
     fs::write(path, content).map_err(|error| format!("Failed to write file: {error}"))
+}
+
+fn normalize_markdown_path(path: String) -> Result<String, String> {
+    let candidate = PathBuf::from(path);
+    if !is_markdown_file(&candidate) {
+        return Err("Only .md/.markdown files can be opened in MDPad.".to_string());
+    }
+    Ok(normalize_path(candidate))
+}
+
+fn next_document_window_label(app: &tauri::AppHandle) -> String {
+    let mut index = 1_u64;
+    loop {
+        let label = format!("doc-{index}");
+        if app.get_webview_window(&label).is_none() {
+            return label;
+        }
+        index += 1;
+    }
+}
+
+fn create_document_window_internal(
+    app: &tauri::AppHandle,
+    path: Option<String>
+) -> Result<(), String> {
+    let normalized_path = match path {
+        Some(raw_path) => Some(normalize_markdown_path(raw_path)?),
+        None => None
+    };
+
+    let mut window_config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .ok_or_else(|| "No window configuration found.".to_string())?;
+
+    let label = next_document_window_label(app);
+    window_config.label = label.clone();
+
+    {
+        let state = app.state::<InitialFileState>();
+        let mut lock = state
+            .0
+            .lock()
+            .map_err(|_| "failed to access initial file state".to_string())?;
+        lock.insert(label.clone(), normalized_path);
+    }
+
+    let build_result = WebviewWindowBuilder::from_config(app, &window_config)
+        .map_err(|error| format!("Failed to prepare window: {error}"))?
+        .build()
+        .map_err(|error| format!("Failed to build window: {error}"));
+
+    if let Err(error) = build_result {
+        let state = app.state::<InitialFileState>();
+        if let Ok(mut lock) = state.0.lock() {
+            let _ = lock.remove(label.as_str());
+        }
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn create_document_window(
+    app: tauri::AppHandle,
+    path: Option<String>
+) -> Result<(), String> {
+    create_document_window_internal(&app, path)
 }
 
 fn has_invalid_windows_name_characters(value: &str) -> bool {
@@ -126,25 +195,25 @@ fn rename_file(path: String, new_base_name: String) -> Result<String, String> {
     Ok(normalize_path(target_path))
 }
 
-#[tauri::command]
-fn focus_main_window(window: Window) -> Result<(), String> {
-    window
-        .set_focus()
-        .map_err(|error| format!("Failed to focus window: {error}"))
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let initial_file = extract_markdown_path(&std::env::args().collect::<Vec<_>>());
+    let mut initial_file_map = HashMap::new();
+    initial_file_map.insert("main".to_string(), initial_file);
 
     tauri::Builder::default()
-        .manage(InitialFileState(Mutex::new(initial_file)))
+        .manage(InitialFileState(Mutex::new(initial_file_map)))
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(path) = extract_markdown_path(&argv) {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.set_focus();
-                    let _ = window.emit("app://open-file", OpenFilePayload { path });
-                }
+                let app_handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = create_document_window_internal(&app_handle, Some(path));
+                });
+                return;
+            }
+
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
             }
         }))
         .invoke_handler(tauri::generate_handler![
@@ -154,7 +223,7 @@ pub fn run() {
             read_text_file,
             write_text_file,
             rename_file,
-            focus_main_window
+            create_document_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running MDPad");

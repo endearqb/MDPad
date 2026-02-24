@@ -20,10 +20,8 @@ export default function UnsavedChangesModal({
   onDiscard,
   onCancel
 }: UnsavedChangesModalProps) {
-  const actionText =
-    pendingAction?.kind === "open"
-      ? "open another file"
-      : "close MDPad";
+  void pendingAction;
+  const actionText = "close MDPad";
 
   return (
     <Modal

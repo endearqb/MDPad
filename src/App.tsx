@@ -16,7 +16,7 @@ import {
   docReducer
 } from "./features/file/fileReducer";
 import {
-  focusMainWindow,
+  createDocumentWindow,
   getInitialFile,
   openFileDialog,
   readTextFile,
@@ -141,25 +141,22 @@ export default function App() {
     }
   }, []);
 
-  const requestOpenFile = useCallback(
+  const openPathInCurrentWindow = useCallback(
     async (path: string) => {
       if (!isMarkdownPath(path)) {
-        setErrorMessage("Only .md and .markdown files are supported.");
-        return;
+        throw new Error("Only .md and .markdown files are supported.");
       }
-
-      await runBusyTask(async () => {
-        await focusMainWindow();
-        if (docRef.current.isDirty) {
-          setPendingAction({ kind: "open", path });
-          setShowUnsavedModal(true);
-          return;
-        }
-        await loadFileIntoEditor(path);
-      });
+      await loadFileIntoEditor(path);
     },
-    [loadFileIntoEditor, runBusyTask]
+    [loadFileIntoEditor]
   );
+
+  const openPathInNewWindow = useCallback(async (path: string) => {
+    if (!isMarkdownPath(path)) {
+      throw new Error("Only .md and .markdown files are supported.");
+    }
+    await createDocumentWindow(path);
+  }, []);
 
   const saveCurrentAs = useCallback(async (): Promise<boolean> => {
     const current = docRef.current;
@@ -197,14 +194,10 @@ export default function App() {
       if (!action) {
         return;
       }
-      if (action.kind === "open") {
-        await loadFileIntoEditor(action.path);
-        return;
-      }
       allowCloseRef.current = true;
       await getCurrentWindow().destroy();
     },
-    [loadFileIntoEditor]
+    []
   );
 
   const handleOpenFileDialog = useCallback(async () => {
@@ -213,9 +206,15 @@ export default function App() {
       if (!path) {
         return;
       }
-      await requestOpenFile(path);
+      await openPathInNewWindow(path);
     });
-  }, [requestOpenFile, runBusyTask]);
+  }, [openPathInNewWindow, runBusyTask]);
+
+  const handleNewWindow = useCallback(async () => {
+    await runBusyTask(async () => {
+      await createDocumentWindow(null);
+    });
+  }, [runBusyTask]);
 
   const handleSave = useCallback(async () => {
     await runBusyTask(async () => {
@@ -310,6 +309,12 @@ export default function App() {
         return;
       }
 
+      if (key === "n") {
+        event.preventDefault();
+        void handleNewWindow();
+        return;
+      }
+
       if (key === "s") {
         event.preventDefault();
         if (event.shiftKey) {
@@ -324,7 +329,7 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleShortcuts);
     };
-  }, [handleOpenFileDialog, handleSave, handleSaveAs]);
+  }, [handleNewWindow, handleOpenFileDialog, handleSave, handleSaveAs]);
 
   useEffect(() => {
     let unlistenOpenFile: UnlistenFn | undefined;
@@ -334,14 +339,18 @@ export default function App() {
     void (async () => {
       const initialPath = await getInitialFile();
       if (initialPath) {
-        await requestOpenFile(initialPath);
+        await runBusyTask(async () => {
+          await openPathInCurrentWindow(initialPath);
+        });
       }
 
       unlistenOpenFile = await listen<OpenFilePayload>(
         "app://open-file",
         (event) => {
           if (event.payload?.path) {
-            void requestOpenFile(event.payload.path);
+            void runBusyTask(async () => {
+              await openPathInNewWindow(event.payload.path);
+            });
           }
         }
       );
@@ -366,7 +375,9 @@ export default function App() {
         unlistenDropEvent = await maybeDropWindow.onDragDropEvent((event) => {
           const paths = extractDropPaths(event).filter(isMarkdownPath);
           if (paths.length > 0) {
-            void requestOpenFile(paths[0]);
+            void runBusyTask(async () => {
+              await openPathInNewWindow(paths[0]);
+            });
           }
         });
       }
@@ -383,7 +394,7 @@ export default function App() {
         unlistenDropEvent();
       }
     };
-  }, [requestOpenFile]);
+  }, [openPathInCurrentWindow, openPathInNewWindow, runBusyTask]);
 
   return (
     <BaseProvider theme={themeMode === "dark" ? DarkTheme : LightTheme}>
@@ -401,6 +412,7 @@ export default function App() {
             fileBaseName={getFileBaseName(doc.currentPath)}
             isBusy={isBusy}
             isDirty={doc.isDirty}
+            onNewWindow={handleNewWindow}
             onOpen={handleOpenFileDialog}
             onRename={handleRename}
             onSave={handleSave}

@@ -37,6 +37,10 @@ export async function renameFile(
   });
 }
 
-export async function focusMainWindow(): Promise<void> {
-  return invoke<void>("focus_main_window");
+export async function createDocumentWindow(
+  path?: string | null
+): Promise<void> {
+  return invoke<void>("create_document_window", {
+    path: path ?? null
+  });
 }
