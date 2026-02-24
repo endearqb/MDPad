@@ -55,12 +55,15 @@ import {
   AudioBlock,
   ResizableImage,
   VideoBlock,
-  mediaDefaults
+  mediaDefaults,
+  setMediaSourceResolver
 } from "./extensions/mediaExtensions";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
+import { resolveMediaSource } from "../../shared/utils/mediaSource";
 
 interface MarkdownEditorProps {
   markdown: string;
+  documentPath: string | null;
   onMarkdownChange: (markdown: string) => void;
   onStatsChange?: (stats: EditorStats) => void;
 }
@@ -160,11 +163,13 @@ function promptForMath(mode: "inline" | "block"): string | null {
 
 export default function MarkdownEditor({
   markdown,
+  documentPath,
   onMarkdownChange,
   onStatsChange
 }: MarkdownEditorProps) {
   const skipNextUpdate = useRef(false);
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
+  const documentPathRef = useRef<string | null>(documentPath);
   const [slashMenu, setSlashMenu] = useState<SlashMenuState>(initialSlashState);
   const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
 
@@ -177,6 +182,15 @@ export default function MarkdownEditor({
     [onStatsChange]
   );
   const normalizedMarkdown = useMemo(() => normalizeMarkdown(markdown), [markdown]);
+
+  useEffect(() => {
+    documentPathRef.current = documentPath;
+  }, [documentPath]);
+
+  const resolveMediaSrc = useCallback((src: string): string => {
+    return resolveMediaSource(src, documentPathRef.current);
+  }, []);
+  setMediaSourceResolver(resolveMediaSrc);
 
   const slashItems = useMemo<SlashCommandItem[]>(
     () => [

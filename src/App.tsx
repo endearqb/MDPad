@@ -10,6 +10,7 @@ import {
 } from "react";
 import { BaseProvider, DarkTheme, LightTheme } from "baseui";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { PhysicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   createEmptyDocState,
@@ -30,7 +31,8 @@ import type {
   OpenFilePayload,
   PendingAction,
   SaveState,
-  ThemeMode
+  ThemeMode,
+  UiTheme
 } from "./shared/types/doc";
 import {
   getFileBaseName,
@@ -38,19 +40,33 @@ import {
   getFileName,
   isMarkdownPath
 } from "./shared/utils/path";
+import {
+  readThemeModePreference,
+  readUiThemePreference,
+  writeThemeModePreference,
+  writeUiThemePreference
+} from "./shared/utils/themePreferences";
 
 const MarkdownEditor = lazy(() => import("./features/editor/MarkdownEditor"));
 const UnsavedChangesModal = lazy(
   () => import("./features/file/UnsavedChangesModal")
 );
 
-function getInitialThemeMode(): ThemeMode {
+function getSystemThemeMode(): ThemeMode {
   if (typeof window === "undefined") {
     return "light";
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
+}
+
+function getInitialThemeMode(): ThemeMode {
+  return readThemeModePreference(getSystemThemeMode());
+}
+
+function getInitialUiTheme(): UiTheme {
+  return readUiThemePreference("modern");
 }
 
 function formatError(error: unknown): string {
@@ -86,9 +102,56 @@ function extractDropPaths(event: unknown): string[] {
   return paths.filter((item): item is string => typeof item === "string");
 }
 
+const WINDOW_SIZE_STORAGE_KEY = "mdpad.window-size.v1";
+const MIN_WINDOW_WIDTH = 420;
+const MIN_WINDOW_HEIGHT = 320;
+
+type PersistedWindowSize = {
+  width: number;
+  height: number;
+};
+
+function sanitizeWindowSize(value: unknown): PersistedWindowSize | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const width = Number((value as { width?: unknown }).width);
+  const height = Number((value as { height?: unknown }).height);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    return null;
+  }
+
+  return {
+    width: Math.max(MIN_WINDOW_WIDTH, Math.round(width)),
+    height: Math.max(MIN_WINDOW_HEIGHT, Math.round(height))
+  };
+}
+
+function readPersistedWindowSize(): PersistedWindowSize | null {
+  try {
+    const raw = localStorage.getItem(WINDOW_SIZE_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    return sanitizeWindowSize(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedWindowSize(size: PersistedWindowSize): void {
+  try {
+    localStorage.setItem(WINDOW_SIZE_STORAGE_KEY, JSON.stringify(size));
+  } catch {
+    // Ignore storage failures and keep runtime behavior unchanged.
+  }
+}
+
 export default function App() {
   const [doc, dispatch] = useReducer(docReducer, undefined, createEmptyDocState);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
+  const [uiTheme, setUiTheme] = useState<UiTheme>(getInitialUiTheme);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -106,6 +169,62 @@ export default function App() {
     const marker = doc.isDirty ? "*" : "";
     document.title = `${marker}${getFileName(doc.currentPath)} - MDPad`;
   }, [doc.currentPath, doc.isDirty]);
+
+  useEffect(() => {
+    writeThemeModePreference(themeMode);
+  }, [themeMode]);
+
+  useEffect(() => {
+    writeUiThemePreference(uiTheme);
+  }, [uiTheme]);
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    let isDisposed = false;
+    let unlistenResize: UnlistenFn | undefined;
+
+    const persistWindowSize = async () => {
+      try {
+        const size = await appWindow.innerSize();
+        if (isDisposed) {
+          return;
+        }
+        const normalized = sanitizeWindowSize(size);
+        if (normalized) {
+          writePersistedWindowSize(normalized);
+        }
+      } catch {
+        // Keep app usable even when window APIs are unavailable.
+      }
+    };
+
+    void (async () => {
+      const persisted = readPersistedWindowSize();
+      if (persisted) {
+        try {
+          await appWindow.setSize(new PhysicalSize(persisted.width, persisted.height));
+        } catch {
+          // Ignore and keep default window size from config.
+        }
+      }
+
+      if (isDisposed) {
+        return;
+      }
+
+      unlistenResize = await appWindow.onResized(() => {
+        void persistWindowSize();
+      });
+      await persistWindowSize();
+    })();
+
+    return () => {
+      isDisposed = true;
+      if (unlistenResize) {
+        unlistenResize();
+      }
+    };
+  }, []);
 
   const saveState = useMemo<SaveState>(() => {
     if (errorMessage) {
@@ -402,6 +521,7 @@ export default function App() {
         className={[
           "app-root",
           themeMode === "dark" ? "theme-dark dark" : "theme-light",
+          uiTheme === "classic" ? "ui-classic" : "ui-modern",
           errorMessage ? "has-error" : ""
         ].join(" ")}
       >
@@ -417,10 +537,16 @@ export default function App() {
             onRename={handleRename}
             onSave={handleSave}
             onSaveAs={handleSaveAs}
+            onToggleUiTheme={() =>
+              setUiTheme((current) =>
+                current === "modern" ? "classic" : "modern"
+              )
+            }
             onToggleTheme={() =>
               setThemeMode((current) => (current === "light" ? "dark" : "light"))
             }
             themeMode={themeMode}
+            uiTheme={uiTheme}
           />
 
           {errorMessage && (
@@ -439,6 +565,7 @@ export default function App() {
           <main className="app-main">
             <Suspense fallback={<div className="editor-loading">Loading editor...</div>}>
               <MarkdownEditor
+                documentPath={doc.currentPath}
                 markdown={doc.content}
                 onMarkdownChange={(content) =>
                   dispatch({ type: "update_content", content })

@@ -10,6 +10,7 @@ import { Tooltip } from "baseui/tooltip";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   FolderOpen,
+  LayoutTemplate,
   Minimize2,
   Moon,
   Save,
@@ -18,7 +19,7 @@ import {
   SunMedium,
   X
 } from "lucide-react";
-import type { ThemeMode } from "../../shared/types/doc";
+import type { ThemeMode, UiTheme } from "../../shared/types/doc";
 
 interface TopBarProps {
   fileName: string;
@@ -27,11 +28,13 @@ interface TopBarProps {
   isDirty: boolean;
   isBusy: boolean;
   themeMode: ThemeMode;
+  uiTheme: UiTheme;
   onNewWindow: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onRename: (newBaseName: string) => Promise<boolean>;
+  onToggleUiTheme: () => void;
   onToggleTheme: () => void;
 }
 
@@ -42,11 +45,13 @@ export default function TopBar({
   isDirty,
   isBusy,
   themeMode,
+  uiTheme,
   onNewWindow,
   onOpen,
   onSave,
   onSaveAs,
   onRename,
+  onToggleUiTheme,
   onToggleTheme
 }: TopBarProps) {
   const appWindow = useMemo(() => {
@@ -204,6 +209,12 @@ export default function TopBar({
           onClick={onSaveAs}
         >
           <SaveAll className="titlebar-icon" />
+        </IconButton>
+        <IconButton
+          label={uiTheme === "classic" ? "Switch to modern UI" : "Switch to classic UI"}
+          onClick={onToggleUiTheme}
+        >
+          <LayoutTemplate className="titlebar-icon" />
         </IconButton>
         <IconButton
           label={themeMode === "light" ? "Switch to dark theme" : "Switch to light theme"}

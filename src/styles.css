@@ -94,6 +94,56 @@ body {
   --shadow-surface: 0 18px 36px rgba(0, 0, 0, 0.45);
 }
 
+.theme-light.ui-classic {
+  --app-shell: #f2f2f2;
+  --app-shell-border: #b9b9b9;
+  --chrome-bg: #ececec;
+  --chrome-border: #b5b5b5;
+  --text-primary: #202124;
+  --text-secondary: #5f6368;
+  --border-strong: #b5b5b5;
+  --accent: #0a64ad;
+  --accent-soft: #cfe8ff;
+  --hover-soft: #dfdfdf;
+  --hover-strong: #d2d2d2;
+  --editor-bg: #ffffff;
+  --editor-border: #c9c9c9;
+  --status-bg: #e7e7e7;
+  --status-border: #b5b5b5;
+  --link-color: #0b63b5;
+  --link-hover: #084f90;
+  --scrollbar-track: #ececec;
+  --scrollbar-thumb: #b7b7b7;
+  --scrollbar-thumb-hover: #9d9d9d;
+  --shadow-elev: 0 10px 24px rgba(0, 0, 0, 0.18);
+  --shadow-surface: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.theme-dark.ui-classic {
+  --app-shell: #202020;
+  --app-shell-border: #4a4a4a;
+  --chrome-bg: #2a2a2a;
+  --chrome-border: #4a4a4a;
+  --text-primary: #f3f3f3;
+  --text-secondary: #c9c9c9;
+  --border-strong: #4a4a4a;
+  --accent: #69a8ff;
+  --accent-soft: rgba(105, 168, 255, 0.35);
+  --hover-soft: #3a3a3a;
+  --hover-strong: #494949;
+  --editor-bg: #161616;
+  --editor-border: #4a4a4a;
+  --status-bg: #2a2a2a;
+  --status-border: #4a4a4a;
+  --link-color: #8fc1ff;
+  --link-hover: #c8e1ff;
+  --scrollbar-track: #2a2a2a;
+  --scrollbar-thumb: #6f6f6f;
+  --scrollbar-thumb-hover: #8a8a8a;
+  --shadow-elev: 0 14px 30px rgba(0, 0, 0, 0.5);
+  --shadow-surface: 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
 .app-root {
   width: 100vw;
   height: 100dvh;
@@ -1208,6 +1258,162 @@ body {
 
 .status-icon-saved {
   color: #22c55e;
+}
+
+.app-root.ui-classic {
+  border-radius: 8px;
+  backdrop-filter: none;
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+}
+
+.app-root.ui-classic .workspace-shell {
+  gap: 4px;
+  padding: 6px;
+}
+
+.app-root.ui-classic .titlebar-shell {
+  height: 40px;
+  min-height: 40px;
+  gap: 6px;
+  padding: 0 4px;
+  border-radius: 6px;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+.app-root.ui-classic .titlebar-icon-btn {
+  width: 30px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+.app-root.ui-classic .titlebar-icon-btn:hover {
+  border-color: color-mix(in srgb, var(--chrome-border) 90%, transparent);
+}
+
+.app-root.ui-classic .titlebar-icon-btn:active {
+  border-color: color-mix(in srgb, var(--chrome-border) 95%, transparent);
+}
+
+.app-root.ui-classic .titlebar-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.8;
+}
+
+.app-root.ui-classic .titlebar-doc-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.app-root.ui-classic .titlebar-doc-name-btn {
+  border-radius: 4px;
+}
+
+.app-root.ui-classic .titlebar-rename-input {
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.app-root.ui-classic .win-btn {
+  width: 44px;
+  border-left: 1px solid color-mix(in srgb, var(--chrome-border) 75%, transparent);
+}
+
+.app-root.ui-classic .error-banner {
+  border-radius: 6px;
+}
+
+.app-root.ui-classic .editor-loading {
+  border-radius: 6px;
+}
+
+.app-root.ui-classic .editor-surface {
+  border-radius: 6px;
+  box-shadow: none;
+  padding: clamp(16px, 3vw, 28px) clamp(14px, 4vw, 30px) clamp(24px, 4vw, 36px);
+}
+
+.app-root.ui-classic .mdpad-editor {
+  max-width: 920px;
+}
+
+.app-root.ui-classic .slash-menu {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.app-root.ui-classic .slash-item {
+  padding: 7px 10px;
+}
+
+.app-root.ui-classic .slash-item-icon-wrap {
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--editor-border) 80%, transparent);
+}
+
+.app-root.ui-classic .bubble-menu-shell {
+  border: 1px solid var(--editor-border);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  box-shadow: var(--shadow-surface);
+  color: var(--text-primary);
+}
+
+.app-root.ui-classic .bubble-style-popover {
+  border: 1px solid var(--editor-border);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  box-shadow: var(--shadow-surface);
+}
+
+.app-root.ui-classic .bubble-style-item {
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.app-root.ui-classic .bubble-style-item:hover {
+  background: var(--hover-soft);
+  color: var(--text-primary);
+}
+
+.app-root.ui-classic .bubble-style-item.is-active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.app-root.ui-classic .bubble-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.app-root.ui-classic .bubble-btn:hover {
+  background: var(--hover-soft);
+  color: var(--text-primary);
+}
+
+.app-root.ui-classic .bubble-btn.is-active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.app-root.ui-classic .statusbar-shell {
+  height: 26px;
+  min-height: 26px;
+  border-radius: 4px;
+  backdrop-filter: none;
+  box-shadow: none;
+  font-size: 11px;
+  padding: 0 8px;
+}
+
+.app-root.ui-classic .statusbar-pill {
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--status-border) 72%, transparent);
 }
 
 @keyframes mdpad-spin {

@@ -1,4 +1,5 @@
 export type ThemeMode = "light" | "dark";
+export type UiTheme = "modern" | "classic";
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
 
 export type PendingAction =

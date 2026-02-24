@@ -20,6 +20,21 @@ const MIN_MEDIA_WIDTH = 20;
 const MAX_MEDIA_WIDTH = 100;
 const markdownLinkedImageRegex =
   /\[!\[([^\]\n]*)\]\((<[^>\n]+>|[^)\s]+)(?:\s+"([^"\n]*)")?\)\]\((<[^>\n]+>|[^)\s]+)(?:\s+"([^"\n]*)")?\)$/u;
+type ResolveMediaSrc = (src: string) => string;
+
+let mediaSourceResolver: ResolveMediaSrc = (src) => src;
+
+export function setMediaSourceResolver(resolver: ResolveMediaSrc): void {
+  mediaSourceResolver = resolver;
+}
+
+function resolveMediaSrc(src: string): string {
+  try {
+    return mediaSourceResolver(src);
+  } catch {
+    return src;
+  }
+}
 
 function clamp(value: number, min: number, max: number): number {
   if (value < min) {
@@ -146,7 +161,8 @@ function ResizableMediaNodeView({
   } | null>(null);
   const isVideo = node.type.name === "videoBlock";
   const width = useMemo(() => parseWidthValue(node.attrs.width), [node.attrs.width]);
-  const src = typeof node.attrs.src === "string" ? node.attrs.src : "";
+  const rawSrc = typeof node.attrs.src === "string" ? node.attrs.src : "";
+  const src = useMemo(() => resolveMediaSrc(rawSrc), [rawSrc]);
   const linkHref = typeof node.attrs.linkHref === "string" ? node.attrs.linkHref : "";
   const linkTitle = typeof node.attrs.linkTitle === "string" ? node.attrs.linkTitle : "";
   const imageTitle = typeof node.attrs.title === "string" ? node.attrs.title : "";
@@ -287,7 +303,8 @@ function ResizableMediaNodeView({
 }
 
 function AudioNodeView({ node, selected }: NodeViewProps) {
-  const src = typeof node.attrs.src === "string" ? node.attrs.src : "";
+  const rawSrc = typeof node.attrs.src === "string" ? node.attrs.src : "";
+  const src = useMemo(() => resolveMediaSrc(rawSrc), [rawSrc]);
   return (
     <NodeViewWrapper className={`audio-node ${selected ? "is-selected" : ""}`}>
       <audio

@@ -57,3 +57,26 @@
   - [ ] `Ctrl+N` 新建空白窗口
   - [ ] 拖拽文件到窗口时默认新窗口打开
   - [ ] 关闭含未保存内容窗口时提示行为符合预期
+
+## 新任务：主题 UI（Modern / Classic）切换（2026-02-24）
+- [x] 扩展主题类型：新增 `UiTheme = "modern" | "classic"`，并保持 `ThemeMode`（light/dark）独立
+- [x] 在 `App.tsx` 新增 UI 主题状态与本地持久化（同时补齐明暗主题持久化）
+- [x] 在 `TopBar.tsx` 增加主题 UI 切换按钮，并放在日间/夜间按钮之前
+- [x] 在 `styles.css` 实现 `ui-classic` 全窗口视觉覆盖（标题栏、编辑容器、状态栏、Bubble/Slash）
+- [x] 补充主题偏好读写测试（默认值、非法值、持久化回读）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（主题 UI 切换）
+- 新增双维主题模型：`ThemeMode(light/dark)` + `UiTheme(modern/classic)`，互不耦合。
+- `TopBar` 新增 UI 切换按钮（位于日间/夜间按钮前），支持 Modern/Classic 单击切换。
+- 增加主题偏好持久化工具：`src/shared/utils/themePreferences.ts`，并完成单测覆盖。
+- 完成 classic 全窗口样式覆盖：窗口外壳、标题栏、编辑容器、状态栏、Bubble/Slash 菜单。
+- 验证通过：`pnpm test`（29 通过）、`pnpm build`（成功产出）。
+
+## 新任务：推送 GitHub + 构建 EXE + 发布 Releases（2026-02-24）
+- [ ] 提交当前工作区改动到 `main`
+- [ ] 推送到 GitHub `origin/main`
+- [ ] 构建安装包（`pnpm tauri:build`）
+- [ ] 发布 GitHub Release 并上传 EXE 资产
+- [ ] 在本文件追加本次发布回顾
