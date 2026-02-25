@@ -129,4 +129,42 @@ describe("markdownCodec", () => {
     expect(markdown).toMatch(/> Watch out\./);
     expect(markdown).toMatch(/>\s*-\s+one/);
   });
+
+  it("converts markdown image with size hint into image html", () => {
+    const html = markdownToHtml(
+      "![Img](./FILES/阿尔宙斯2.md/img-20231228110429.png =400x)"
+    );
+
+    expect(html).toContain("<img");
+    expect(html).toContain('src="./FILES/阿尔宙斯2.md/img-20231228110429.png"');
+    expect(html).toContain('data-width="51.28"');
+  });
+
+  it("converts markdown image with height-only hint into image html", () => {
+    const html = markdownToHtml(
+      "![Img](./FILES/running%20man.md/img-20230930145344.png =x300)"
+    );
+
+    expect(html).toContain("<img");
+    expect(html).toContain('src="./FILES/running%20man.md/img-20230930145344.png"');
+    expect(html).toContain('data-width="38.46"');
+    expect(html).toContain('data-height-px="300"');
+  });
+
+  it("keeps same-directory markdown image renderable", () => {
+    const html = markdownToHtml(
+      "![0191207c-2e85-79f5-be03-378151dcebde_9_983390.jpg](0191207c-2e85-79f5-be03-378151dcebde_9_983390.jpg)"
+    );
+
+    expect(html).toContain("<img");
+    expect(html).toContain('src="0191207c-2e85-79f5-be03-378151dcebde_9_983390.jpg"');
+    expect(html).toContain('alt="0191207c-2e85-79f5-be03-378151dcebde_9_983390.jpg"');
+  });
+
+  it("converts obsidian image embed syntax into image html", () => {
+    const html = markdownToHtml("![[Pasted image 20250404205338.png]]");
+
+    expect(html).toContain("<img");
+    expect(html).toContain('src="Pasted image 20250404205338.png"');
+  });
 });

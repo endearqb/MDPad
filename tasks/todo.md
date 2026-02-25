@@ -318,3 +318,373 @@
 - 验证结果：
   - `npm run build`：通过。
   - `npm run test`：沙箱下 `spawn EPERM`，提权后通过（4 files / 30 tests passed）。
+
+## 新任务：保存/另存为 `defaultName` 参数修复（2026-02-25）
+- [x] 写入计划并确认问题范围（`Save`/`Save As` 均报 `save_file_as_dialog missing required key defaultName`）
+- [x] 修复 `save_file_as_dialog` 前端调用参数名
+- [x] 排查同类 Tauri `invoke` 参数命名并做最小必要修复
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（保存/另存为 `defaultName` 参数修复）
+- 根因：Tauri 命令参数使用 `camelCase` 反序列化，前端传入了 `snake_case`（`default_name`），导致命令参数校验失败。
+- `src/features/file/fileService.ts`：
+  - `save_file_as_dialog` 参数从 `{ default_name }` 改为 `{ defaultName }`；
+  - 同步修复 `rename_file` 参数从 `{ new_base_name }` 改为 `{ newBaseName }`，避免同类问题。
+- `src-tauri/src/lib.rs`：
+  - `save_file_as_dialog` 入参改为 `Option<String>`，并在缺失/空值时回退 `untitled.md`，避免再次因漏参崩溃。
+- 新增单测：`src/features/file/fileService.test.ts`，校验两个命令都以 `camelCase` 参数调用。
+- 验证结果：
+  - `pnpm test`：通过（5 files / 32 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`：通过。
+
+## 新任务：本地图片路径解析与粘贴落盘（2026-02-25）
+- [x] 写入实施计划并锁定策略（`/images` 按文档目录解释；粘贴图片使用全局附件库）
+- [x] 后端新增附件库命令（获取/设置/选择目录、保存图片二进制）
+- [x] 前端文件服务扩展附件库 API，并同步参数单测
+- [x] 调整媒体路径解析规则（支持根相对路径按文档目录解析）
+- [x] 编辑器接入粘贴图片落盘流程（未保存文档先触发保存）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加回顾
+
+### 回顾（本地图片路径解析与粘贴落盘）
+- `src/shared/utils/mediaSource.ts`：
+  - 新增根相对路径判定，`/images/...` 在存在 `documentPath` 时按文档所在目录解析；
+  - 文档路径缺失时保持原始根相对路径，避免误判。
+- `src-tauri/src/lib.rs`：
+  - 新增附件库命令：`pick/get/set_attachment_library_dir`、`save_image_bytes_to_library`；
+  - 新增 `AttachmentLibraryState`，并在保存图片时进行文件名清洗、同名冲突回避与目录兜底创建。
+- `src/features/file/fileService.ts` + `src/features/file/fileService.test.ts`：
+  - 扩展前端附件库 API 调用；
+  - 增加命令参数与调用路径单测覆盖。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 注册剪贴板图片粘贴处理；
+  - 未保存文档时通过上层回调先触发保存；
+  - 首次粘贴引导选择附件库目录并持久化；
+  - 图片以 `日期+随机后缀` 命名，落盘后插入 `file://` 源地址。
+- `src/App.tsx`：
+  - 新增 `onEnsureDocumentPath` 回调供编辑器粘贴流程复用保存链路；
+  - 将编辑器粘贴错误统一接入现有错误提示条。
+- 验证结果：
+  - `pnpm test`：通过（6 files / 41 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`：通过。
+
+## 新任务：粘贴图片流程修正（2026-02-25）
+- [x] 去除“未保存文档必须先保存才能粘贴图片”的前置限制
+- [x] 保持首次粘贴优先走附件库目录选择
+- [x] 清理 `App` 与编辑器中不再需要的 `onEnsureDocumentPath` 逻辑
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（粘贴图片流程修正）
+- 背景：用户反馈粘贴图片时先弹出“保存 md”，并出现 `Image paste canceled because the document was not saved.`，与预期不符。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 删除粘贴前强制保存文档的流程；
+  - 即使文档未保存，也允许直接走附件库目录选择并落盘图片；
+  - 保留出错提示：仅在附件库未选择或保存失败时提示。
+- `src/App.tsx`：
+  - 删除仅为粘贴图片引入的 `ensureDocumentPath` 与 `onEnsureDocumentPath` 传参。
+- 验证结果：
+  - `pnpm test`：通过（6 files / 41 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：错误提示改为 Toast（2026-02-25）
+- [x] 将错误展示从页面横幅改为 Toast
+- [x] 统一错误入口（任务执行异常、编辑器上报异常、启动读取异常）触发 Toast
+- [x] 移除已废弃 `error-banner` 样式与 JSX
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（错误提示改为 Toast）
+- `src/App.tsx`：
+  - 新增 BaseUI `ToasterContainer`（右上角、可关闭、自动隐藏）；
+  - 新增 `notifyError`，统一使用 `toaster.negative(...)` 展示错误；
+  - `runBusyTask`/编辑器错误回调/启动读取异常改为走 `notifyError`。
+- `src/styles.css`：
+  - 删除不再使用的 `.error-banner`、`.error-dismiss` 及 classic 覆盖样式。
+- 验证结果：
+  - `pnpm test`：通过（6 files / 41 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：Toast 交互与样式调优（2026-02-25）
+- [x] 调整 toast 位置为右下角，更接近系统通知
+- [x] 将 toast 持续时间调整为更短停留（3.2s）
+- [x] 调整 toast 为更扁平视觉（小圆角、细边框、轻阴影、紧凑文字）
+- [x] 保持错误状态自动清理，避免状态栏长期停留在 `error`
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（Toast 交互与样式调优）
+- `src/App.tsx`：
+  - 新增 `TOAST_AUTO_HIDE_MS = 3200`；
+  - `ToasterContainer` 从 `topRight` 调整为 `bottomRight`；
+  - 增加 `ToastBody/ToastInnerContainer/ToastCloseIcon` 覆盖样式，视觉更贴近系统通知；
+  - `notifyError` 增加自动清理定时器，同步清空 `errorMessage`。
+- 验证结果：
+  - `pnpm test`：通过（6 files / 41 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：Toast 原生化细调（2026-02-25）
+- [x] 进一步降低圆角（更接近 Windows 通知）
+- [x] 进一步减弱阴影（更扁平）
+- [x] 运行验证：`pnpm build`
+
+### 回顾（Toast 原生化细调）
+- `src/App.tsx`：
+  - `ToastBody.borderRadius` 从 `10px` 调整为 `7px`；
+  - `ToastBody.boxShadow` 从 `0 8px 18px rgba(0, 0, 0, 0.16)` 调整为 `0 3px 10px rgba(0, 0, 0, 0.12)`。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：边框更细更灰（2026-02-25）
+- [x] Toast 边框改为更细更灰
+- [x] Classic UI 最外层容器边框改为更细更灰
+- [x] 运行验证：`pnpm build`
+
+### 回顾（边框更细更灰）
+- `src/App.tsx`：
+  - `ToastBody.borderWidth` 从 `1px` 调整为 `0.5px`；
+  - `ToastBody.borderColor` 调整为更灰的 `color-mix(in srgb, var(--text-secondary) 34%, transparent)`。
+- `src/styles.css`：
+  - `theme-light.ui-classic` 的 `--app-shell-border` 从 `#b9b9b9` 调整为 `#c6c6c6`；
+  - `theme-dark.ui-classic` 的 `--app-shell-border` 从 `#4a4a4a` 调整为 `#5a5a5a`；
+  - `.app-root.ui-classic` 新增 `border-width: 0.5px`。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：首次粘贴图片先应用内确认（2026-02-25）
+- [x] 在首次粘贴图片且未配置附件库目录时，先弹应用内说明对话框
+- [x] 点击“选择全局文件夹”后再触发系统目录选择窗口
+- [x] 保持取消链路可回退，并使用 toast 给出取消提示
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（首次粘贴图片先应用内确认）
+- `src/features/file/AttachmentLibrarySetupModal.tsx`：
+  - 新增首次粘贴引导弹窗，包含“取消”和“选择全局文件夹”两个动作。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增首次粘贴确认状态与 Promise 解析器；
+  - `ensureAttachmentLibraryDirectory` 在首次无配置时先等待应用内确认，再调用目录选择器；
+  - 取消时返回并通过现有错误入口触发 toast。
+- 验证结果：
+  - `pnpm test`：通过（6 files / 41 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：图片缩放装饰条位置与样式微调（2026-02-25）
+- [x] 装饰条颜色改为灰色
+- [x] 装饰条宽度降为当前的 1/3
+- [x] 装饰条移到图片左右外侧，距离边缘 1px
+- [x] 运行验证：`pnpm build`
+
+### 回顾（图片缩放装饰条位置与样式微调）
+- `src/styles.css`：
+  - `.media-shell` 的 `overflow` 从 `hidden` 调整为 `visible`，以允许装饰条显示在图片外侧；
+  - `.media-resize-handle` 宽度从 `8px` 调整为 `calc(8px / 3)`，并改为灰色；
+  - `.media-resize-handle.left` 调整为 `left: -1px; transform: translateX(-100%);`；
+  - `.media-resize-handle.right` 调整为 `right: -1px; transform: translateX(100%);`；
+  - 移除内部双线伪元素，保留单条装饰条视觉。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：本地图片 `\\?\` 路径兼容修复（2026-02-25）
+- [x] 修复 `resolveMediaSource` 对 Windows verbatim 路径 `\\?\` 的识别与归一化
+- [x] 兼容历史错误链接 `file://?/C%3A/...` 的渲染回退
+- [x] 后端路径归一化时剥离 `\\?\` 前缀，避免继续产出异常路径
+- [x] 增加测试覆盖（verbatim 路径、历史错误链接、verbatim 文档路径相对解析）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（本地图片 `\\?\` 路径兼容修复）
+- `src/shared/utils/mediaSource.ts`：
+  - 新增 `stripWindowsVerbatimPrefix`，将 `\\?\C:\...`/`\\?\UNC\...` 归一化为常规 Windows 路径；
+  - 新增 `tryNormalizeLegacyVerbatimFileUrl`，将历史错误链接 `file://?/C%3A/...` 修正为可用本地路径再转 `file:///...`；
+  - `getDirectoryPath` 与 `resolveMediaSource` 增强 verbatim 兼容，避免相对路径解析产出 `file://?/...`。
+- `src/shared/utils/mediaSource.test.ts`：
+  - 增加 3 组用例：verbatim 绝对路径、verbatim 文档路径的相对资源解析、`file://?/...` 历史链接修正。
+- `src-tauri/src/lib.rs`：
+  - `normalize_path` 增加 Windows verbatim 前缀剥离，防止后端继续返回 `\\?\...` 路径。
+- 验证结果：
+  - `pnpm test`：通过（6 files / 44 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`：通过。
+
+## 新任务：`file:///` 本地图片在 Tauri 中渲染失败修复（2026-02-25）
+- [x] 在 Tauri 运行时将本地 `file:///` 资源转换为 `asset:` 协议 URL
+- [x] 启用 `tauri.conf.json` 的 `assetProtocol` 并放开资源访问范围
+- [x] 增加 `file:///` 场景单测，避免回归
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（`file:///` 本地图片在 Tauri 中渲染失败修复）
+- `src/shared/utils/mediaSource.ts`：
+  - 新增 Tauri 运行时检测与 `convertFileSrc` 转换逻辑，本地路径/`file:///` 链接优先转换为 `asset:` URL；
+  - 新增 `tryFileUrlToLocalPath` 与 `normalizeFileUrlForRendering`，确保 `file:///C:/...` 也会进入资源协议转换链路。
+- `src-tauri/tauri.conf.json`：
+  - 开启 `app.security.assetProtocol.enable = true`；
+  - 配置 `scope: ["**"]` 允许当前应用读取本地资源用于渲染。
+- `src/shared/utils/mediaSource.test.ts`：
+  - 增加 “存在 Tauri runtime 时 `file:///` 通过资产协议转换” 单测。
+- 验证结果：
+  - `pnpm test`：通过（6 files / 45 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`：通过。
+
+## 新任务：粘贴 Markdown 图片语法自动渲染（2026-02-25）
+- [x] 支持将 `![](path)` / `![alt](path "title")` 粘贴文本直接转为图片节点
+- [x] 与现有剪贴板图片文件粘贴流程共存，优先识别真实图片文件
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（粘贴 Markdown 图片语法自动渲染）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增 `MARKDOWN_IMAGE_PATTERN` 与 `parseMarkdownImageFromText`；
+  - 在 `handleImagePaste` 中，先处理真实图片文件粘贴；若无文件，再识别纯文本 `![](...)` 并直接插入 `resizableImage` 节点；
+  - 支持 `alt` 与可选 `title` 透传，避免落为普通文本。
+- 验证结果：
+  - `pnpm test`：通过（6 files / 45 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：图片缩放装饰条高度再收敛（2026-02-25）
+- [x] 将装饰条高度调整为当前的 1/3
+- [x] 保持左右外侧 1px 偏移与既有宽度不变
+- [x] 运行验证：`pnpm build`
+
+### 回顾（图片缩放装饰条高度再收敛）
+- `src/styles.css`：
+  - `.media-resize-handle` 由 `top/bottom` 固定边距改为 `top: 50%` + `height: calc((100% - 16px) / 3)`，高度约为原来的 1/3；
+  - 左右句柄的 `transform` 更新为同时处理 X/Y 位移（`translate(..., -50%)`），保持垂直居中。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：Markdown 图片尺寸语法与同目录图片兼容（2026-02-25）
+- [x] 新增统一解析器，支持 `![](path)` 与 `![](path =400x/400x300)`
+- [x] 打开 Markdown 时在预处理阶段将 `=WxH` 图片语法转换为可渲染 `<img>`
+- [x] 粘贴文本时支持 `![](... =WxH)` 直接转图片节点并应用宽度
+- [x] 增加解析器与 codec 单测覆盖（尺寸语法 + 同目录图片）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（Markdown 图片尺寸语法与同目录图片兼容）
+- `src/features/editor/markdownImageSyntax.ts`（新增）：
+  - 统一解析 `![](...)` 与 `![](... =WxH)`；
+  - 新增 `widthPxToPercent`，将像素宽度映射到编辑器宽度百分比。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 粘贴文本改为复用统一解析器；
+  - 对 `![](... =400x)` 解析出宽度并应用到 `resizableImage.width`。
+- `src/features/editor/markdownCodec.ts`：
+  - 在 `preprocessMarkdown` 中新增 `=WxH` 图片语法重写为 `<img ... data-width="...">`；
+  - 保证含尺寸语法的历史文档在打开时直接渲染为图片。
+- `src/features/editor/markdownImageSyntax.test.ts`（新增）：
+  - 覆盖标准图片、尺寸语法、链接不误判、像素宽度换算边界。
+- `src/features/editor/markdownCodec.test.ts`：
+  - 新增 `=400x` 语法渲染与同目录图片 `![aabb](image33.jpg)` 可渲染用例。
+- 验证结果：
+  - `pnpm test`：通过（7 files / 52 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`：通过。
+
+## 新任务：Obsidian 图片语法补充兼容（2026-02-26）
+- [x] 支持 `![](... =x300)` 高度优先尺寸写法（用于渲染宽度换算兜底）
+- [x] 支持 `![[Pasted image ...]]` Obsidian 内嵌图片语法
+- [x] 粘贴文本解析与文件打开预处理共用同一解析器，避免链路不一致
+- [x] 增加单测覆盖（`=x300`、`![[...]]`、长文件名同目录图片）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（Obsidian 图片语法补充兼容）
+- `src/features/editor/markdownImageSyntax.ts`：
+  - `MARKDOWN_IMAGE_PATTERN` 扩展为支持 `=x300`；
+  - 新增 `parseObsidianEmbedImageSyntax`，支持 `![[file.png]]` 与可选尺寸参数；
+  - 尺寸结构调整为 `widthPx | heightPx` 均可为空，兼容宽/高单侧输入。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 粘贴文本解析链路改为：`parseMarkdownImageSyntax` -> `parseObsidianEmbedImageSyntax`；
+  - 当仅提供高度（如 `=x300`）时，使用高度值做宽度换算兜底，保证可渲染与可见尺寸变化。
+- `src/features/editor/markdownCodec.ts`：
+  - 新增 `rewriteObsidianEmbedImages`，将 `![[...]]` 预处理为 `<img ...>`；
+  - `=WxH` 预处理扩展为支持 `=x300`，统一走 `toImageTag` 生成逻辑。
+- 新增/更新测试：
+  - `src/features/editor/markdownImageSyntax.test.ts` 增加 `=x300` 与 Obsidian 语法测试；
+  - `src/features/editor/markdownCodec.test.ts` 增加 `=x300`、`![[...]]`、长文件名同目录图片测试。
+- 验证结果：
+  - `pnpm test`：通过（7 files / 57 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`：通过。
+
+## 新任务：Slash 菜单宽度与表格命令精简（2026-02-25）
+- [x] 将 slash 菜单宽度收敛为仅容纳 3 个图标列
+- [x] 将 slash 图标网格间距统一为 `4px`
+- [x] 移除 slash 菜单中的表格增删行列命令（保留插入/删除整表）
+- [x] 运行验证：`pnpm build`
+
+### 回顾（Slash 菜单宽度与表格命令精简）
+- `src/styles.css`：
+  - `.slash-menu` 改为固定三列图标宽度计算，移除原先 `620px` 宽菜单；
+  - `.slash-group-grid` 间距改为 `4px`，并固定为三列图标槽位；
+  - `.slash-item` 宽高统一按图标槽位收敛，query 行补充省略显示避免窄宽度换行。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 从 `slashItems` 中移除 `table-add-row`、`table-add-column`、`table-delete-row`、`table-delete-column`；
+  - 清理未使用图标导入 `Plus`。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：Slash 菜单滚动条与表格按钮精简（2026-02-25）
+- [x] 隐藏 slash 菜单滚动条（保留滚动能力）
+- [x] 移除 slash 菜单中的 `Delete Table`
+- [x] 移除编辑器浮动工具栏中的 `Add/Delete Row`、`Add/Delete Column` 按钮
+- [x] 运行验证：`pnpm build`
+
+### 回顾（Slash 菜单滚动条与表格按钮精简）
+- `src/styles.css`：
+  - `.slash-menu` 新增 `scrollbar-width: none` 与 `-ms-overflow-style: none`；
+  - 新增 `.slash-menu::-webkit-scrollbar { display: none; width: 0; height: 0; }`；
+  - 删除已无引用的 `.bubble-table-btn` 与 `.bubble-table-label` 样式。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 从 slash 命令列表移除 `table-delete`；
+  - 删除浮动工具栏表格快捷按钮块（`R+ / C+ / R- / C-`）及相关 `isTableSelection` 逻辑。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：Slash 菜单宽度再增加 4px（2026-02-25）
+- [x] 在当前宽度基础上再增加 `4px`（`+6px` -> `+10px`）
+- [x] 复核 `Delete Table` 与 `Add/Delete Row/Column` 不在当前菜单项中
+- [x] 运行验证：`pnpm build`
+
+### 回顾（Slash 菜单宽度再增加 4px）
+- `src/styles.css`：
+  - `.slash-menu` 宽度公式从
+    `calc(var(--slash-item-slot-size) * 3 + var(--slash-item-gap) * 2 + 6px)`
+    调整为
+    `calc(var(--slash-item-slot-size) * 3 + var(--slash-item-gap) * 2 + 10px)`。
+- `src/features/editor/MarkdownEditor.tsx`（复核）：
+  - slash 命令中当前仅保留 `table`（插入表格），不存在 `table-delete`；
+  - 不存在 `table-add-row/table-add-column/table-delete-row/table-delete-column`；
+  - 编辑器浮动菜单中无 `Add/Delete Row/Column` 按钮块。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：Slash 与表格划词菜单职责分离（2026-02-26）
+- [x] 保持 slash 菜单不包含 `Add/Delete Row`、`Add/Delete Column`、`Delete Table`
+- [x] 在表格选区的划词菜单恢复 `Add/Delete Row`、`Add/Delete Column` 按钮
+- [x] 修正 slash 菜单中 `H1-H4` 图标映射（不再全部使用 `H2`）
+- [x] 运行验证：`pnpm build`
+
+### 回顾（Slash 与表格划词菜单职责分离）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - slash 命令列表维持无 `table-delete` 与无行列增删命令；
+  - 划词菜单按 `isTableSelection` 条件恢复 `R+`、`C+`、`R-`、`C-` 四个按钮；
+  - `Heading 1/2/3/4` 图标分别切换为 `Heading1/Heading2/Heading3/Heading4`。
+- `src/styles.css`：
+  - 恢复 `bubble-table-btn` 与 `bubble-table-label` 样式，匹配划词菜单按钮展示。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：发布 0.1.4 安装包（2026-02-26）
+- [x] 版本号统一提升 `+0.0.1` 至 `0.1.4`（`package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`）
+- [x] 构建 NSIS 安装包
+- [x] 提交并推送到 `origin/main`
+- [x] 创建并推送标签 `v0.1.4`
+- [x] 创建 GitHub Release 并上传安装包
+
+### 回顾（0.1.4 发布）
+- 版本号：
+  - `package.json` -> `0.1.4`
+  - `src-tauri/Cargo.toml` -> `0.1.4`
+  - `src-tauri/tauri.conf.json` -> `0.1.4`
+- 构建产物：
+  - `src-tauri/target/release/bundle/nsis/MDPad_0.1.4_x64-setup.exe`
+  - `sha256: 2606f452db2030f88a745fb14a475b5607ccf3650101762d9bf00cf83268d795`
+- 发布地址：
+  - `https://github.com/endearqb/MDPad/releases/tag/v0.1.4`

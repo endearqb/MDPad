@@ -1,6 +1,12 @@
 import TurndownService from "turndown";
 import { marked } from "marked";
 import { gfm } from "turndown-plugin-gfm";
+import {
+  hasMarkdownImageSizeHint,
+  parseObsidianEmbedImageSyntax,
+  parseMarkdownImageSyntax,
+  widthPxToPercent
+} from "./markdownImageSyntax";
 
 marked.setOptions({
   async: false,
@@ -108,6 +114,72 @@ function rewriteInlineMath(source: string): string {
   }
 
   return output;
+}
+
+const MARKDOWN_IMAGE_WITH_SIZE_CANDIDATE_PATTERN =
+  /!\[[^\]\n]*\]\([^)\n]*=\s*\d*x\d*\s*\)/gu;
+const OBSIDIAN_IMAGE_EMBED_CANDIDATE_PATTERN = /!\[\[[^\]\n]+\]\]/gu;
+
+function toImageTag(attrs: {
+  src: string;
+  alt: string;
+  title: string | null;
+  widthPercent: number | null;
+  heightPx: number | null;
+}): string {
+  const altPart = attrs.alt ? ` alt="${escapeHtmlAttr(attrs.alt)}"` : "";
+  const titlePart = attrs.title ? ` title="${escapeHtmlAttr(attrs.title)}"` : "";
+  const widthPart =
+    attrs.widthPercent !== null ? ` data-width="${attrs.widthPercent}"` : "";
+  const heightPart =
+    attrs.heightPx !== null ? ` data-height-px="${attrs.heightPx}"` : "";
+  return `<img src="${escapeHtmlAttr(attrs.src)}"${altPart}${titlePart}${widthPart}${heightPart} />`;
+}
+
+function rewriteMarkdownImageSizeHints(line: string): string {
+  if (!hasMarkdownImageSizeHint(line)) {
+    return line;
+  }
+
+  return line.replace(MARKDOWN_IMAGE_WITH_SIZE_CANDIDATE_PATTERN, (candidate) => {
+    const parsed = parseMarkdownImageSyntax(candidate);
+    if (!parsed || !parsed.size) {
+      return candidate;
+    }
+
+    const hintedWidthPx = parsed.size.widthPx ?? parsed.size.heightPx;
+    const width = hintedWidthPx ? widthPxToPercent(hintedWidthPx) : null;
+    return toImageTag({
+      src: parsed.src,
+      alt: parsed.alt,
+      title: parsed.title,
+      widthPercent: width,
+      heightPx: parsed.size.heightPx
+    });
+  });
+}
+
+function rewriteObsidianEmbedImages(line: string): string {
+  if (!line.includes("![[")) {
+    return line;
+  }
+
+  return line.replace(OBSIDIAN_IMAGE_EMBED_CANDIDATE_PATTERN, (candidate) => {
+    const parsed = parseObsidianEmbedImageSyntax(candidate);
+    if (!parsed) {
+      return candidate;
+    }
+
+    const hintedWidthPx = parsed.size?.widthPx ?? parsed.size?.heightPx ?? null;
+    const width = hintedWidthPx ? widthPxToPercent(hintedWidthPx) : null;
+    return toImageTag({
+      src: parsed.src,
+      alt: parsed.alt,
+      title: parsed.title,
+      widthPercent: width,
+      heightPx: parsed.size?.heightPx ?? null
+    });
+  });
 }
 
 type TaskLine = {
@@ -259,7 +331,11 @@ function preprocessMarkdown(markdown: string): string {
     }
 
     flushTasks();
-    output.push(rewriteInlineMath(line));
+    output.push(
+      rewriteInlineMath(
+        rewriteObsidianEmbedImages(rewriteMarkdownImageSizeHints(line))
+      )
+    );
   }
 
   flushTasks();

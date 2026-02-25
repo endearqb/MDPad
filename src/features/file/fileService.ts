@@ -12,7 +12,7 @@ export async function saveFileAsDialog(
   defaultName: string
 ): Promise<string | null> {
   return invoke<string | null>("save_file_as_dialog", {
-    default_name: defaultName
+    defaultName
   });
 }
 
@@ -33,7 +33,7 @@ export async function renameFile(
 ): Promise<string> {
   return invoke<string>("rename_file", {
     path,
-    new_base_name: newBaseName
+    newBaseName
   });
 }
 
@@ -42,5 +42,29 @@ export async function createDocumentWindow(
 ): Promise<void> {
   return invoke<void>("create_document_window", {
     path: path ?? null
+  });
+}
+
+export async function pickAttachmentLibraryDir(): Promise<string | null> {
+  return invoke<string | null>("pick_attachment_library_dir");
+}
+
+export async function getAttachmentLibraryDir(): Promise<string | null> {
+  return invoke<string | null>("get_attachment_library_dir");
+}
+
+export async function setAttachmentLibraryDir(path: string): Promise<void> {
+  return invoke<void>("set_attachment_library_dir", {
+    path
+  });
+}
+
+export async function saveImageBytesToLibrary(
+  fileName: string,
+  bytes: number[]
+): Promise<string> {
+  return invoke<string>("save_image_bytes_to_library", {
+    fileName,
+    bytes
   });
 }

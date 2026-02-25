@@ -9,6 +9,7 @@ import {
   useState
 } from "react";
 import { BaseProvider, DarkTheme, LightTheme } from "baseui";
+import { PLACEMENT, ToasterContainer, toaster } from "baseui/toast";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { PhysicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -105,6 +106,7 @@ function extractDropPaths(event: unknown): string[] {
 const WINDOW_SIZE_STORAGE_KEY = "mdpad.window-size.v1";
 const MIN_WINDOW_WIDTH = 420;
 const MIN_WINDOW_HEIGHT = 320;
+const TOAST_AUTO_HIDE_MS = 3200;
 
 type PersistedWindowSize = {
   width: number;
@@ -161,10 +163,19 @@ export default function App() {
 
   const docRef = useRef(doc);
   const allowCloseRef = useRef(false);
+  const errorClearTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     docRef.current = doc;
   }, [doc]);
+
+  useEffect(() => {
+    return () => {
+      if (errorClearTimerRef.current !== null) {
+        window.clearTimeout(errorClearTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const marker = doc.isDirty ? "*" : "";
@@ -260,17 +271,31 @@ export default function App() {
     });
   }, []);
 
+  const notifyError = useCallback((message: string) => {
+    if (errorClearTimerRef.current !== null) {
+      window.clearTimeout(errorClearTimerRef.current);
+    }
+    setErrorMessage(message);
+    toaster.negative(message, {
+      autoHideDuration: TOAST_AUTO_HIDE_MS
+    });
+    errorClearTimerRef.current = window.setTimeout(() => {
+      setErrorMessage(null);
+      errorClearTimerRef.current = null;
+    }, TOAST_AUTO_HIDE_MS);
+  }, []);
+
   const runBusyTask = useCallback(async (task: () => Promise<void>) => {
     try {
       setIsBusy(true);
       setErrorMessage(null);
       await task();
     } catch (error) {
-      setErrorMessage(formatError(error));
+      notifyError(formatError(error));
     } finally {
       setIsBusy(false);
     }
-  }, []);
+  }, [notifyError]);
 
   const openPathInCurrentWindow = useCallback(
     async (path: string) => {
@@ -426,6 +451,10 @@ export default function App() {
     []
   );
 
+  const handleEditorError = useCallback((message: string) => {
+    notifyError(message);
+  }, [notifyError]);
+
   const handleToggleUiTheme = useCallback(() => {
     setUiTheme((current) => (current === "modern" ? "classic" : "modern"));
   }, []);
@@ -478,7 +507,7 @@ export default function App() {
         try {
           initialPath = await getInitialFile();
         } catch (error) {
-          setErrorMessage(formatError(error));
+          notifyError(formatError(error));
         }
 
         if (initialPath) {
@@ -547,7 +576,7 @@ export default function App() {
         unlistenDropEvent();
       }
     };
-  }, [openPathInCurrentWindow, openPathInNewWindow, runBusyTask]);
+  }, [notifyError, openPathInCurrentWindow, openPathInNewWindow, runBusyTask]);
 
   return (
     <BaseProvider theme={themeMode === "dark" ? DarkTheme : LightTheme}>
@@ -555,8 +584,7 @@ export default function App() {
         className={[
           "app-root",
           themeMode === "dark" ? "theme-dark dark" : "theme-light",
-          uiTheme === "classic" ? "ui-classic" : "ui-modern",
-          errorMessage ? "has-error" : ""
+          uiTheme === "classic" ? "ui-classic" : "ui-modern"
         ].join(" ")}
       >
         <div className="workspace-shell">
@@ -577,19 +605,6 @@ export default function App() {
             themeMode={themeMode}
           />
 
-          {errorMessage && (
-            <div className="error-banner">
-              <span>{errorMessage}</span>
-              <button
-                className="error-dismiss"
-                onClick={() => setErrorMessage(null)}
-                type="button"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
           <main className="app-main">
             {!isStartupReady ? (
               <div className="editor-loading">Loading document...</div>
@@ -598,6 +613,7 @@ export default function App() {
                 <MarkdownEditor
                   documentPath={doc.currentPath}
                   markdown={doc.content}
+                  onEditorError={handleEditorError}
                   onMarkdownChange={(content) =>
                     dispatch({ type: "update_content", content })
                   }
@@ -625,6 +641,50 @@ export default function App() {
             pendingAction={pendingAction}
           />
         </Suspense>
+
+        <ToasterContainer
+          autoHideDuration={TOAST_AUTO_HIDE_MS}
+          closeable
+          placement={PLACEMENT.bottomRight}
+          overrides={{
+            Root: {
+              style: {
+                zIndex: 1400
+              }
+            },
+            ToastBody: {
+              style: {
+                borderRadius: "7px",
+                borderWidth: "0.5px",
+                borderStyle: "solid",
+                borderColor:
+                  "color-mix(in srgb, var(--text-secondary) 34%, transparent)",
+                backgroundColor:
+                  "color-mix(in srgb, var(--editor-bg) 96%, transparent)",
+                color: "var(--text-primary)",
+                boxShadow: "0 3px 10px rgba(0, 0, 0, 0.12)",
+                minWidth: "280px",
+                maxWidth: "360px"
+              }
+            },
+            ToastInnerContainer: {
+              style: {
+                fontSize: "12px",
+                fontWeight: 500,
+                lineHeight: "1.42",
+                paddingTop: "10px",
+                paddingBottom: "10px",
+                paddingLeft: "12px",
+                paddingRight: "12px"
+              }
+            },
+            ToastCloseIcon: {
+              style: {
+                color: "var(--text-secondary)"
+              }
+            }
+          }}
+        />
       </div>
     </BaseProvider>
   );

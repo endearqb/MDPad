@@ -30,14 +30,16 @@ import {
   CheckSquare,
   ChevronDown,
   Code2,
+  Heading1,
   Heading2,
+  Heading3,
+  Heading4,
   ImageIcon,
   Italic,
   Link2,
   List,
   ListOrdered,
   Minus,
-  Plus,
   Pilcrow,
   Sigma,
   Table2,
@@ -46,6 +48,11 @@ import {
 } from "lucide-react";
 import "katex/dist/katex.min.css";
 import { htmlToMarkdown, markdownToHtml } from "./markdownCodec";
+import {
+  parseObsidianEmbedImageSyntax,
+  parseMarkdownImageSyntax,
+  widthPxToPercent
+} from "./markdownImageSyntax";
 import { CalloutBlockquote } from "./extensions/calloutBlockquote";
 import { BlockMath, InlineMath } from "./extensions/mathExtensions";
 import {
@@ -63,11 +70,24 @@ import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
 import { resolveMediaSource } from "../../shared/utils/mediaSource";
+import { getFileBaseName } from "../../shared/utils/path";
+import {
+  getAttachmentLibraryDir,
+  pickAttachmentLibraryDir,
+  saveImageBytesToLibrary,
+  setAttachmentLibraryDir
+} from "../file/fileService";
+import {
+  readAttachmentLibraryDirPreference,
+  writeAttachmentLibraryDirPreference
+} from "../../shared/utils/attachmentPreferences";
+import AttachmentLibrarySetupModal from "../file/AttachmentLibrarySetupModal";
 
 interface MarkdownEditorProps {
   markdown: string;
   documentPath: string | null;
   onMarkdownChange: (markdown: string) => void;
+  onEditorError?: (message: string) => void;
   onStatsChange?: (stats: EditorStats) => void;
 }
 
@@ -78,6 +98,99 @@ interface EditorStats {
 
 type TextStyleValue = "paragraph" | 1 | 2 | 3 | 4;
 const lowlight = createLowlight(common);
+const IMAGE_MIME_EXTENSION_MAP: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/bmp": "bmp",
+  "image/tiff": "tiff",
+  "image/x-icon": "ico"
+};
+const IMAGE_FILE_EXTENSION_SET = new Set<string>([
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "gif",
+  "bmp",
+  "tiff",
+  "ico"
+]);
+
+function pad2(value: number): string {
+  return value.toString().padStart(2, "0");
+}
+
+function formatTimestamp(date: Date): string {
+  return [
+    date.getFullYear().toString(),
+    pad2(date.getMonth() + 1),
+    pad2(date.getDate()),
+    "-",
+    pad2(date.getHours()),
+    pad2(date.getMinutes()),
+    pad2(date.getSeconds())
+  ].join("");
+}
+
+function randomSuffix(length: number): string {
+  return Math.random()
+    .toString(36)
+    .slice(2, 2 + length)
+    .padEnd(length, "0");
+}
+
+function isImageMimeType(value: string): boolean {
+  return value.toLowerCase().startsWith("image/");
+}
+
+function isImageFile(file: File): boolean {
+  if (isImageMimeType(file.type)) {
+    return true;
+  }
+  const extension = file.name.match(/\.([A-Za-z0-9]+)$/u)?.[1]?.toLowerCase();
+  return extension ? IMAGE_FILE_EXTENSION_SET.has(extension) : false;
+}
+
+function guessImageExtension(file: File): string {
+  const mime = file.type.toLowerCase();
+  const byMime = IMAGE_MIME_EXTENSION_MAP[mime];
+  if (byMime) {
+    return byMime;
+  }
+
+  const byName = file.name.match(/\.([A-Za-z0-9]+)$/u)?.[1]?.toLowerCase();
+  if (byName && IMAGE_FILE_EXTENSION_SET.has(byName)) {
+    return byName;
+  }
+
+  return "png";
+}
+
+function buildAttachmentImageName(
+  documentPath: string | null,
+  extension: string
+): string {
+  const docBaseName = getFileBaseName(documentPath) || "untitled";
+  const normalizedBase = docBaseName
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const prefix = normalizedBase || "untitled";
+  return `${prefix}-img-${formatTimestamp(new Date())}-${randomSuffix(6)}.${extension}`;
+}
+
+function formatErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim() !== "") {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim() !== "") {
+    return error;
+  }
+  return fallback;
+}
 
 function buildEditorStats(editor: Editor): EditorStats {
   const text = editor.getText();
@@ -116,12 +229,19 @@ export default function MarkdownEditor({
   markdown,
   documentPath,
   onMarkdownChange,
+  onEditorError,
   onStatsChange
 }: MarkdownEditorProps) {
   const skipNextUpdate = useRef(false);
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
   const documentPathRef = useRef<string | null>(documentPath);
+  const onEditorErrorRef = useRef(onEditorError);
+  const editorRef = useRef<Editor | null>(null);
+  const firstPasteSetupResolverRef = useRef<((confirmed: boolean) => void) | null>(
+    null
+  );
   const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
+  const [isAttachmentSetupOpen, setIsAttachmentSetupOpen] = useState(false);
 
   const emitStats = useCallback(
     (activeEditor: Editor) => {
@@ -136,6 +256,192 @@ export default function MarkdownEditor({
   useEffect(() => {
     documentPathRef.current = documentPath;
   }, [documentPath]);
+
+  useEffect(() => {
+    onEditorErrorRef.current = onEditorError;
+  }, [onEditorError]);
+
+  useEffect(() => {
+    return () => {
+      if (firstPasteSetupResolverRef.current) {
+        firstPasteSetupResolverRef.current(false);
+        firstPasteSetupResolverRef.current = null;
+      }
+    };
+  }, []);
+
+  const reportEditorError = useCallback((message: string) => {
+    const handler = onEditorErrorRef.current;
+    if (handler) {
+      handler(message);
+      return;
+    }
+    console.error(message);
+  }, []);
+
+  const requestAttachmentLibrarySetup = useCallback((): Promise<boolean> => {
+    return new Promise((resolve) => {
+      firstPasteSetupResolverRef.current = resolve;
+      setIsAttachmentSetupOpen(true);
+    });
+  }, []);
+
+  const resolveAttachmentLibrarySetup = useCallback((confirmed: boolean) => {
+    setIsAttachmentSetupOpen(false);
+    const resolver = firstPasteSetupResolverRef.current;
+    firstPasteSetupResolverRef.current = null;
+    if (resolver) {
+      resolver(confirmed);
+    }
+  }, []);
+
+  const ensureAttachmentLibraryDirectory = useCallback(async (): Promise<string | null> => {
+    const preferredPath = readAttachmentLibraryDirPreference();
+    if (preferredPath) {
+      try {
+        await setAttachmentLibraryDir(preferredPath);
+        return preferredPath;
+      } catch {
+        // Continue with backend or picker fallback.
+      }
+    }
+
+    const backendPath = await getAttachmentLibraryDir();
+    if (backendPath) {
+      writeAttachmentLibraryDirPreference(backendPath);
+      return backendPath;
+    }
+
+    const shouldOpenPicker = await requestAttachmentLibrarySetup();
+    if (!shouldOpenPicker) {
+      return null;
+    }
+
+    const pickedPath = await pickAttachmentLibraryDir();
+    if (!pickedPath) {
+      return null;
+    }
+
+    await setAttachmentLibraryDir(pickedPath);
+    writeAttachmentLibraryDirPreference(pickedPath);
+    return pickedPath;
+  }, [requestAttachmentLibrarySetup]);
+
+  const handleImagePaste = useCallback(
+    (event: ClipboardEvent, activeEditor: Editor): boolean => {
+      const clipboardData = event.clipboardData;
+      if (!clipboardData) {
+        return false;
+      }
+
+      const imageFromFiles = Array.from(clipboardData.files).find(isImageFile);
+      const imageFromItems = imageFromFiles
+        ? null
+        : Array.from(clipboardData.items).find(
+            (item) => item.kind === "file" && isImageMimeType(item.type)
+          );
+      const imageFile = imageFromFiles ?? imageFromItems?.getAsFile() ?? null;
+      if (imageFile) {
+        event.preventDefault();
+        const selection = activeEditor.state.selection;
+
+        void (async () => {
+          try {
+            const currentDocumentPath = documentPathRef.current;
+
+            const attachmentLibraryDirectory = await ensureAttachmentLibraryDirectory();
+            if (!attachmentLibraryDirectory) {
+              reportEditorError(
+                "Image paste canceled because attachment library directory was not selected."
+              );
+              return;
+            }
+
+            await setAttachmentLibraryDir(attachmentLibraryDirectory);
+            const extension = guessImageExtension(imageFile);
+            const imageFileName = buildAttachmentImageName(
+              currentDocumentPath,
+              extension
+            );
+            const imageBytes = Array.from(
+              new Uint8Array(await imageFile.arrayBuffer())
+            );
+            const savedImagePath = await saveImageBytesToLibrary(
+              imageFileName,
+              imageBytes
+            );
+            const imageSource = resolveMediaSource(
+              savedImagePath,
+              currentDocumentPath
+            );
+
+            activeEditor
+              .chain()
+              .focus()
+              .insertContentAt(
+                {
+                  from: selection.from,
+                  to: selection.to
+                },
+                {
+                  type: "resizableImage",
+                  attrs: {
+                    src: imageSource,
+                    alt: "",
+                    width: mediaDefaults.defaultWidth
+                  }
+                }
+              )
+              .run();
+          } catch (error) {
+            reportEditorError(
+              formatErrorMessage(error, "Failed to paste image from clipboard.")
+            );
+          }
+        })();
+
+        return true;
+      }
+
+      const pastedText = clipboardData.getData("text/plain");
+      const markdownImage =
+        parseMarkdownImageSyntax(pastedText) ??
+        parseObsidianEmbedImageSyntax(pastedText);
+      if (!markdownImage) {
+        return false;
+      }
+
+      event.preventDefault();
+      const selection = activeEditor.state.selection;
+      const hintedWidthPx =
+        markdownImage.size?.widthPx ?? markdownImage.size?.heightPx ?? null;
+      const width = hintedWidthPx
+        ? widthPxToPercent(hintedWidthPx)
+        : mediaDefaults.defaultWidth;
+      activeEditor
+        .chain()
+        .focus()
+        .insertContentAt(
+          {
+            from: selection.from,
+            to: selection.to
+          },
+          {
+            type: "resizableImage",
+            attrs: {
+              src: markdownImage.src,
+              alt: markdownImage.alt,
+              title: markdownImage.title,
+              width
+            }
+          }
+        )
+        .run();
+
+      return true;
+    },
+    [ensureAttachmentLibraryDirectory, reportEditorError]
+  );
 
   const resolveMediaSrc = useCallback((src: string): string => {
     return resolveMediaSource(src, documentPathRef.current);
@@ -156,7 +462,7 @@ export default function MarkdownEditor({
         id: "h1",
         group: "Basic",
         label: "Heading 1",
-        icon: Heading2,
+        icon: Heading1,
         keywords: ["标题", "title", "h1"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run()
       },
@@ -172,7 +478,7 @@ export default function MarkdownEditor({
         id: "h3",
         group: "Basic",
         label: "Heading 3",
-        icon: Heading2,
+        icon: Heading3,
         keywords: ["标题", "h3"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run()
       },
@@ -180,7 +486,7 @@ export default function MarkdownEditor({
         id: "h4",
         group: "Basic",
         label: "Heading 4",
-        icon: Heading2,
+        icon: Heading4,
         keywords: ["标题", "h4"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 4 }).run()
       },
@@ -236,46 +542,6 @@ export default function MarkdownEditor({
             .focus()
             .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
             .run()
-      },
-      {
-        id: "table-add-row",
-        group: "Insert",
-        label: "Add Row",
-        icon: Plus,
-        keywords: ["table", "row", "行"],
-        run: (editor) => editor.chain().focus().addRowAfter().run()
-      },
-      {
-        id: "table-add-column",
-        group: "Insert",
-        label: "Add Column",
-        icon: Plus,
-        keywords: ["table", "column", "列"],
-        run: (editor) => editor.chain().focus().addColumnAfter().run()
-      },
-      {
-        id: "table-delete-row",
-        group: "Insert",
-        label: "Delete Row",
-        icon: Minus,
-        keywords: ["table", "row", "删除行"],
-        run: (editor) => editor.chain().focus().deleteRow().run()
-      },
-      {
-        id: "table-delete-column",
-        group: "Insert",
-        label: "Delete Column",
-        icon: Minus,
-        keywords: ["table", "column", "删除列"],
-        run: (editor) => editor.chain().focus().deleteColumn().run()
-      },
-      {
-        id: "table-delete",
-        group: "Insert",
-        label: "Delete Table",
-        icon: Minus,
-        keywords: ["table", "删除表格"],
-        run: (editor) => editor.chain().focus().deleteTable().run()
       },
       {
         id: "hr",
@@ -456,6 +722,13 @@ export default function MarkdownEditor({
       attributes: {
         class:
           "mdpad-editor prose max-w-none focus:outline-none selection:bg-blue-200 selection:text-blue-900 dark:selection:bg-blue-500/30 dark:selection:text-blue-200"
+      },
+      handlePaste: (_view, event) => {
+        const activeEditor = editorRef.current;
+        if (!activeEditor) {
+          return false;
+        }
+        return handleImagePaste(event, activeEditor);
       }
     },
     onUpdate({ editor: activeEditor }) {
@@ -467,6 +740,13 @@ export default function MarkdownEditor({
       onMarkdownChange(htmlToMarkdown(activeEditor.getHTML()));
     }
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+    return () => {
+      editorRef.current = null;
+    };
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) {
@@ -585,7 +865,6 @@ export default function MarkdownEditor({
     { value: 4, label: "H4" }
   ];
   const isTableSelection = editor?.isActive("table") ?? false;
-
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       if (!editor) {
@@ -774,6 +1053,19 @@ export default function MarkdownEditor({
       <div className="editor-surface">
         <EditorContent editor={editor} />
       </div>
+
+      <AttachmentLibrarySetupModal
+        isOpen={isAttachmentSetupOpen}
+        onCancel={() => {
+          resolveAttachmentLibrarySetup(false);
+        }}
+        onSelectFolder={() => {
+          resolveAttachmentLibrarySetup(true);
+        }}
+      />
     </div>
   );
 }
+
+
+

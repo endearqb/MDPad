@@ -40,3 +40,68 @@
 - Reworked layout to provide 10px transparent frame on each side (20px total larger than content).
 - Added medium drop shadows to titlebar and editor surfaces.
 - Revalidated full pipeline: lint, test, build, tauri build all passed.
+
+## 2026-02-25 Save/Save As Hotfix
+- 复现用户报错：点击 `Save` 与 `Save As` 均出现 `save_file_as_dialog missing required key defaultName`。
+- 代码定位到 `src/features/file/fileService.ts`：`save_file_as_dialog` 参数为 `default_name`，与 Tauri 期望不一致。
+- 实施最小修复：
+  - `default_name` -> `defaultName`
+  - `new_base_name` -> `newBaseName`（同类风险同步修复）
+- 追加后端兜底：`src-tauri/src/lib.rs` 中 `save_file_as_dialog` 入参改为 `Option<String>`，缺失或空值回退 `untitled.md`。
+- 新增测试 `src/features/file/fileService.test.ts`，首次运行遇到 Vitest hoist 问题（`Cannot access 'invokeMock' before initialization`），改为 `vi.hoisted` 后通过。
+- 最终验证：
+  - `pnpm test` 通过（5 files / 32 tests）
+  - `pnpm build` 通过
+  - `cargo check` 通过。
+
+## 2026-02-25 Local Image + Clipboard Persistence
+- 新增后端附件库状态与命令，支持选择目录、读取/设置目录、保存图片字节流。
+- 扩展 `fileService` 调用层并补齐参数断言测试。
+- 调整 `resolveMediaSource`：根相对路径在有文档路径时按文档目录解析。
+- 编辑器新增剪贴板图片处理：未保存文档先触发保存，目录首次选择后持久化，落盘后插入 `resizableImage`。
+- `App` 新增 `ensureDocumentPath` 回调，将编辑器错误接入现有错误横幅。
+- 验证通过：`pnpm test`、`pnpm build`、`cargo check`。
+
+## 2026-02-25 Clipboard flow correction
+- Applied user-requested behavior change: no save-md precondition for image paste.
+- Removed `onEnsureDocumentPath` pipeline between `App` and `MarkdownEditor`.
+- Clipboard paste now immediately uses attachment-library path logic.
+- Verification: `pnpm test` passed, `pnpm build` passed.
+
+## 2026-02-25 Error toast migration
+- Switched error display from inline banner to BaseUI toaster (`topRight`, closeable, auto-hide).
+- Centralized error reporting via `notifyError` in `App.tsx`.
+- Removed stale error-banner styles from `styles.css`.
+- Validation passed: `pnpm test`, `pnpm build`.
+
+## 2026-02-25 First-paste attachment setup modal
+- Added an in-app confirmation modal before opening folder picker on first image paste.
+- Folder picker now opens only after user confirms "Choose Global Folder".
+- Cancellation path keeps behavior non-destructive and reports via existing toast error channel.
+- Validation passed: `pnpm test`, `pnpm build`.
+
+## 2026-02-25 Media resize handle visual adjustment
+- Changed image resize handle to gray and reduced width to one third.
+- Moved left/right handles to 1px outside image edges.
+- Updated media shell overflow to keep outside handles visible.
+- Validation passed: `pnpm build`.
+
+## 2026-02-25 Local image verbatim-path compatibility fix
+- Fixed local media source normalization for Windows verbatim paths (`\\?\...`).
+- Added fallback normalization for legacy malformed links like `file://?/C%3A/...`.
+- Updated Rust path normalization to strip verbatim prefixes before returning paths to frontend.
+- Validation passed: `pnpm test`, `pnpm build`, `cargo check`.
+
+## 2026-02-25 Markdown image size-hint compatibility
+- Added unified markdown image parser to support `![](path)` and `![](path =400x/400x300)`.
+- Added markdown preprocess rewrite so size-hint images render as `<img ... data-width>` on file open.
+- Updated editor paste handling to convert size-hint markdown image text into image nodes.
+- Added tests for parser + codec scenarios, including same-directory image links.
+- Validation passed: `pnpm test`, `pnpm build`, `cargo check`.
+
+## 2026-02-26 Obsidian image syntax follow-up
+- Added support for height-only hint syntax `![](path =x300)`.
+- Added support for Obsidian embed syntax `![[Pasted image ...]]`.
+- Unified paste-text parser and markdown-open preprocessing to share the same image syntax rules.
+- Added regression tests for `=x300`, Obsidian embeds, and long same-directory filenames.
+- Validation passed: `pnpm test`, `pnpm build`, `cargo check`.

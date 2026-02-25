@@ -36,3 +36,44 @@
 - Implemented transparent host window and moved depth cues to custom card shadows.
 - Realized 20px larger window requirement by applying 10px frame padding around the content container.
 - Locked titlebar alignment rule: left icon tools, center document title, right-aligned window controls.
+
+## 2026-02-25
+
+### F-008 Save/Save As 参数命名根因
+- 报错 `invalid args defaultName ... missing required key defaultName` 的根因是前端 `invoke` 传参使用了 `snake_case`（`default_name`），与 Tauri 命令期望的 `camelCase`（`defaultName`）不一致。
+- 同类风险点在 `rename_file`，原先传参为 `new_base_name`，应为 `newBaseName`。
+
+### F-009 修复与验证
+- 已在 `src/features/file/fileService.ts` 中修复上述两个参数名。
+- 已在 `src-tauri/src/lib.rs` 增加缺省参数兜底：`defaultName` 缺失时回退到 `untitled.md`。
+- 新增 `src/features/file/fileService.test.ts`，覆盖两个命令的参数命名断言。
+- 回归验证通过：`pnpm test`（5 files / 32 tests）、`pnpm build`、`cargo check`。
+
+## 2026-02-25
+
+### F-010 根相对图片路径解析策略
+- 将 `/images/x.png` 视为“相对文档目录”而非磁盘根路径；当 `documentPath` 可用时解析为 `<docDir>/images/x.png`。
+- 当 `documentPath` 缺失时保持根相对字符串原样，避免错误拼接。
+
+### F-011 粘贴图片落盘链路
+- 新增 Tauri 命令：`pick/get/set_attachment_library_dir` 与 `save_image_bytes_to_library`。
+- 编辑器粘贴位图时：
+  - 未保存文档先触发保存；
+  - 附件库目录首次选择并持久化；
+  - 图片以 `日期+随机后缀` 命名后落盘；
+  - 插入 `file://` 绝对 URL。
+
+### F-012 验证结果
+- `pnpm test`：通过（6 files / 41 tests）。
+- `pnpm build`：通过。
+- `cargo check`：通过。
+
+### F-013 Clipboard flow correction
+- User feedback confirmed that save-md dialog before image-directory selection is the wrong UX for this workflow.
+- Removed forced document-save precondition from clipboard image paste; unsaved docs can now paste directly into global attachment library.
+- Revalidated with `pnpm test` and `pnpm build`.
+
+### F-014 Error surface moved to toast
+- Replaced in-layout error banner with BaseUI toast notifications.
+- Unified error paths (`runBusyTask`, editor callback, startup initial file read) through one `notifyError` helper.
+- Removed obsolete banner CSS to avoid dead style drift.

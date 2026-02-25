@@ -121,3 +121,23 @@
 - 用户反馈 task list “仍然换行”时，不能只看编辑器渲染样式；要同时检查 `htmlToMarkdown` 序列化规则。
 - `toMarkdownFromTaskList` 若输出“续行缩进”会在保存文本里形成换行，即使前端已做行内显示也会被感知为换行问题。
 - 对该类需求优先将 task item 导出收敛为单行空格拼接，并用单测锁定行为，避免回归。
+
+## 2026-02-25 Clipboard Image UX
+- For clipboard image paste in a markdown editor with a global attachment library, do not force users to save the markdown file first.
+- Prompting save-dialog before directory selection can feel like a wrong flow and cause cancellation confusion.
+- Keep the hard requirement on attachment library selection/successful file write, not on current document path existence.
+
+## 2026-02-25 Windows Verbatim Path Compatibility
+- Tauri on Windows may return canonicalized paths with verbatim prefixes (`\\?\C:\...` / `\\?\UNC\...`), which can break naive URL conversion logic.
+- If local media URLs unexpectedly contain `file://?/C%3A/...`, treat it as a normalization bug, not a missing file.
+- Normalize verbatim prefixes on both backend path output and frontend media resolution to avoid persistent broken links in historical notes.
+
+## 2026-02-25 Markdown Image Syntax Compatibility
+- Do not assume all incoming markdown image forms are CommonMark-only; notes migrated from other editors often include size hints like `![](path =400x)`.
+- `marked` does not parse `=WxH` image suffix by default, so convert it in a preprocessing step before markdown-to-html parsing.
+- Keep a single shared parser for markdown-image text paste and file-open preprocessing, otherwise one path renders while the other falls back to plain text.
+
+## 2026-02-26 Obsidian Embed Variants
+- Obsidian image embeds (`![[file.png]]`) are not standard markdown and must be preprocessed explicitly before `marked.parse`.
+- Size hints may be width-only (`400x`) or height-only (`x300`); parser models should allow either side to be optional.
+- For mixed editor ecosystems, treat paste parsing and file-load parsing as one compatibility surface and keep them in one shared parser module.

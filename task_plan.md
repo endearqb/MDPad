@@ -35,3 +35,45 @@
 - `pnpm test`：通过（1 file, 5 tests）。
 - `pnpm build`：通过。
 - `pnpm tauri:build`：通过，产物位于 `src-tauri/target/release/bundle/nsis/MDPad_0.1.0_x64-setup.exe`。
+
+## 2026-02-25 Hotfix: save_file_as_dialog args
+
+### Goal
+- 修复 `Save` / `Save As` 触发的 Tauri 参数错误：`missing required key defaultName`。
+
+### Scope
+- 仅修改 `src/features/file/fileService.ts` 的 Tauri `invoke` 参数命名。
+- 在 `src-tauri/src/lib.rs` 增加 `save_file_as_dialog` 的缺省参数兜底。
+- 增加一组服务层单测，防止参数命名回归。
+
+### Steps
+1. `complete` 在 `tasks/todo.md` 写入计划并确认问题范围。
+2. `complete` 修复 `save_file_as_dialog` 调用参数为 `defaultName`。
+3. `complete` 同步排查并修复 `rename_file` 的 `newBaseName` 参数命名。
+4. `complete` 新增 `fileService` 单测并完成 `pnpm test` / `pnpm build` 验证。
+
+### Verification
+- `pnpm test`：通过（5 files / 32 tests）。
+- `pnpm build`：通过。
+- `cargo check`：通过。
+
+## 2026-02-25 Feature: local image resolution + clipboard image persistence
+
+### Goal
+- 支持本地图片在“无工作目录”模式下稳定渲染（含根相对路径）。
+- 支持编辑器直接粘贴图片并自动落盘到全局附件库。
+
+### Scope
+- 后端新增附件库目录命令与图片二进制保存命令。
+- 前端扩展附件库 API、粘贴图片处理与未保存文档兜底保存流程。
+- 更新媒体路径解析规则与测试。
+
+### Verification
+- `pnpm test`：通过（6 files / 41 tests）。
+- `pnpm build`：通过。
+- `cargo check`：通过。
+
+## 2026-02-25 Follow-up: clipboard flow correction
+- Removed the requirement to save current markdown file before pasting clipboard images.
+- Clipboard image paste now prioritizes attachment-library selection and direct file persistence.
+- Validation: `pnpm test` and `pnpm build` passed.

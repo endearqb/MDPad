@@ -104,7 +104,7 @@ body {
 
 .theme-light.ui-classic {
   --app-shell: #f2f2f2;
-  --app-shell-border: #b9b9b9;
+  --app-shell-border: #c6c6c6;
   --chrome-bg: #ececec;
   --chrome-border: #b5b5b5;
   --text-primary: #202124;
@@ -130,7 +130,7 @@ body {
 
 .theme-dark.ui-classic {
   --app-shell: #202020;
-  --app-shell-border: #4a4a4a;
+  --app-shell-border: #5a5a5a;
   --chrome-bg: #2a2a2a;
   --chrome-border: #4a4a4a;
   --text-primary: #f3f3f3;
@@ -387,28 +387,6 @@ body {
   stroke-width: 1.9;
 }
 
-.error-banner {
-  border: 1px solid color-mix(in srgb, #ef4444 55%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--editor-bg) 84%, #ef4444 16%);
-  color: var(--text-primary);
-  padding: 9px 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.error-dismiss {
-  border: none;
-  border-radius: 8px;
-  background: var(--hover-soft);
-  color: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 5px 10px;
-  cursor: pointer;
-}
 
 .app-main {
   flex: 1;
@@ -891,7 +869,7 @@ body {
   position: relative;
   max-width: 100%;
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .media-element {
@@ -910,32 +888,26 @@ body {
 
 .media-resize-handle {
   position: absolute;
-  top: 8px;
-  bottom: 8px;
-  width: 8px;
+  top: 50%;
+  height: calc((100% - 16px) / 3);
+  width: calc(8px / 3);
   border: none;
   border-radius: 999px;
   cursor: ew-resize;
-  background: color-mix(in srgb, var(--editor-bg) 42%, var(--accent));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--text-secondary) 78%, #9a9a9a 22%);
+  box-shadow: none;
   opacity: 0;
   transition: opacity 120ms ease, background-color 120ms ease;
 }
 
 .media-resize-handle.left {
-  left: 6px;
+  left: -1px;
+  transform: translate(-100%, -50%);
 }
 
 .media-resize-handle.right {
-  right: 6px;
-}
-
-.media-resize-handle::after {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  border-right: 1px solid rgba(255, 255, 255, 0.95);
-  border-left: 1px solid rgba(255, 255, 255, 0.95);
+  right: -1px;
+  transform: translate(100%, -50%);
 }
 
 .media-node:hover .media-resize-handle,
@@ -1254,7 +1226,12 @@ body {
 }
 
 .slash-menu {
-  width: min(620px, calc(100vw - 40px));
+  --slash-item-slot-size: 46px;
+  --slash-item-gap: 4px;
+  width: min(
+    calc(var(--slash-item-slot-size) * 3 + var(--slash-item-gap) * 2 + 10px),
+    calc(100vw - 40px)
+  );
   max-height: min(520px, calc(100vh - 16px));
   border: 1px solid var(--slash-menu-border);
   border-radius: 14px;
@@ -1267,6 +1244,14 @@ body {
   gap: 3px;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.slash-menu::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .slash-menu-query {
@@ -1275,6 +1260,9 @@ body {
   color: var(--slash-menu-text-secondary);
   padding: 9px 12px;
   border-bottom: 1px solid var(--slash-menu-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .slash-group {
@@ -1293,14 +1281,15 @@ body {
 
 .slash-group-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 3px;
+  grid-template-columns: repeat(3, var(--slash-item-slot-size));
+  gap: var(--slash-item-gap);
+  justify-content: center;
 }
 
 .slash-item {
   position: relative;
-  width: 100%;
-  min-height: 46px;
+  width: var(--slash-item-slot-size);
+  min-height: var(--slash-item-slot-size);
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
@@ -1462,6 +1451,7 @@ body {
 
 .app-root.ui-classic {
   border-radius: 8px;
+  border-width: 0.5px;
   border-color: var(--app-shell-border);
   backdrop-filter: none;
   font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
@@ -1541,14 +1531,6 @@ body {
 .app-root.ui-classic .win-btn {
   width: 44px;
   border-left: none;
-}
-
-.app-root.ui-classic .error-banner {
-  border: none;
-  border-radius: 6px;
-  background: var(--editor-bg);
-  padding: 0;
-  gap: 0;
 }
 
 .app-root.ui-classic .editor-loading {
