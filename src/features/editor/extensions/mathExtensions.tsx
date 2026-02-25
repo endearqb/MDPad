@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from "@tiptap/core";
+import { InputRule, PasteRule, Node, mergeAttributes } from "@tiptap/core";
 import {
   NodeViewWrapper,
   ReactNodeViewRenderer,
@@ -6,6 +6,10 @@ import {
 } from "@tiptap/react";
 import katex from "katex";
 import { useCallback, useMemo } from "react";
+
+const inlineMathInputRegex = /(^|[\s([{])\$([^$\n]+)\$$/u;
+const inlineMathPasteRegex = /\$([^$\n]+)\$/gu;
+const blockMathInputRegex = /^\$\$([^$\n]+)\$\$$/u;
 
 function escapeHtml(value: string): string {
   return value
@@ -116,6 +120,53 @@ export const InlineMath = Node.create({
 
   addNodeView() {
     return ReactNodeViewRenderer(MathNodeView);
+  },
+
+  addInputRules() {
+    return [
+      new InputRule({
+        find: inlineMathInputRegex,
+        handler: ({ chain, range, match, state }) => {
+          const prefix = match[1] ?? "";
+          const latex = (match[2] ?? "").trim();
+          if (!latex) {
+            return null;
+          }
+
+          const hasCodeMark = state.selection.$from.marks().some((mark) => mark.type.name === "code");
+          if (hasCodeMark) {
+            return null;
+          }
+
+          chain()
+            .insertContentAt(
+              { from: range.from + prefix.length, to: range.to },
+              { type: this.name, attrs: { latex } }
+            )
+            .run();
+          return;
+        }
+      })
+    ];
+  },
+
+  addPasteRules() {
+    return [
+      new PasteRule({
+        find: inlineMathPasteRegex,
+        handler: ({ chain, range, match }) => {
+          const latex = (match[1] ?? "").trim();
+          if (!latex) {
+            return null;
+          }
+
+          chain()
+            .insertContentAt(range, { type: this.name, attrs: { latex } })
+            .run();
+          return;
+        }
+      })
+    ];
   }
 });
 
@@ -157,5 +208,36 @@ export const BlockMath = Node.create({
 
   addNodeView() {
     return ReactNodeViewRenderer(MathNodeView);
+  },
+
+  addInputRules() {
+    return [
+      new InputRule({
+        find: blockMathInputRegex,
+        handler: ({ chain, range, match, state }) => {
+          const latex = (match[1] ?? "").trim();
+          if (!latex) {
+            return null;
+          }
+
+          const $from = state.doc.resolve(range.from);
+          if ($from.depth !== 1 || $from.parent.type.name !== "paragraph") {
+            return null;
+          }
+
+          chain()
+            .insertContentAt(
+              { from: $from.before(), to: $from.after() },
+              { type: this.name, attrs: { latex } }
+            )
+            .run();
+          return;
+        }
+      })
+    ];
+  },
+
+  addPasteRules() {
+    return [];
   }
 });

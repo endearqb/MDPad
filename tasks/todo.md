@@ -197,3 +197,124 @@
 - 标签已推送：`v0.1.3`。
 - Release 已创建：`https://github.com/endearqb/MDPad/releases/tag/v0.1.3`。
 - 资产已上传：`MDPad_0.1.3_x64-setup.exe`（sha256: `94c0f50deed0e66605e49c5ea24b22a2b1bd511a17954d1935ec7c1f3a489d3f`）。
+
+## 新任务：打开流程/链接扩展/Slash 菜单修复（2026-02-25）
+- [x] 写入实施计划并确认执行边界（多窗口策略不变；仅修启动打开体验、链接扩展、slash 规则）
+- [x] 优化启动打开流程：避免先显示空文档再加载目标文件
+- [x] 移除自定义链接扩展 `linkWithMarkdown`，切回原生 `@tiptap/extension-link`
+- [x] 修复 slash 菜单可用性并固化触发规则（空白行 `/` 自动触发，任意位置 `Ctrl+/` 强制触发）
+- [x] 运行验证：`npm run test`、`npm run build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（打开流程/链接扩展/Slash 菜单修复）
+- `src/App.tsx`：新增 `isStartupReady` 启动就绪态；初始化阶段先读取初始文件并加载，再渲染编辑器，避免打开 `.md` 时先出现空文档。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 移除 `LinkWithMarkdown` 接入，改为原生 `Link.configure({ openOnClick: false })`；
+  - slash 提示文案改为“空白行 `/` + 任意位置 `Ctrl+/`”；
+  - slash 键盘处理改为 `onKeyDownCapture`，避免编辑器内部键盘处理先消费导致菜单交互失效。
+- 删除：`src/features/editor/extensions/linkWithMarkdown.ts`（完全移除自定义 markdown 链接扩展）。
+- 验证结果：
+  - `npm run test`：通过（29 passed；默认沙箱触发 `spawn EPERM`，使用提权后通过）。
+  - `npm run build`：通过（TypeScript + Vite 构建成功）。
+
+## 新任务：Slash 菜单视觉恢复（2026-02-25）
+- [x] 恢复所有 slash 菜单阴影
+- [x] 将所有 slash 菜单背景改为浅灰色
+- [x] 运行验证：`npm run build`
+
+### 回顾（Slash 菜单视觉恢复）
+- `src/styles.css`：
+  - 为 slash 菜单新增统一视觉变量（浅灰背景、边框、阴影、文本色）；
+  - `slash-menu` 与 `ui-classic` 下的 `slash-menu` 均恢复阴影并使用浅灰背景；
+  - 同步调整 query/分组标题/条目文案与图标底色，确保浅灰背景下可读性。
+- 验证结果：`npm run build` 通过。
+
+## 新任务：默认主题与 Slash 顶层显示（2026-02-25）
+- [x] 默认 UI 主题改为 `classic`
+- [x] 将 slash 菜单改为顶层挂载并提高层级（避免被容器遮挡）
+- [x] 运行验证：`npm run build`
+
+### 回顾（默认主题与 Slash 顶层显示）
+- `src/App.tsx`：`getInitialUiTheme()` 的回退默认值从 `modern` 调整为 `classic`。
+- `src/features/editor/MarkdownEditor.tsx`：`FloatingMenu` 增加 `appendTo: () => document.body`、高 `zIndex`、`maxWidth: "none"` 与 `mdpad-slash` 主题；并使用光标 `coordsAtPos` 作为 `getReferenceClientRect`，配合 Popper 的 `flip/preventOverflow` 防止菜单落到窗口外。
+- `src/styles.css`：新增 `mdpad-slash` 的 tippy 样式（透明容器+去默认内边距），为 `.slash-menu` 增加显式 `z-index` 与 `max-height + overflow-y`，避免可视区截断。
+
+## 新任务：Slash 菜单可见性根因修复（2026-02-25）
+- [x] 将 slash 触发逻辑迁移为 Tiptap Suggestion 管线（保留空白行 `/` 与 `Ctrl+/`）
+- [x] 移除对 `@tiptap/pm/state` 与 `tippy.js` 的直接依赖，避免构建失败
+- [x] 改为 `document.body` 顶层固定定位容器，确保菜单不受编辑容器裁切
+- [x] 增加视口边界保护（右侧溢出与底部溢出自动回退）
+- [x] 运行验证：`npm run build`、`npm run test`
+
+### 回顾（Slash 菜单可见性根因修复）
+- 根因不是“仅颜色/边框”，而是 slash 菜单渲染链路处于半迁移状态：新代码依赖缺失模块导致构建失败，同时旧浮层定位方式仍可能受容器裁切。
+- `src/features/editor/extensions/slashCommand.ts` 已重构为纯 Suggestion + ReactRenderer + 顶层固定定位容器，不再依赖额外弹层库。
+- 菜单位置现在由光标 `clientRect` 驱动，并在 `resize/scroll` 时重算；当靠近窗口边缘时会自动调整到可视区内。
+- 验证结果：
+  - `npm run build`：通过。
+  - `npm run test`：默认沙箱 `spawn EPERM`，提权后通过（4 files / 29 tests passed）。
+
+## 新任务：编辑器交互与语法能力统一改造（2026-02-25）
+- [x] slash 菜单改为三列卡片布局，补充 Heading 3/4，去掉描述文案，支持上下左右键导航
+- [x] 划词菜单与 slash 菜单统一图标/配色/边框/阴影，并复用同一命令集
+- [x] 修复 task list 的“视觉强制换行”问题（仅样式层，不改变 Enter 分裂行为）
+- [x] 增加公式输入渲染能力：支持 `$...$` 与 `$$...$$` 输入后转换为 math 节点
+- [x] 增加 markdown 表格输入转换能力，并补充表格增删行列命令入口
+- [x] 图片改为双侧拖拽缩放柄；选中图片时显示 Obsidian 风格 markdown 源码条并支持复制
+- [x] 通过网络检索 Tiptap 官方与社区方案，按最小改动成熟路径落地
+- [x] 运行验证：`npm run build`、`npm run test`
+
+### 回顾（编辑器交互与语法能力统一改造）
+- `src/features/editor/components/SlashMenu.tsx`：
+  - slash 菜单改为按组 3 列卡片布局，图标上文案下；
+  - 键盘导航从线性改为四方向（左右逐项、上下按列跳转）。
+- `src/features/editor/extensions/slashCommandTypes.ts` / `slashCommand.ts`：
+  - 命令模型去除 `description`，改为 `keywords` 检索；
+  - 搜索过滤使用 `label + keywords`。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 命令集扩展：新增 `Heading 3/4`、表格增删行列/删表命令；
+  - 划词菜单改为命令面板，直接复用 slash 命令列表（数量与图标保持一致）；
+  - 键盘处理新增 Enter 触发：优先尝试数学块与 markdown 表格转换。
+- `src/features/editor/extensions/markdownShortcuts.ts`（新增）：
+  - 实现 `tryConvertMathFenceAtSelection`、`tryConvertMarkdownTableAtSelection`。
+- `src/features/editor/extensions/mathExtensions.tsx`：
+  - 增加 input/paste 规则，支持输入 `$...$` 与 `$$...$$` 自动转换。
+- `src/features/editor/extensions/mediaExtensions.tsx`：
+  - 缩放控制改为左右边缘拖拽柄；
+  - 选中图片时显示 markdown 源码条（含复制按钮），行为对齐 Obsidian 风格。
+- `src/styles.css`：
+  - slash 样式改造为三列卡片；
+  - bubble 菜单视觉系统与 slash 对齐（配色、边框、阴影、交互态）；
+  - task list 段落 margin 归零，消除视觉“强制换行”。
+- 方案检索来源（官方/社区）：
+  - Tiptap Suggestion：https://tiptap.dev/docs/editor/api/utilities/suggestion
+  - Tiptap Table：https://tiptap.dev/docs/editor/extensions/nodes/table
+  - Tiptap Markdown：https://tiptap.dev/docs/editor/markdown
+  - Tiptap Mathematics：https://tiptap.dev/docs/editor/extensions/nodes/mathematics
+  - 社区数学扩展参考：https://github.com/aarkue/tiptap-math-extension
+- 验证结果：
+  - `npm run build`：通过。
+  - `npm run test`：默认沙箱 `spawn EPERM`，提权后通过（4 files / 29 tests passed）。
+
+## 新任务：编辑器细节修正（2026-02-25，续）
+- [x] 新建窗口默认空白文档（编辑器初始无内容）
+- [x] slash 菜单紧凑化（3px 间距）、图标下无名称、选中/悬浮改为 tooltip
+- [x] slash 菜单滚动跟随当前键盘选中图标
+- [x] 划词菜单回滚为横向图标版本，表格行列按钮仅在表格内选择时出现
+- [x] task list Markdown 导出从“续行换行”改为“单行空格拼接”
+- [x] 运行验证：`npm run build`、`npm run test`
+
+### 回顾（编辑器细节修正）
+- `src/features/file/fileReducer.ts`：`EMPTY_DOC_CONTENT` 改为 `""`，新窗口进入纯空文档状态。
+- `src/features/editor/components/SlashMenu.tsx` + `src/styles.css`：
+  - slash 项目改为紧凑图标网格（3 列、3px 间距）；
+  - 移除图标下文案，改为选中/悬浮 tooltip；
+  - 键盘切换项目时调用 `scrollIntoView`，滚动条跟随高亮项。
+- `src/features/editor/MarkdownEditor.tsx`：划词菜单恢复横向图标排布；表格 `R+/C+/R-/C-` 按钮仅在 `editor.isActive("table")` 时显示。
+- `src/features/editor/markdownCodec.ts`：
+  - task item 序列化不再生成续行缩进；
+  - 多段任务文本改为单行空格拼接，避免导出时出现强制换行。
+- `src/features/editor/markdownCodec.test.ts`：新增多段 task item 单行导出断言，防止回归。
+- 验证结果：
+  - `npm run build`：通过。
+  - `npm run test`：沙箱下 `spawn EPERM`，提权后通过（4 files / 30 tests passed）。

@@ -66,7 +66,7 @@ function getInitialThemeMode(): ThemeMode {
 }
 
 function getInitialUiTheme(): UiTheme {
-  return readUiThemePreference("modern");
+  return readUiThemePreference("classic");
 }
 
 function formatError(error: unknown): string {
@@ -152,6 +152,7 @@ export default function App() {
   const [doc, dispatch] = useReducer(docReducer, undefined, createEmptyDocState);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(getInitialUiTheme);
+  const [isStartupReady, setIsStartupReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -469,55 +470,73 @@ export default function App() {
     let unlistenOpenFile: UnlistenFn | undefined;
     let unlistenCloseRequest: UnlistenFn | undefined;
     let unlistenDropEvent: UnlistenFn | undefined;
+    let isDisposed = false;
 
     void (async () => {
-      const initialPath = await getInitialFile();
-      if (initialPath) {
-        await runBusyTask(async () => {
-          await openPathInCurrentWindow(initialPath);
-        });
-      }
-
-      unlistenOpenFile = await listen<OpenFilePayload>(
-        "app://open-file",
-        (event) => {
-          if (event.payload?.path) {
-            void runBusyTask(async () => {
-              await openPathInNewWindow(event.payload.path);
-            });
-          }
+      try {
+        let initialPath: string | null = null;
+        try {
+          initialPath = await getInitialFile();
+        } catch (error) {
+          setErrorMessage(formatError(error));
         }
-      );
 
-      const appWindow = getCurrentWindow();
-      unlistenCloseRequest = await appWindow.onCloseRequested((event) => {
-        if (allowCloseRef.current || !docRef.current.isDirty) {
+        if (initialPath) {
+          await runBusyTask(async () => {
+            await openPathInCurrentWindow(initialPath);
+          });
+        }
+
+        if (isDisposed) {
           return;
         }
-        event.preventDefault();
-        setPendingAction({ kind: "close" });
-        setShowUnsavedModal(true);
-      });
 
-      type DragDropWindow = {
-        onDragDropEvent: (
-          handler: (event: unknown) => void
-        ) => Promise<UnlistenFn>;
-      };
-      const maybeDropWindow = appWindow as unknown as DragDropWindow;
-      if (typeof maybeDropWindow.onDragDropEvent === "function") {
-        unlistenDropEvent = await maybeDropWindow.onDragDropEvent((event) => {
-          const paths = extractDropPaths(event).filter(isMarkdownPath);
-          if (paths.length > 0) {
-            void runBusyTask(async () => {
-              await openPathInNewWindow(paths[0]);
-            });
+        unlistenOpenFile = await listen<OpenFilePayload>(
+          "app://open-file",
+          (event) => {
+            if (event.payload?.path) {
+              void runBusyTask(async () => {
+                await openPathInNewWindow(event.payload.path);
+              });
+            }
           }
+        );
+
+        const appWindow = getCurrentWindow();
+        unlistenCloseRequest = await appWindow.onCloseRequested((event) => {
+          if (allowCloseRef.current || !docRef.current.isDirty) {
+            return;
+          }
+          event.preventDefault();
+          setPendingAction({ kind: "close" });
+          setShowUnsavedModal(true);
         });
+
+        type DragDropWindow = {
+          onDragDropEvent: (
+            handler: (event: unknown) => void
+          ) => Promise<UnlistenFn>;
+        };
+        const maybeDropWindow = appWindow as unknown as DragDropWindow;
+        if (typeof maybeDropWindow.onDragDropEvent === "function") {
+          unlistenDropEvent = await maybeDropWindow.onDragDropEvent((event) => {
+            const paths = extractDropPaths(event).filter(isMarkdownPath);
+            if (paths.length > 0) {
+              void runBusyTask(async () => {
+                await openPathInNewWindow(paths[0]);
+              });
+            }
+          });
+        }
+      } finally {
+        if (!isDisposed) {
+          setIsStartupReady(true);
+        }
       }
     })();
 
     return () => {
+      isDisposed = true;
       if (unlistenOpenFile) {
         unlistenOpenFile();
       }
@@ -572,16 +591,20 @@ export default function App() {
           )}
 
           <main className="app-main">
-            <Suspense fallback={<div className="editor-loading">Loading editor...</div>}>
-              <MarkdownEditor
-                documentPath={doc.currentPath}
-                markdown={doc.content}
-                onMarkdownChange={(content) =>
-                  dispatch({ type: "update_content", content })
-                }
-                onStatsChange={handleStatsChange}
-              />
-            </Suspense>
+            {!isStartupReady ? (
+              <div className="editor-loading">Loading document...</div>
+            ) : (
+              <Suspense fallback={<div className="editor-loading">Loading editor...</div>}>
+                <MarkdownEditor
+                  documentPath={doc.currentPath}
+                  markdown={doc.content}
+                  onMarkdownChange={(content) =>
+                    dispatch({ type: "update_content", content })
+                  }
+                  onStatsChange={handleStatsChange}
+                />
+              </Suspense>
+            )}
           </main>
 
           <StatusBar

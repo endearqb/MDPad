@@ -52,6 +52,15 @@ describe("markdownCodec", () => {
     expect(markdown).toContain('<audio src="voice.mp3" controls></audio>');
   });
 
+  it("serializes multi-paragraph task items as a single markdown line", () => {
+    const markdown = htmlToMarkdown(
+      '<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><div><p>first</p><p>second</p></div></li></ul>'
+    );
+
+    expect(markdown).toContain("- [ ] first second");
+    expect(markdown).not.toContain("first\n  second");
+  });
+
   it("keeps gfm table structure in round trip", () => {
     const markdown = "| A | B |\n| --- | --- |\n| 1 | 2 |";
     const roundTripped = htmlToMarkdown(markdownToHtml(markdown));

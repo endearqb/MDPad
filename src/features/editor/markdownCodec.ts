@@ -420,17 +420,14 @@ function toMarkdownFromTaskList(element: Element): string {
       .turndown(contentHost ? contentHost.innerHTML : item.innerHTML)
       .trim()
       .replace(/\n{2,}/g, "\n");
-    if (!contentMarkdown) {
+    const collapsedContent = contentMarkdown
+      .replace(/\s*\n+\s*/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+    if (!collapsedContent) {
       return `- [${checked ? "x" : " "}]`;
     }
-
-    const lineParts = contentMarkdown.split("\n");
-    const [first, ...rest] = lineParts;
-    if (rest.length === 0) {
-      return `- [${checked ? "x" : " "}] ${first}`;
-    }
-    const continuation = rest.map((entry) => `  ${entry}`).join("\n");
-    return `- [${checked ? "x" : " "}] ${first}\n${continuation}`;
+    return `- [${checked ? "x" : " "}] ${collapsedContent}`;
   });
 
   return `\n${lines.join("\n")}\n`;

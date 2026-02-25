@@ -1,7 +1,7 @@
 import type { DocState } from "../../shared/types/doc";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
 
-export const EMPTY_DOC_CONTENT = "# Untitled\n\nStart writing...";
+export const EMPTY_DOC_CONTENT = "";
 
 export type DocAction =
   | { type: "load_document"; path: string | null; content: string }

@@ -75,6 +75,100 @@ function normalizeLinkTarget(value: string): string {
   return value.trim().replace(/^<|>$/g, "");
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function markdownEscapeAlt(value: string): string {
+  return value.replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+
+function markdownEscapeTitle(value: string): string {
+  return value.replace(/"/g, '\\"');
+}
+
+function formatMarkdownDestination(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return /\s/u.test(trimmed) ? `<${trimmed}>` : trimmed;
+}
+
+function shouldSerializeImageAsHtml(src: string): boolean {
+  if (/^[A-Za-z]:\\/u.test(src)) {
+    return true;
+  }
+  if (src.includes("\\")) {
+    return true;
+  }
+  if (/\s/u.test(src)) {
+    return true;
+  }
+  if (/[()]/u.test(src)) {
+    return true;
+  }
+  return false;
+}
+
+function toMarkdownLink(label: string, href: string, title: string | null): string {
+  const destination = formatMarkdownDestination(href);
+  if (!destination) {
+    return label;
+  }
+  const titlePart = title ? ` "${markdownEscapeTitle(title)}"` : "";
+  return `[${label}](${destination}${titlePart})`;
+}
+
+function buildImageSourceSnippet(attrs: {
+  src: string;
+  alt: string;
+  title: string;
+  width: number;
+  linkHref: string;
+  linkTitle: string;
+}): string {
+  const normalizedSrc = attrs.src.trim();
+  if (!normalizedSrc) {
+    return "";
+  }
+
+  const hasCustomWidth = Math.abs(attrs.width - DEFAULT_MEDIA_WIDTH) > 0.01;
+  const forceHtml =
+    hasCustomWidth ||
+    shouldSerializeImageAsHtml(normalizedSrc) ||
+    (!!attrs.linkHref && shouldSerializeImageAsHtml(attrs.linkHref));
+
+  if (forceHtml) {
+    const altPart = attrs.alt ? ` alt="${escapeHtmlAttr(attrs.alt)}"` : "";
+    const titlePart = attrs.title ? ` title="${escapeHtmlAttr(attrs.title)}"` : "";
+    const widthPart = hasCustomWidth ? ` data-width="${attrs.width}"` : "";
+    const imageHtml = `<img src="${escapeHtmlAttr(normalizedSrc)}"${altPart}${titlePart}${widthPart} />`;
+    if (!attrs.linkHref) {
+      return imageHtml;
+    }
+
+    const linkTitlePart = attrs.linkTitle ? ` title="${escapeHtmlAttr(attrs.linkTitle)}"` : "";
+    return `<a href="${escapeHtmlAttr(attrs.linkHref)}"${linkTitlePart}>${imageHtml}</a>`;
+  }
+
+  const destination = formatMarkdownDestination(normalizedSrc);
+  const imageTitlePart = attrs.title ? ` "${markdownEscapeTitle(attrs.title)}"` : "";
+  const imageMarkdown = `![${markdownEscapeAlt(attrs.alt)}](${destination}${imageTitlePart})`;
+  if (!attrs.linkHref) {
+    return imageMarkdown;
+  }
+  return toMarkdownLink(
+    imageMarkdown,
+    attrs.linkHref,
+    attrs.linkTitle.trim() === "" ? null : attrs.linkTitle
+  );
+}
+
 type LinkedImageMatchData = {
   alt: string;
   src: string;
@@ -167,6 +261,20 @@ function ResizableMediaNodeView({
   const linkTitle = typeof node.attrs.linkTitle === "string" ? node.attrs.linkTitle : "";
   const imageTitle = typeof node.attrs.title === "string" ? node.attrs.title : "";
   const hoverTitle = imageTitle || linkTitle || linkHref || undefined;
+  const markdownSource = useMemo(
+    () =>
+      isVideo
+        ? ""
+        : buildImageSourceSnippet({
+            src: rawSrc,
+            alt: typeof node.attrs.alt === "string" ? node.attrs.alt : "",
+            title: imageTitle,
+            width,
+            linkHref,
+            linkTitle
+          }),
+    [imageTitle, isVideo, linkHref, linkTitle, node.attrs.alt, rawSrc, width]
+  );
   const closePreview = useCallback(() => {
     setIsPreviewOpen(false);
   }, []);
@@ -199,7 +307,7 @@ function ResizableMediaNodeView({
   }, [isPreviewOpen]);
 
   const beginResize = useCallback(
-    (event: ReactPointerEvent<HTMLButtonElement>) => {
+    (event: ReactPointerEvent<HTMLButtonElement>, edge: "left" | "right") => {
       if (!editor.isEditable) {
         return;
       }
@@ -225,7 +333,8 @@ function ResizableMediaNodeView({
           return;
         }
         const deltaPixels = moveEvent.clientX - state.startX;
-        const deltaPercent = (deltaPixels / state.containerWidth) * 100;
+        const direction = edge === "left" ? -1 : 1;
+        const deltaPercent = ((deltaPixels * direction) / state.containerWidth) * 100;
         const nextWidth = clamp(
           state.startWidth + deltaPercent,
           MIN_MEDIA_WIDTH,
@@ -269,15 +378,43 @@ function ResizableMediaNodeView({
           />
         )}
         {editor.isEditable && (
-          <button
-            aria-label="Resize media"
-            className="media-resize-handle"
-            contentEditable={false}
-            onPointerDown={beginResize}
-            type="button"
-          />
+          <>
+            <button
+              aria-label="Resize media from left edge"
+              className="media-resize-handle left"
+              contentEditable={false}
+              onPointerDown={(event) => beginResize(event, "left")}
+              type="button"
+            />
+            <button
+              aria-label="Resize media from right edge"
+              className="media-resize-handle right"
+              contentEditable={false}
+              onPointerDown={(event) => beginResize(event, "right")}
+              type="button"
+            />
+          </>
         )}
       </div>
+      {!isVideo && selected && (
+        <div
+          className="media-markdown-bar"
+          contentEditable={false}
+        >
+          <code className="media-markdown-code">{markdownSource || "![alt](path/to/image.png)"}</code>
+          <button
+            className="media-markdown-copy"
+            onClick={() => {
+              if (markdownSource && navigator.clipboard) {
+                void navigator.clipboard.writeText(markdownSource);
+              }
+            }}
+            type="button"
+          >
+            Copy
+          </button>
+        </div>
+      )}
       {!isVideo && isPreviewOpen && (
         <div
           aria-label="Image preview"

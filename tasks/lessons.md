@@ -106,3 +106,18 @@
 - Keep a close grace period so users can move from trigger to floating menu without collapse flicker.
 - In layered frameless layouts, ensure hover menu z-index is above editor/status containers in all UI themes.
 - Bind hover-open trigger to the icon/button itself, not a wider wrapper hit-area, so hovering nearby regions does not open the menu.
+
+## 2026-02-25 Slash Menu Visibility
+- If slash menu supports keyboard blind-selection but is visually missing, prioritize checking overlay positioning/clipping before color-only tweaks.
+- Avoid half-migrated popup stacks: do not leave code depending on missing overlay modules (`@tiptap/pm/*`, `tippy.js`) after switching to Suggestion flow.
+- For editors inside scroll/overflow containers, render slash menu to `document.body` with fixed positioning and viewport overflow fallback logic.
+
+## 2026-02-25 Editor Menu Consistency
+- If slash and bubble menus are expected to stay visually/behaviorally aligned, keep one shared command source and avoid maintaining parallel command lists.
+- When users report task-list “forced line breaks”, check paragraph default margins before changing TaskItem key behaviors.
+- For Obsidian-like media editing UX, combine edge drag handles with selected-state source preview rather than always-visible overlays.
+
+## 2026-02-25 Task List Line-break Root Cause
+- 用户反馈 task list “仍然换行”时，不能只看编辑器渲染样式；要同时检查 `htmlToMarkdown` 序列化规则。
+- `toMarkdownFromTaskList` 若输出“续行缩进”会在保存文本里形成换行，即使前端已做行内显示也会被感知为换行问题。
+- 对该类需求优先将 task item 导出收敛为单行空格拼接，并用单测锁定行为，避免回归。
