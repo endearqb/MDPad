@@ -182,10 +182,18 @@
   - 新增窗口能力：`allow-current-monitor`、`allow-outer-size`、`allow-outer-position`、`allow-set-position`。
 
 ## 新任务：提交改动 + 打包 0.1.3 + 发布 Release（2026-02-25）
-- [ ] 执行 `git diff` 并核对本次改动范围
-- [ ] 统一版本号到 `0.1.3`（`package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`）
-- [ ] 提交并推送到 `origin/main`
-- [ ] 构建安装包（`pnpm tauri:build`）
-- [ ] 创建并推送标签 `v0.1.3`
-- [ ] 创建 GitHub Release 并上传 `MDPad_0.1.3_x64-setup.exe`
-- [ ] 在本文件追加发布结果回顾（含 release 链接和资产校验）
+- [x] 执行 `git diff` 并核对本次改动范围
+- [x] 统一版本号到 `0.1.3`（`package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`）
+- [x] 提交并推送到 `origin/main`
+- [x] 构建安装包（`pnpm tauri:build`）
+- [x] 创建并推送标签 `v0.1.3`
+- [x] 创建 GitHub Release 并上传 `MDPad_0.1.3_x64-setup.exe`
+- [x] 在本文件追加发布结果回顾（含 release 链接和资产校验）
+
+### 回顾（0.1.3 发布）
+- 已执行 `git diff --stat` 核对本次改动，并将改动推送到 `origin/main`。
+- 版本号已统一为 `0.1.3`：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`。
+- 安装包构建成功：`src-tauri/target/release/bundle/nsis/MDPad_0.1.3_x64-setup.exe`。
+- 标签已推送：`v0.1.3`。
+- Release 已创建：`https://github.com/endearqb/MDPad/releases/tag/v0.1.3`。
+- 资产已上传：`MDPad_0.1.3_x64-setup.exe`（sha256: `94c0f50deed0e66605e49c5ea24b22a2b1bd511a17954d1935ec7c1f3a489d3f`）。
