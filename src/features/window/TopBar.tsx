@@ -7,19 +7,21 @@ import {
   useState
 } from "react";
 import { Tooltip } from "baseui/tooltip";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  FolderOpen,
-  LayoutTemplate,
-  Minimize2,
+  File,
+  FileInput,
+  FilePlus2,
+  Maximize2,
+  Minus,
   Moon,
   Save,
   SaveAll,
-  SquarePlus,
   SunMedium,
   X
 } from "lucide-react";
-import type { ThemeMode, UiTheme } from "../../shared/types/doc";
+import type { ThemeMode } from "../../shared/types/doc";
 
 interface TopBarProps {
   fileName: string;
@@ -28,15 +30,25 @@ interface TopBarProps {
   isDirty: boolean;
   isBusy: boolean;
   themeMode: ThemeMode;
-  uiTheme: UiTheme;
   onNewWindow: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onRename: (newBaseName: string) => Promise<boolean>;
-  onToggleUiTheme: () => void;
   onToggleTheme: () => void;
 }
+
+type WindowBounds = {
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+};
+
+const PSEUDO_MAXIMIZE_WIDTH_RATIO = 0.4;
+const PSEUDO_MAXIMIZE_HEIGHT_RATIO = 0.9;
+const MIN_WINDOW_WIDTH = 420;
+const MIN_WINDOW_HEIGHT = 320;
 
 export default function TopBar({
   fileName,
@@ -45,13 +57,11 @@ export default function TopBar({
   isDirty,
   isBusy,
   themeMode,
-  uiTheme,
   onNewWindow,
   onOpen,
   onSave,
   onSaveAs,
   onRename,
-  onToggleUiTheme,
   onToggleTheme
 }: TopBarProps) {
   const appWindow = useMemo(() => {
@@ -62,8 +72,12 @@ export default function TopBar({
     }
   }, []);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const restoreBoundsRef = useRef<WindowBounds | null>(null);
+  const fileMenuRef = useRef<HTMLDivElement | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
   const [isSubmittingRename, setIsSubmittingRename] = useState(false);
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const [isPseudoMaximized, setIsPseudoMaximized] = useState(false);
   const [renameDraft, setRenameDraft] = useState(fileBaseName);
 
   useEffect(() => {
@@ -86,6 +100,33 @@ export default function TopBar({
     };
   }, [isRenaming]);
 
+  useEffect(() => {
+    if (!isFileMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target || fileMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsFileMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsFileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFileMenuOpen]);
+
   const handleMinimize = useCallback(async () => {
     if (!appWindow) {
       return;
@@ -107,6 +148,60 @@ export default function TopBar({
       // ignore runtime errors in non-tauri contexts
     }
   }, [appWindow]);
+
+  const handlePseudoMaximize = useCallback(async () => {
+    if (!appWindow) {
+      return;
+    }
+
+    try {
+      const restoreBounds = restoreBoundsRef.current;
+      if (isPseudoMaximized && restoreBounds) {
+        await appWindow.setSize(
+          new PhysicalSize(restoreBounds.width, restoreBounds.height)
+        );
+        await appWindow.setPosition(new PhysicalPosition(restoreBounds.x, restoreBounds.y));
+        setIsPseudoMaximized(false);
+        return;
+      }
+
+      const monitor = await currentMonitor();
+      if (!monitor) {
+        return;
+      }
+
+      const currentSize = await appWindow.outerSize();
+      const currentPosition = await appWindow.outerPosition();
+      restoreBoundsRef.current = {
+        width: currentSize.width,
+        height: currentSize.height,
+        x: currentPosition.x,
+        y: currentPosition.y
+      };
+
+      const workArea = monitor.workArea;
+      const targetWidth = Math.max(
+        MIN_WINDOW_WIDTH,
+        Math.round(workArea.size.width * PSEUDO_MAXIMIZE_WIDTH_RATIO)
+      );
+      const targetHeight = Math.max(
+        MIN_WINDOW_HEIGHT,
+        Math.round(workArea.size.height * PSEUDO_MAXIMIZE_HEIGHT_RATIO)
+      );
+      const targetX = Math.round(
+        workArea.position.x + (workArea.size.width - targetWidth) / 2
+      );
+      const targetY = Math.round(
+        workArea.position.y + (workArea.size.height - targetHeight) / 2
+      );
+
+      await appWindow.setSize(new PhysicalSize(targetWidth, targetHeight));
+      await appWindow.setPosition(new PhysicalPosition(targetX, targetY));
+      setIsPseudoMaximized(true);
+    } catch {
+      // ignore runtime errors in non-tauri contexts
+    }
+  }, [appWindow, isPseudoMaximized]);
 
   const beginRename = useCallback(() => {
     if (!canRename || isBusy || isSubmittingRename) {
@@ -147,6 +242,22 @@ export default function TopBar({
     }
   }, [fileBaseName, isRenaming, isSubmittingRename, onRename, renameDraft]);
 
+  const openFileMenu = useCallback(() => {
+    setIsFileMenuOpen(true);
+  }, []);
+
+  const closeFileMenu = useCallback(() => {
+    setIsFileMenuOpen(false);
+  }, []);
+
+  const runFileMenuAction = useCallback(
+    (action: () => void) => {
+      closeFileMenu();
+      action();
+    },
+    [closeFileMenu]
+  );
+
   const IconButton = ({
     label,
     onClick,
@@ -175,46 +286,139 @@ export default function TopBar({
     </Tooltip>
   );
 
+  const FileMenuItem = ({
+    label,
+    onClick,
+    disabled,
+    children
+  }: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+    children: ReactNode;
+  }) => (
+    <Tooltip
+      content={label}
+      placement="bottom"
+      showArrow
+    >
+      <button
+        aria-label={label}
+        className="titlebar-icon-btn titlebar-file-item"
+        disabled={disabled}
+        onClick={() => runFileMenuAction(onClick)}
+        type="button"
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+
+  const WindowControlButton = ({
+    label,
+    onClick,
+    className,
+    children
+  }: {
+    label: string;
+    onClick: () => void;
+    className?: string;
+    children: ReactNode;
+  }) => (
+    <Tooltip
+      content={label}
+      placement="bottom"
+      showArrow
+    >
+      <button
+        aria-label={label}
+        className={className ? `win-btn ${className}` : "win-btn"}
+        onClick={onClick}
+        type="button"
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+
   return (
     <header className="titlebar-shell">
       <div
         className="titlebar-drag-area"
         data-tauri-drag-region
+        onDoubleClick={() => {
+          void handlePseudoMaximize();
+        }}
       />
       <section className="titlebar-actions">
-        <IconButton
-          label="New Window (Ctrl+N)"
-          disabled={isBusy}
-          onClick={onNewWindow}
+        <div
+          className="titlebar-file-menu"
+          ref={fileMenuRef}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (!next || !event.currentTarget.contains(next)) {
+              closeFileMenu();
+            }
+          }}
         >
-          <SquarePlus className="titlebar-icon" />
-        </IconButton>
-        <IconButton
-          label="Open (Ctrl+O)"
-          disabled={isBusy}
-          onClick={onOpen}
-        >
-          <FolderOpen className="titlebar-icon" />
-        </IconButton>
+          <Tooltip
+            content="File"
+            placement="bottom"
+            showArrow
+          >
+            <button
+              aria-expanded={isFileMenuOpen}
+              aria-haspopup="menu"
+              aria-label="File"
+              className="titlebar-icon-btn titlebar-file-trigger"
+              onClick={() => {
+                if (isFileMenuOpen) {
+                  closeFileMenu();
+                  return;
+                }
+                openFileMenu();
+              }}
+              type="button"
+            >
+              <File className="titlebar-icon" />
+            </button>
+          </Tooltip>
+          {isFileMenuOpen && (
+            <div
+              aria-label="File actions"
+              className="titlebar-file-popover"
+              role="menu"
+            >
+              <FileMenuItem
+                label="New Window (Ctrl+N)"
+                disabled={isBusy}
+                onClick={onNewWindow}
+              >
+                <FilePlus2 className="titlebar-icon" />
+              </FileMenuItem>
+              <FileMenuItem
+                label="Open (Ctrl+O)"
+                disabled={isBusy}
+                onClick={onOpen}
+              >
+                <FileInput className="titlebar-icon" />
+              </FileMenuItem>
+              <FileMenuItem
+                label="Save As (Ctrl+Shift+S)"
+                disabled={isBusy}
+                onClick={onSaveAs}
+              >
+                <SaveAll className="titlebar-icon" />
+              </FileMenuItem>
+            </div>
+          )}
+        </div>
         <IconButton
           label="Save (Ctrl+S)"
           disabled={isBusy}
           onClick={onSave}
         >
           <Save className="titlebar-icon" />
-        </IconButton>
-        <IconButton
-          label="Save As (Ctrl+Shift+S)"
-          disabled={isBusy}
-          onClick={onSaveAs}
-        >
-          <SaveAll className="titlebar-icon" />
-        </IconButton>
-        <IconButton
-          label={uiTheme === "classic" ? "Switch to modern UI" : "Switch to classic UI"}
-          onClick={onToggleUiTheme}
-        >
-          <LayoutTemplate className="titlebar-icon" />
         </IconButton>
         <IconButton
           label={themeMode === "light" ? "Switch to dark theme" : "Switch to light theme"}
@@ -270,22 +474,31 @@ export default function TopBar({
       </section>
 
       <section className="win-controls">
-        <button
-          aria-label="Minimize"
-          className="win-btn"
-          onClick={handleMinimize}
-          type="button"
+        <WindowControlButton
+          label="Minimize"
+          onClick={() => {
+            void handleMinimize();
+          }}
         >
-          <Minimize2 className="win-icon" />
-        </button>
-        <button
-          aria-label="Close"
-          className="win-btn close"
-          onClick={handleClose}
-          type="button"
+          <Minus className="win-icon" />
+        </WindowControlButton>
+        <WindowControlButton
+          label={isPseudoMaximized ? "Restore previous size" : "Resize to 40% x 90%"}
+          onClick={() => {
+            void handlePseudoMaximize();
+          }}
+        >
+          <Maximize2 className="win-icon" />
+        </WindowControlButton>
+        <WindowControlButton
+          className="close"
+          label="Close"
+          onClick={() => {
+            void handleClose();
+          }}
         >
           <X className="win-icon" />
-        </button>
+        </WindowControlButton>
       </section>
     </header>
   );

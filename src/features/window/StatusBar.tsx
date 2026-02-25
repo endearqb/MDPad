@@ -1,10 +1,13 @@
+import { Tooltip } from "baseui/tooltip";
 import { Check, CircleAlert, CircleDot, Loader2 } from "lucide-react";
-import type { SaveState } from "../../shared/types/doc";
+import type { SaveState, UiTheme } from "../../shared/types/doc";
 
 interface StatusBarProps {
   encoding?: "UTF-8";
   saveState: SaveState;
   charCount: number;
+  uiTheme: UiTheme;
+  onToggleUiTheme: () => void;
 }
 
 const saveStateCopy: Record<SaveState, string> = {
@@ -53,7 +56,9 @@ function SaveStateIcon({ saveState }: { saveState: SaveState }) {
 export default function StatusBar({
   encoding = "UTF-8",
   saveState,
-  charCount
+  charCount,
+  uiTheme,
+  onToggleUiTheme
 }: StatusBarProps) {
   return (
     <footer className="statusbar-shell">
@@ -65,6 +70,20 @@ export default function StatusBar({
         </span>
       </section>
       <section className="statusbar-right">
+        <Tooltip
+          content="Click to switch theme"
+          placement="top"
+          showArrow
+        >
+          <button
+            aria-label={uiTheme === "classic" ? "Switch to modern UI" : "Switch to classic UI"}
+            className="statusbar-theme-switch"
+            onClick={onToggleUiTheme}
+            type="button"
+          >
+            {uiTheme === "classic" ? "Classic Theme" : "Modern Theme"}
+          </button>
+        </Tooltip>
         <span>{charCount.toLocaleString()} chars</span>
       </section>
     </footer>

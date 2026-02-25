@@ -179,6 +179,17 @@ export default function App() {
   }, [uiTheme]);
 
   useEffect(() => {
+    try {
+      const appWindow = getCurrentWindow();
+      void appWindow.setShadow(uiTheme === "classic").catch(() => {
+        // Ignore runtime failures and keep current window behavior.
+      });
+    } catch {
+      // Ignore when window APIs are unavailable.
+    }
+  }, [uiTheme]);
+
+  useEffect(() => {
     const appWindow = getCurrentWindow();
     let isDisposed = false;
     let unlistenResize: UnlistenFn | undefined;
@@ -414,6 +425,10 @@ export default function App() {
     []
   );
 
+  const handleToggleUiTheme = useCallback(() => {
+    setUiTheme((current) => (current === "modern" ? "classic" : "modern"));
+  }, []);
+
   useEffect(() => {
     const handleShortcuts = (event: KeyboardEvent) => {
       const metaPressed = event.ctrlKey || event.metaKey;
@@ -537,16 +552,10 @@ export default function App() {
             onRename={handleRename}
             onSave={handleSave}
             onSaveAs={handleSaveAs}
-            onToggleUiTheme={() =>
-              setUiTheme((current) =>
-                current === "modern" ? "classic" : "modern"
-              )
-            }
             onToggleTheme={() =>
               setThemeMode((current) => (current === "light" ? "dark" : "light"))
             }
             themeMode={themeMode}
-            uiTheme={uiTheme}
           />
 
           {errorMessage && (
@@ -578,6 +587,8 @@ export default function App() {
           <StatusBar
             saveState={saveState}
             charCount={charCount}
+            onToggleUiTheme={handleToggleUiTheme}
+            uiTheme={uiTheme}
           />
         </div>
 

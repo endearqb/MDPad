@@ -95,3 +95,14 @@
 - When user asks for "transparent background", do not stop at removing canvas-sized white path only.
 - Also scan and verify all near-white fills (`#FEFEFD`, `#EEEFED`, `#FFFFFF`, etc.) to avoid residual white details.
 - Add a quick alpha check on generated PNG corners after icon regen to confirm transparency is preserved.
+
+## 2026-02-25 Theme-specific Window Chrome
+- For dual UI themes in a frameless app, avoid relying on one global window-shadow setting when themes require opposite visuals.
+- If Modern should be borderless/flat and Classic should have border/elevation, enforce differences with explicit `.ui-modern` / `.ui-classic` overrides.
+- When restoring classic compactness adjustments, keep editor content padding and statusbar text spacing aligned with modern defaults unless user asks otherwise.
+
+## 2026-02-25 Hover Menu Interaction
+- For topbar hover menus, do not open immediately on cursor pass-through; use a short open delay to avoid accidental activation.
+- Keep a close grace period so users can move from trigger to floating menu without collapse flicker.
+- In layered frameless layouts, ensure hover menu z-index is above editor/status containers in all UI themes.
+- Bind hover-open trigger to the icon/button itself, not a wider wrapper hit-area, so hovering nearby regions does not open the menu.

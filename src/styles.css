@@ -117,6 +117,7 @@ body {
   --scrollbar-thumb-hover: #9d9d9d;
   --shadow-elev: 0 10px 24px rgba(0, 0, 0, 0.18);
   --shadow-surface: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --editor-container-border: #e9e9e9;
 }
 
 .theme-dark.ui-classic {
@@ -142,6 +143,7 @@ body {
   --scrollbar-thumb-hover: #8a8a8a;
   --shadow-elev: 0 14px 30px rgba(0, 0, 0, 0.5);
   --shadow-surface: 0 6px 14px rgba(0, 0, 0, 0.4);
+  --editor-container-border: #4a4a4a;
 }
 
 .app-root {
@@ -172,6 +174,7 @@ body {
   height: 48px;
   min-height: 48px;
   position: relative;
+  z-index: 20;
   display: grid;
   grid-template-columns: max-content 1fr max-content;
   align-items: center;
@@ -202,6 +205,42 @@ body {
 
 .titlebar-actions {
   gap: 4px;
+}
+
+.titlebar-file-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  z-index: 9;
+}
+
+.titlebar-file-menu::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 172px;
+  height: 12px;
+}
+
+.titlebar-file-trigger {
+  position: relative;
+}
+
+.titlebar-file-popover {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  background: var(--chrome-bg);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-surface);
+  z-index: 1200;
 }
 
 .titlebar-icon-btn {
@@ -280,6 +319,7 @@ body {
 
 .titlebar-rename-input {
   width: min(340px, calc(100vw - 380px));
+  min-width: 16ch;
   border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--chrome-border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--editor-bg) 90%, transparent);
@@ -1239,6 +1279,25 @@ body {
   gap: 5px;
 }
 
+.statusbar-theme-switch {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.statusbar-theme-switch:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.statusbar-theme-switch:active {
+  opacity: 0.78;
+}
+
 .status-icon {
   width: 12px;
   height: 12px;
@@ -1260,40 +1319,70 @@ body {
   color: #22c55e;
 }
 
+.app-root.ui-modern {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.app-root.ui-modern .editor-surface {
+  box-shadow: none;
+}
+
 .app-root.ui-classic {
   border-radius: 8px;
+  border-color: var(--app-shell-border);
   backdrop-filter: none;
   font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  background: var(--editor-bg);
+  box-shadow: none;
 }
 
 .app-root.ui-classic .workspace-shell {
-  gap: 4px;
-  padding: 6px;
+  gap: 0;
+  padding: 0;
+  background: var(--editor-bg);
 }
 
 .app-root.ui-classic .titlebar-shell {
   height: 40px;
   min-height: 40px;
-  gap: 6px;
-  padding: 0 4px;
+  gap: 0;
+  padding: 0;
+  border: none;
   border-radius: 6px;
+  background: var(--editor-bg);
   backdrop-filter: none;
   box-shadow: none;
+}
+
+.app-root.ui-classic .titlebar-actions,
+.app-root.ui-classic .titlebar-center,
+.app-root.ui-classic .win-controls {
+  gap: 0;
+}
+
+.app-root.ui-classic .titlebar-file-popover {
+  border: none;
+  border-radius: 6px;
+  background: var(--editor-bg);
+  backdrop-filter: none;
+  box-shadow: var(--shadow-surface);
+  padding: 4px;
 }
 
 .app-root.ui-classic .titlebar-icon-btn {
   width: 30px;
   height: 28px;
   border-radius: 4px;
-  border: 1px solid transparent;
+  border: none;
 }
 
 .app-root.ui-classic .titlebar-icon-btn:hover {
-  border-color: color-mix(in srgb, var(--chrome-border) 90%, transparent);
+  border-color: transparent;
 }
 
 .app-root.ui-classic .titlebar-icon-btn:active {
-  border-color: color-mix(in srgb, var(--chrome-border) 95%, transparent);
+  border-color: transparent;
 }
 
 .app-root.ui-classic .titlebar-icon {
@@ -1319,21 +1408,29 @@ body {
 
 .app-root.ui-classic .win-btn {
   width: 44px;
-  border-left: 1px solid color-mix(in srgb, var(--chrome-border) 75%, transparent);
+  border-left: none;
 }
 
 .app-root.ui-classic .error-banner {
+  border: none;
   border-radius: 6px;
+  background: var(--editor-bg);
+  padding: 0;
+  gap: 0;
 }
 
 .app-root.ui-classic .editor-loading {
+  border: none;
   border-radius: 6px;
+  background: var(--editor-bg);
 }
 
 .app-root.ui-classic .editor-surface {
+  border: 1px solid var(--editor-container-border);
   border-radius: 6px;
+  background: var(--editor-bg);
   box-shadow: none;
-  padding: clamp(16px, 3vw, 28px) clamp(14px, 4vw, 30px) clamp(24px, 4vw, 36px);
+  padding: clamp(22px, 4vw, 44px) clamp(18px, 6vw, 74px) clamp(30px, 5vw, 64px);
 }
 
 .app-root.ui-classic .mdpad-editor {
@@ -1341,32 +1438,66 @@ body {
 }
 
 .app-root.ui-classic .slash-menu {
+  border: none;
   border-radius: 6px;
+  background: var(--editor-bg);
   box-shadow: none;
 }
 
+.app-root.ui-classic .slash-menu-query {
+  padding: 0;
+  border-bottom: none;
+  background: var(--editor-bg);
+}
+
+.app-root.ui-classic .slash-group + .slash-group {
+  border-top: none;
+}
+
+.app-root.ui-classic .slash-group-title {
+  padding: 0;
+}
+
 .app-root.ui-classic .slash-item {
-  padding: 7px 10px;
+  gap: 0;
+  padding: 0;
+}
+
+.app-root.ui-classic .slash-item-copy {
+  gap: 0;
+}
+
+.app-root.ui-classic .slash-empty {
+  padding: 0;
 }
 
 .app-root.ui-classic .slash-item-icon-wrap {
   border-radius: 4px;
-  border: 1px solid color-mix(in srgb, var(--editor-border) 80%, transparent);
+  border: none;
+  background: var(--editor-bg);
 }
 
 .app-root.ui-classic .bubble-menu-shell {
-  border: 1px solid var(--editor-border);
+  border: none;
   border-radius: 6px;
   background: var(--editor-bg);
   box-shadow: var(--shadow-surface);
   color: var(--text-primary);
+  gap: 0;
+  padding: 0;
 }
 
 .app-root.ui-classic .bubble-style-popover {
-  border: 1px solid var(--editor-border);
+  border: none;
   border-radius: 6px;
   background: var(--editor-bg);
   box-shadow: var(--shadow-surface);
+  padding: 0;
+  gap: 0;
+}
+
+.app-root.ui-classic .tippy-box[data-theme~="mdpad-bubble"] > .tippy-arrow {
+  color: var(--editor-bg);
 }
 
 .app-root.ui-classic .bubble-style-item {
@@ -1404,16 +1535,33 @@ body {
 .app-root.ui-classic .statusbar-shell {
   height: 26px;
   min-height: 26px;
+  border: none;
   border-radius: 4px;
+  background: var(--editor-bg);
   backdrop-filter: none;
   box-shadow: none;
   font-size: 11px;
-  padding: 0 8px;
+  padding: 0 10px;
+}
+
+.app-root.ui-classic .statusbar-left,
+.app-root.ui-classic .statusbar-right {
+  gap: 10px;
+}
+
+.app-root.ui-classic .statusbar-save-state {
+  gap: 5px;
 }
 
 .app-root.ui-classic .statusbar-pill {
+  padding: 2px 6px;
   border-radius: 4px;
-  border: 1px solid color-mix(in srgb, var(--status-border) 72%, transparent);
+  border: none;
+  background: var(--editor-bg);
+}
+
+.app-root.ui-classic .statusbar-theme-switch:hover {
+  text-decoration-thickness: 1px;
 }
 
 @keyframes mdpad-spin {
