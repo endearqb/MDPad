@@ -1,11 +1,15 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip } from "baseui/tooltip";
-import { Check, CircleAlert, CircleDot, Loader2 } from "lucide-react";
-import type { SaveState, UiTheme } from "../../shared/types/doc";
+import { Check, ChevronDown, CircleAlert, CircleDot, Loader2 } from "lucide-react";
+import type { MarkdownTheme, SaveState, UiTheme } from "../../shared/types/doc";
 
 interface StatusBarProps {
   encoding?: "UTF-8";
   saveState: SaveState;
   charCount: number;
+  markdownTheme: MarkdownTheme;
+  onToggleMarkdownTheme: () => void;
+  onSelectMarkdownTheme: (theme: MarkdownTheme) => void;
   uiTheme: UiTheme;
   onToggleUiTheme: () => void;
 }
@@ -16,6 +20,20 @@ const saveStateCopy: Record<SaveState, string> = {
   unsaved: "Unsaved",
   error: "Save failed"
 };
+
+const markdownThemeCopy: Record<MarkdownTheme, string> = {
+  default: "Default",
+  notionish: "Notion",
+  github: "GitHub",
+  academic: "Academic"
+};
+
+const markdownThemeOptions: MarkdownTheme[] = [
+  "default",
+  "notionish",
+  "github",
+  "academic"
+];
 
 function SaveStateIcon({ saveState }: { saveState: SaveState }) {
   if (saveState === "saving") {
@@ -57,9 +75,46 @@ export default function StatusBar({
   encoding = "UTF-8",
   saveState,
   charCount,
+  markdownTheme,
+  onToggleMarkdownTheme,
+  onSelectMarkdownTheme,
   uiTheme,
   onToggleUiTheme
 }: StatusBarProps) {
+  const menuRootRef = useRef<HTMLDivElement | null>(null);
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
+  const currentMarkdownThemeLabel = useMemo(
+    () => markdownThemeCopy[markdownTheme],
+    [markdownTheme]
+  );
+
+  useEffect(() => {
+    if (!isThemeMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target || menuRootRef.current?.contains(target)) {
+        return;
+      }
+      setIsThemeMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsThemeMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isThemeMenuOpen]);
+
   return (
     <footer className="statusbar-shell">
       <section className="statusbar-left">
@@ -70,8 +125,71 @@ export default function StatusBar({
         </span>
       </section>
       <section className="statusbar-right">
+        <div
+          className="statusbar-theme-group"
+          ref={menuRootRef}
+        >
+          <Tooltip
+            content="Cycle markdown style"
+            placement="top"
+            showArrow
+          >
+            <button
+              aria-label="Cycle markdown theme"
+              className="statusbar-theme-switch"
+              onClick={onToggleMarkdownTheme}
+              type="button"
+            >
+              {currentMarkdownThemeLabel}
+            </button>
+          </Tooltip>
+          <Tooltip
+            content="Select markdown style"
+            placement="top"
+            showArrow
+          >
+            <button
+              aria-expanded={isThemeMenuOpen}
+              aria-label="Select markdown style"
+              aria-haspopup="menu"
+              className="statusbar-theme-switch statusbar-theme-menu-trigger"
+              onClick={() => setIsThemeMenuOpen((current) => !current)}
+              type="button"
+            >
+              <ChevronDown
+                aria-hidden="true"
+                className="statusbar-theme-menu-icon"
+              />
+            </button>
+          </Tooltip>
+          {isThemeMenuOpen ? (
+            <div
+              className="statusbar-theme-menu"
+              role="menu"
+            >
+              {markdownThemeOptions.map((themeOption) => (
+                <button
+                  aria-checked={markdownTheme === themeOption}
+                  className={[
+                    "statusbar-theme-menu-item",
+                    markdownTheme === themeOption ? "is-active" : ""
+                  ].join(" ")}
+                  key={themeOption}
+                  onClick={() => {
+                    onSelectMarkdownTheme(themeOption);
+                    setIsThemeMenuOpen(false);
+                  }}
+                  role="menuitemradio"
+                  type="button"
+                >
+                  {markdownThemeCopy[themeOption]}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <Tooltip
-          content="Click to switch theme"
+          content="Click to switch window UI"
           placement="top"
           showArrow
         >

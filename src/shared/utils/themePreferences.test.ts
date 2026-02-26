@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  MARKDOWN_THEME_STORAGE_KEY,
   THEME_MODE_STORAGE_KEY,
   UI_THEME_STORAGE_KEY,
+  isMarkdownTheme,
   isThemeMode,
   isUiTheme,
+  readMarkdownThemePreference,
   readThemeModePreference,
   readUiThemePreference,
+  writeMarkdownThemePreference,
   writeThemeModePreference,
   writeUiThemePreference
 } from "./themePreferences";
@@ -71,24 +75,30 @@ describe("themePreferences", () => {
     localStorage.clear();
     expect(readThemeModePreference("light")).toBe("light");
     expect(readUiThemePreference("modern")).toBe("modern");
+    expect(readMarkdownThemePreference("default")).toBe("default");
   });
 
   it("reads stored values after persisting", () => {
     writeThemeModePreference("dark");
     writeUiThemePreference("classic");
+    writeMarkdownThemePreference("github");
 
     expect(readThemeModePreference("light")).toBe("dark");
     expect(readUiThemePreference("modern")).toBe("classic");
+    expect(readMarkdownThemePreference("default")).toBe("github");
     expect(localStorage.getItem(THEME_MODE_STORAGE_KEY)).toBe("dark");
     expect(localStorage.getItem(UI_THEME_STORAGE_KEY)).toBe("classic");
+    expect(localStorage.getItem(MARKDOWN_THEME_STORAGE_KEY)).toBe("github");
   });
 
   it("falls back when stored values are invalid", () => {
     localStorage.setItem(THEME_MODE_STORAGE_KEY, "invalid");
     localStorage.setItem(UI_THEME_STORAGE_KEY, "invalid");
+    localStorage.setItem(MARKDOWN_THEME_STORAGE_KEY, "invalid");
 
     expect(readThemeModePreference("dark")).toBe("dark");
     expect(readUiThemePreference("classic")).toBe("classic");
+    expect(readMarkdownThemePreference("default")).toBe("default");
   });
 
   it("validates theme values with type guards", () => {
@@ -101,5 +111,12 @@ describe("themePreferences", () => {
     expect(isUiTheme("classic")).toBe(true);
     expect(isUiTheme("light")).toBe(false);
     expect(isUiTheme(undefined)).toBe(false);
+
+    expect(isMarkdownTheme("default")).toBe(true);
+    expect(isMarkdownTheme("notionish")).toBe(true);
+    expect(isMarkdownTheme("github")).toBe(true);
+    expect(isMarkdownTheme("academic")).toBe(true);
+    expect(isMarkdownTheme("classic")).toBe(false);
+    expect(isMarkdownTheme(undefined)).toBe(false);
   });
 });

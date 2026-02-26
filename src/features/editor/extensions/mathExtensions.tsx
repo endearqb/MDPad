@@ -7,9 +7,22 @@ import {
 import katex from "katex";
 import { useCallback, useMemo } from "react";
 
-const inlineMathInputRegex = /(^|[\s([{])\$([^$\n]+)\$$/u;
-const inlineMathPasteRegex = /\$([^$\n]+)\$/gu;
+const inlineMathInputRegex = /(^|[\s([{])(?<!\$)\$([^$\n]+)\$(?!\$)$/u;
+const inlineMathPasteRegex = /(?<!\$)\$([^$\n]+)\$(?!\$)/gu;
 const blockMathInputRegex = /^\$\$([^$\n]+)\$\$$/u;
+const blockMathPasteRegex = /(^|\n)\$\$([^$\n]+)\$\$(?=\n|$)/gu;
+
+export type MathEditMode = "inline" | "block";
+
+export interface MathEditRequest {
+  mode: MathEditMode;
+  latex: string;
+  apply: (nextLatex: string | null) => void;
+}
+
+interface MathExtensionOptions {
+  onRequestEdit: ((request: MathEditRequest) => void) | null;
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -33,12 +46,14 @@ function renderLatex(latex: string, displayMode: boolean): string {
 }
 
 function MathNodeView({
+  extension,
   editor,
   deleteNode,
   node,
   updateAttributes
 }: NodeViewProps) {
   const displayMode = node.type.name === "blockMath";
+  const mode: MathEditMode = displayMode ? "block" : "inline";
   const latex = typeof node.attrs.latex === "string" ? node.attrs.latex : "";
   const rendered = useMemo(() => renderLatex(latex, displayMode), [displayMode, latex]);
 
@@ -47,19 +62,27 @@ function MathNodeView({
       return;
     }
 
-    const next = window.prompt("Edit formula", latex);
-    if (next === null) {
-      return;
-    }
+    const applyEdit = (nextLatex: string | null) => {
+      if (nextLatex === null) {
+        return;
+      }
+      const normalized = nextLatex.trim();
+      if (!normalized) {
+        deleteNode();
+        return;
+      }
+      updateAttributes({ latex: normalized });
+    };
 
-    const normalized = next.trim();
-    if (!normalized) {
-      deleteNode();
-      return;
+    const onRequestEdit = (extension.options as MathExtensionOptions).onRequestEdit;
+    if (typeof onRequestEdit === "function") {
+      onRequestEdit({
+        mode,
+        latex,
+        apply: applyEdit
+      });
     }
-
-    updateAttributes({ latex: normalized });
-  }, [deleteNode, editor.isEditable, latex, updateAttributes]);
+  }, [deleteNode, editor.isEditable, extension.options, latex, mode, updateAttributes]);
 
   return (
     <NodeViewWrapper
@@ -83,12 +106,18 @@ function MathNodeView({
   );
 }
 
-export const InlineMath = Node.create({
+export const InlineMath = Node.create<MathExtensionOptions>({
   name: "inlineMath",
   inline: true,
   group: "inline",
   atom: true,
   selectable: true,
+
+  addOptions() {
+    return {
+      onRequestEdit: null
+    };
+  },
 
   addAttributes() {
     return {
@@ -170,13 +199,19 @@ export const InlineMath = Node.create({
   }
 });
 
-export const BlockMath = Node.create({
+export const BlockMath = Node.create<MathExtensionOptions>({
   name: "blockMath",
   group: "block",
   atom: true,
   isolating: true,
   selectable: true,
   draggable: true,
+
+  addOptions() {
+    return {
+      onRequestEdit: null
+    };
+  },
 
   addAttributes() {
     return {
@@ -221,13 +256,17 @@ export const BlockMath = Node.create({
           }
 
           const $from = state.doc.resolve(range.from);
-          if ($from.depth !== 1 || $from.parent.type.name !== "paragraph") {
+          if ($from.parent.type.name !== "paragraph") {
+            return null;
+          }
+
+          if ($from.parent.textContent.trim() !== `$$${latex}$$`) {
             return null;
           }
 
           chain()
             .insertContentAt(
-              { from: $from.before(), to: $from.after() },
+              { from: $from.before($from.depth), to: $from.after($from.depth) },
               { type: this.name, attrs: { latex } }
             )
             .run();
@@ -238,6 +277,35 @@ export const BlockMath = Node.create({
   },
 
   addPasteRules() {
-    return [];
+    return [
+      new PasteRule({
+        find: blockMathPasteRegex,
+        handler: ({ chain, range, match, state }) => {
+          const prefix = match[1] ?? "";
+          const latex = (match[2] ?? "").trim();
+          if (!latex) {
+            return null;
+          }
+
+          const from = range.from + prefix.length;
+          const $from = state.doc.resolve(from);
+          if ($from.parent.type.name !== "paragraph") {
+            return null;
+          }
+
+          if ($from.parent.textContent.trim() !== `$$${latex}$$`) {
+            return null;
+          }
+
+          chain()
+            .insertContentAt(
+              { from: $from.before($from.depth), to: $from.after($from.depth) },
+              { type: this.name, attrs: { latex } }
+            )
+            .run();
+          return;
+        }
+      })
+    ];
   }
 });

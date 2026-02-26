@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent as ReactFormEvent,
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
@@ -41,7 +42,9 @@ import {
   ListOrdered,
   Minus,
   Pilcrow,
+  SquareSigma,
   Sigma,
+  Strikethrough,
   Table2,
   TextQuote,
   Video
@@ -54,7 +57,12 @@ import {
   widthPxToPercent
 } from "./markdownImageSyntax";
 import { CalloutBlockquote } from "./extensions/calloutBlockquote";
-import { BlockMath, InlineMath } from "./extensions/mathExtensions";
+import {
+  BlockMath,
+  InlineMath,
+  type MathEditMode,
+  type MathEditRequest
+} from "./extensions/mathExtensions";
 import {
   tryConvertMarkdownTableAtSelection,
   tryConvertMathFenceAtSelection
@@ -94,6 +102,12 @@ interface MarkdownEditorProps {
 interface EditorStats {
   wordCount: number;
   charCount: number;
+}
+
+interface EditorPromptState {
+  label: string;
+  placeholder?: string;
+  confirmLabel: string;
 }
 
 type TextStyleValue = "paragraph" | 1 | 2 | 3 | 4;
@@ -201,30 +215,6 @@ function buildEditorStats(editor: Editor): EditorStats {
   };
 }
 
-function promptForSource(kind: "image" | "video" | "audio"): string | null {
-  const value = window.prompt(
-    `Enter ${kind} URL or local path`,
-    kind === "image" ? "https://" : ""
-  );
-  if (value === null) {
-    return null;
-  }
-  const normalized = value.trim();
-  return normalized === "" ? null : normalized;
-}
-
-function promptForMath(mode: "inline" | "block"): string | null {
-  const value = window.prompt(
-    mode === "inline" ? "Inline formula ($...$)" : "Block formula ($$...$$)",
-    mode === "inline" ? "x^2 + y^2 = z^2" : "\\int_0^1 x^2 dx = 1/3"
-  );
-  if (value === null) {
-    return null;
-  }
-  const normalized = value.trim();
-  return normalized === "" ? null : normalized;
-}
-
 export default function MarkdownEditor({
   markdown,
   documentPath,
@@ -240,8 +230,13 @@ export default function MarkdownEditor({
   const firstPasteSetupResolverRef = useRef<((confirmed: boolean) => void) | null>(
     null
   );
+  const editorPromptResolverRef = useRef<((value: string | null) => void) | null>(
+    null
+  );
   const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
   const [isAttachmentSetupOpen, setIsAttachmentSetupOpen] = useState(false);
+  const [editorPrompt, setEditorPrompt] = useState<EditorPromptState | null>(null);
+  const [editorPromptValue, setEditorPromptValue] = useState("");
 
   const emitStats = useCallback(
     (activeEditor: Editor) => {
@@ -267,6 +262,10 @@ export default function MarkdownEditor({
         firstPasteSetupResolverRef.current(false);
         firstPasteSetupResolverRef.current = null;
       }
+      if (editorPromptResolverRef.current) {
+        editorPromptResolverRef.current(null);
+        editorPromptResolverRef.current = null;
+      }
     };
   }, []);
 
@@ -278,6 +277,102 @@ export default function MarkdownEditor({
     }
     console.error(message);
   }, []);
+
+  const resolveEditorPrompt = useCallback((value: string | null) => {
+    setEditorPrompt(null);
+    setEditorPromptValue("");
+    const resolver = editorPromptResolverRef.current;
+    editorPromptResolverRef.current = null;
+    if (resolver) {
+      resolver(value);
+    }
+  }, []);
+
+  const requestEditorPrompt = useCallback(
+    (request: EditorPromptState & { initialValue: string }): Promise<string | null> => {
+      return new Promise((resolve) => {
+        const pendingResolver = editorPromptResolverRef.current;
+        if (pendingResolver) {
+          pendingResolver(null);
+        }
+        editorPromptResolverRef.current = resolve;
+        setEditorPrompt({
+          label: request.label,
+          placeholder: request.placeholder,
+          confirmLabel: request.confirmLabel
+        });
+        setEditorPromptValue(request.initialValue);
+      });
+    },
+    []
+  );
+
+  const requestSourceInput = useCallback(
+    async (kind: "image" | "video" | "audio"): Promise<string | null> => {
+      const value = await requestEditorPrompt({
+        label: `Enter ${kind} URL or local path`,
+        placeholder:
+          kind === "image"
+            ? "https://example.com/image.png or ./image.png"
+            : "https://example.com/media.mp4",
+        confirmLabel: "Insert",
+        initialValue: kind === "image" ? "https://" : ""
+      });
+      if (value === null) {
+        return null;
+      }
+      const normalized = value.trim();
+      return normalized === "" ? null : normalized;
+    },
+    [requestEditorPrompt]
+  );
+
+  const requestMathInput = useCallback(
+    async (mode: MathEditMode, initialValue: string, confirmLabel: string): Promise<string | null> => {
+      const value = await requestEditorPrompt({
+        label: mode === "inline" ? "Inline formula ($...$)" : "Block formula ($$...$$)",
+        placeholder: mode === "inline" ? "x^2 + y^2 = z^2" : "\\int_0^1 x^2 dx = 1/3",
+        confirmLabel,
+        initialValue
+      });
+      if (value === null) {
+        return null;
+      }
+      return value.trim();
+    },
+    [requestEditorPrompt]
+  );
+
+  const handleMathEditRequest = useCallback(
+    (request: MathEditRequest) => {
+      void (async () => {
+        const nextLatex = await requestMathInput(request.mode, request.latex, "Apply");
+        request.apply(nextLatex);
+      })();
+    },
+    [requestMathInput]
+  );
+
+  const insertMathFromPrompt = useCallback(
+    (activeEditor: Editor, mode: MathEditMode) => {
+      void (async () => {
+        const fallback = mode === "inline" ? "x^2 + y^2 = z^2" : "\\int_0^1 x^2 dx = 1/3";
+        const latex = await requestMathInput(mode, fallback, "Insert");
+        if (!latex) {
+          return;
+        }
+        activeEditor
+          .chain()
+          .focus()
+          .insertContent({
+            type: mode === "inline" ? "inlineMath" : "blockMath",
+            attrs: { latex }
+          })
+          .run();
+      })();
+    },
+    [requestMathInput]
+  );
 
   const requestAttachmentLibrarySetup = useCallback((): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -558,23 +653,30 @@ export default function MarkdownEditor({
         icon: ImageIcon,
         keywords: ["图片", "img"],
         run: (editor) => {
-          const src = promptForSource("image");
-          if (!src) {
-            return;
-          }
-          const alt = window.prompt("Image alt text (optional)", "") ?? "";
-          editor
-            .chain()
-            .focus()
-            .insertContent({
-              type: "resizableImage",
-              attrs: {
-                src,
-                alt,
-                width: mediaDefaults.defaultWidth
-              }
-            })
-            .run();
+          void (async () => {
+            const src = await requestSourceInput("image");
+            if (!src) {
+              return;
+            }
+            const alt = (await requestEditorPrompt({
+              label: "Image alt text (optional)",
+              placeholder: "Describe the image",
+              confirmLabel: "Insert",
+              initialValue: ""
+            })) ?? "";
+            editor
+              .chain()
+              .focus()
+              .insertContent({
+                type: "resizableImage",
+                attrs: {
+                  src,
+                  alt,
+                  width: mediaDefaults.defaultWidth
+                }
+              })
+              .run();
+          })();
         }
       },
       {
@@ -584,22 +686,24 @@ export default function MarkdownEditor({
         icon: Video,
         keywords: ["视频"],
         run: (editor) => {
-          const src = promptForSource("video");
-          if (!src) {
-            return;
-          }
-          editor
-            .chain()
-            .focus()
-            .insertContent({
-              type: "videoBlock",
-              attrs: {
-                src,
-                controls: true,
-                width: mediaDefaults.defaultWidth
-              }
-            })
-            .run();
+          void (async () => {
+            const src = await requestSourceInput("video");
+            if (!src) {
+              return;
+            }
+            editor
+              .chain()
+              .focus()
+              .insertContent({
+                type: "videoBlock",
+                attrs: {
+                  src,
+                  controls: true,
+                  width: mediaDefaults.defaultWidth
+                }
+              })
+              .run();
+          })();
         }
       },
       {
@@ -609,21 +713,23 @@ export default function MarkdownEditor({
         icon: AudioLines,
         keywords: ["音频", "voice"],
         run: (editor) => {
-          const src = promptForSource("audio");
-          if (!src) {
-            return;
-          }
-          editor
-            .chain()
-            .focus()
-            .insertContent({
-              type: "audioBlock",
-              attrs: {
-                src,
-                controls: true
-              }
-            })
-            .run();
+          void (async () => {
+            const src = await requestSourceInput("audio");
+            if (!src) {
+              return;
+            }
+            editor
+              .chain()
+              .focus()
+              .insertContent({
+                type: "audioBlock",
+                attrs: {
+                  src,
+                  controls: true
+                }
+              })
+              .run();
+          })();
         }
       },
       {
@@ -632,44 +738,18 @@ export default function MarkdownEditor({
         label: "Inline Formula",
         icon: Sigma,
         keywords: ["math", "latex", "$"],
-        run: (editor) => {
-          const latex = promptForMath("inline");
-          if (!latex) {
-            return;
-          }
-          editor
-            .chain()
-            .focus()
-            .insertContent({
-              type: "inlineMath",
-              attrs: { latex }
-            })
-            .run();
-        }
+        run: (editor) => insertMathFromPrompt(editor, "inline")
       },
       {
         id: "block-math",
         group: "Math",
         label: "Math Block",
-        icon: Sigma,
+        icon: SquareSigma,
         keywords: ["math", "latex", "$$"],
-        run: (editor) => {
-          const latex = promptForMath("block");
-          if (!latex) {
-            return;
-          }
-          editor
-            .chain()
-            .focus()
-            .insertContent({
-              type: "blockMath",
-              attrs: { latex }
-            })
-            .run();
-        }
+        run: (editor) => insertMathFromPrompt(editor, "block")
       }
     ],
-    []
+    [insertMathFromPrompt, requestEditorPrompt, requestSourceInput]
   );
 
   const slashCommandController = useMemo(
@@ -714,8 +794,12 @@ export default function MarkdownEditor({
       ResizableImage,
       VideoBlock,
       AudioBlock,
-      InlineMath,
-      BlockMath
+      InlineMath.configure({
+        onRequestEdit: handleMathEditRequest
+      }),
+      BlockMath.configure({
+        onRequestEdit: handleMathEditRequest
+      })
     ],
     content: markdownToHtml(markdown),
     editorProps: {
@@ -840,12 +924,17 @@ export default function MarkdownEditor({
     [editor]
   );
 
-  const setLink = useCallback(() => {
+  const setLink = useCallback(async () => {
     if (!editor) {
       return;
     }
     const existing = editor.getAttributes("link").href as string | undefined;
-    const raw = window.prompt("Enter URL", existing ?? "https://");
+    const raw = await requestEditorPrompt({
+      label: "Enter URL",
+      placeholder: "https://example.com",
+      confirmLabel: "Apply",
+      initialValue: existing ?? "https://"
+    });
     if (raw === null) {
       return;
     }
@@ -855,7 +944,7 @@ export default function MarkdownEditor({
       return;
     }
     editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
-  }, [editor]);
+  }, [editor, requestEditorPrompt]);
 
   const textStyleOptions: Array<{ value: TextStyleValue; label: string }> = [
     { value: "paragraph", label: "正文" },
@@ -884,6 +973,18 @@ export default function MarkdownEditor({
       }
     },
     [editor, slashCommandController]
+  );
+
+  const handleEditorPromptCancel = useCallback(() => {
+    resolveEditorPrompt(null);
+  }, [resolveEditorPrompt]);
+
+  const handleEditorPromptSubmit = useCallback(
+    (event: ReactFormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      resolveEditorPrompt(editorPromptValue);
+    },
+    [editorPromptValue, resolveEditorPrompt]
   );
 
   return (
@@ -959,6 +1060,42 @@ export default function MarkdownEditor({
               <Italic className="bubble-icon" />
             </button>
             <button
+              className={`bubble-btn ${editor.isActive("strike") ? "is-active" : ""}`}
+              onClick={() => {
+                setIsStyleMenuOpen(false);
+                editor.chain().focus().toggleStrike().run();
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Strikethrough"
+              type="button"
+            >
+              <Strikethrough className="bubble-icon" />
+            </button>
+            <button
+              className={`bubble-btn ${editor.isActive("heading", { level: 1 }) ? "is-active" : ""}`}
+              onClick={() => {
+                setIsStyleMenuOpen(false);
+                editor.chain().focus().toggleHeading({ level: 1 }).run();
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Heading 1"
+              type="button"
+            >
+              <Heading1 className="bubble-icon" />
+            </button>
+            <button
+              className={`bubble-btn ${editor.isActive("heading", { level: 2 }) ? "is-active" : ""}`}
+              onClick={() => {
+                setIsStyleMenuOpen(false);
+                editor.chain().focus().toggleHeading({ level: 2 }).run();
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Heading 2"
+              type="button"
+            >
+              <Heading2 className="bubble-icon" />
+            </button>
+            <button
               className={`bubble-btn ${editor.isActive("blockquote") ? "is-active" : ""}`}
               onClick={() => {
                 setIsStyleMenuOpen(false);
@@ -983,10 +1120,70 @@ export default function MarkdownEditor({
               <Code2 className="bubble-icon" />
             </button>
             <button
+              className={`bubble-btn ${editor.isActive("bulletList") ? "is-active" : ""}`}
+              onClick={() => {
+                setIsStyleMenuOpen(false);
+                editor.chain().focus().toggleBulletList().run();
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Bullet List"
+              type="button"
+            >
+              <List className="bubble-icon" />
+            </button>
+            <button
+              className={`bubble-btn ${editor.isActive("orderedList") ? "is-active" : ""}`}
+              onClick={() => {
+                setIsStyleMenuOpen(false);
+                editor.chain().focus().toggleOrderedList().run();
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Numbered List"
+              type="button"
+            >
+              <ListOrdered className="bubble-icon" />
+            </button>
+            <button
+              className={`bubble-btn ${editor.isActive("taskList") ? "is-active" : ""}`}
+              onClick={() => {
+                setIsStyleMenuOpen(false);
+                editor.chain().focus().toggleTaskList().run();
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Todo List"
+              type="button"
+            >
+              <CheckSquare className="bubble-icon" />
+            </button>
+            <button
+              className={`bubble-btn ${editor.isActive("inlineMath") ? "is-active" : ""}`}
+              onClick={() => {
+                setIsStyleMenuOpen(false);
+                insertMathFromPrompt(editor, "inline");
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Inline Formula"
+              type="button"
+            >
+              <Sigma className="bubble-icon" />
+            </button>
+            <button
+              className={`bubble-btn ${editor.isActive("blockMath") ? "is-active" : ""}`}
+              onClick={() => {
+                setIsStyleMenuOpen(false);
+                insertMathFromPrompt(editor, "block");
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Math Block"
+              type="button"
+            >
+              <SquareSigma className="bubble-icon" />
+            </button>
+            <button
               className={`bubble-btn ${editor.isActive("link") ? "is-active" : ""}`}
               onClick={() => {
                 setIsStyleMenuOpen(false);
-                setLink();
+                void setLink();
               }}
               onMouseDown={(event) => event.preventDefault()}
               title="Link"
@@ -1053,6 +1250,61 @@ export default function MarkdownEditor({
       <div className="editor-surface">
         <EditorContent editor={editor} />
       </div>
+
+      {editorPrompt && (
+        <div
+          className="editor-prompt-backdrop"
+          onMouseDown={handleEditorPromptCancel}
+        >
+          <form
+            className="editor-prompt-dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={handleEditorPromptSubmit}
+          >
+            <label
+              className="editor-prompt-label"
+              htmlFor="editor-prompt-input"
+            >
+              {editorPrompt.label}
+            </label>
+            <textarea
+              autoFocus
+              className="editor-prompt-input"
+              id="editor-prompt-input"
+              onChange={(event) => setEditorPromptValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  resolveEditorPrompt(null);
+                  return;
+                }
+                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  resolveEditorPrompt(editorPromptValue);
+                }
+              }}
+              placeholder={editorPrompt.placeholder}
+              rows={3}
+              value={editorPromptValue}
+            />
+            <div className="editor-prompt-actions">
+              <button
+                className="editor-prompt-btn editor-prompt-btn-secondary"
+                onClick={handleEditorPromptCancel}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="editor-prompt-btn editor-prompt-btn-primary"
+                type="submit"
+              >
+                {editorPrompt.confirmLabel}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <AttachmentLibrarySetupModal
         isOpen={isAttachmentSetupOpen}

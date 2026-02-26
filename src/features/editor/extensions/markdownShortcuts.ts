@@ -12,6 +12,18 @@ interface TopLevelBlock {
   text: string;
 }
 
+interface ParentBlock {
+  index: number;
+  node: {
+    nodeSize: number;
+    textContent: string;
+    type: { name: string };
+  };
+  pos: number;
+  end: number;
+  text: string;
+}
+
 function getTopLevelBlocks(editor: Editor): TopLevelBlock[] {
   const blocks: TopLevelBlock[] = [];
   editor.state.doc.forEach((node, offset, index) => {
@@ -28,6 +40,48 @@ function getTopLevelBlocks(editor: Editor): TopLevelBlock[] {
 
 function isTopLevelParagraph(block: TopLevelBlock | undefined): block is TopLevelBlock {
   return Boolean(block && block.node.type.name === "paragraph");
+}
+
+function isParagraphBlock(block: ParentBlock | undefined): block is ParentBlock {
+  return Boolean(block && block.node.type.name === "paragraph");
+}
+
+function getSiblingBlocksAtSelection(
+  editor: Editor
+): { blocks: ParentBlock[]; currentIndex: number } | null {
+  const { selection } = editor.state;
+  if (!selection.empty) {
+    return null;
+  }
+
+  const paragraphDepth = selection.$from.depth;
+  if (selection.$from.node(paragraphDepth).type.name !== "paragraph") {
+    return null;
+  }
+
+  const parentDepth = paragraphDepth - 1;
+  if (parentDepth < 0) {
+    return null;
+  }
+
+  const parentNode = selection.$from.node(parentDepth);
+  const parentStart = selection.$from.start(parentDepth);
+  const blocks: ParentBlock[] = [];
+  parentNode.forEach((node, offset, index) => {
+    const pos = parentStart + offset;
+    blocks.push({
+      index,
+      node: node as ParentBlock["node"],
+      pos,
+      end: pos + node.nodeSize,
+      text: node.textContent ?? ""
+    });
+  });
+
+  return {
+    blocks,
+    currentIndex: selection.$from.index(parentDepth)
+  };
 }
 
 function isPotentialMarkdownTableLine(block: TopLevelBlock | undefined): boolean {
@@ -165,15 +219,14 @@ export function tryConvertMarkdownTableAtSelection(editor: Editor): boolean {
 }
 
 export function tryConvertMathFenceAtSelection(editor: Editor): boolean {
-  const { selection } = editor.state;
-  if (!selection.empty || selection.$from.depth !== 1) {
+  const scoped = getSiblingBlocksAtSelection(editor);
+  if (!scoped) {
     return false;
   }
 
-  const blocks = getTopLevelBlocks(editor);
-  const currentIndex = selection.$from.index(0);
+  const { blocks, currentIndex } = scoped;
   const currentBlock = blocks[currentIndex];
-  if (!isTopLevelParagraph(currentBlock)) {
+  if (!isParagraphBlock(currentBlock)) {
     return false;
   }
 
@@ -200,7 +253,7 @@ export function tryConvertMathFenceAtSelection(editor: Editor): boolean {
   let openIndex = currentIndex - 1;
   while (openIndex >= 0) {
     const candidate = blocks[openIndex];
-    if (!isTopLevelParagraph(candidate)) {
+    if (!isParagraphBlock(candidate)) {
       return false;
     }
     if (candidate.text.trim() === "$$") {
@@ -214,7 +267,7 @@ export function tryConvertMathFenceAtSelection(editor: Editor): boolean {
   }
 
   const contentBlocks = blocks.slice(openIndex + 1, currentIndex);
-  if (contentBlocks.length === 0 || contentBlocks.some((block) => !isTopLevelParagraph(block))) {
+  if (contentBlocks.length === 0 || contentBlocks.some((block) => !isParagraphBlock(block))) {
     return false;
   }
 

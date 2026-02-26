@@ -1,7 +1,8 @@
-import type { ThemeMode, UiTheme } from "../types/doc";
+import type { MarkdownTheme, ThemeMode, UiTheme } from "../types/doc";
 
 export const THEME_MODE_STORAGE_KEY = "mdpad.theme-mode.v1";
 export const UI_THEME_STORAGE_KEY = "mdpad.ui-theme.v1";
+export const MARKDOWN_THEME_STORAGE_KEY = "mdpad.markdown-theme.v1";
 
 export function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark";
@@ -9,6 +10,15 @@ export function isThemeMode(value: unknown): value is ThemeMode {
 
 export function isUiTheme(value: unknown): value is UiTheme {
   return value === "modern" || value === "classic";
+}
+
+export function isMarkdownTheme(value: unknown): value is MarkdownTheme {
+  return (
+    value === "default" ||
+    value === "notionish" ||
+    value === "github" ||
+    value === "academic"
+  );
 }
 
 export function readThemeModePreference(fallback: ThemeMode): ThemeMode {
@@ -56,6 +66,31 @@ export function writeUiThemePreference(uiTheme: UiTheme): void {
 
   try {
     localStorage.setItem(UI_THEME_STORAGE_KEY, uiTheme);
+  } catch {
+    // Ignore storage failures and keep runtime behavior unchanged.
+  }
+}
+
+export function readMarkdownThemePreference(fallback: MarkdownTheme): MarkdownTheme {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  try {
+    const stored = localStorage.getItem(MARKDOWN_THEME_STORAGE_KEY);
+    return isMarkdownTheme(stored) ? stored : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeMarkdownThemePreference(markdownTheme: MarkdownTheme): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    localStorage.setItem(MARKDOWN_THEME_STORAGE_KEY, markdownTheme);
   } catch {
     // Ignore storage failures and keep runtime behavior unchanged.
   }

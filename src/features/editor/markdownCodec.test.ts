@@ -20,6 +20,32 @@ describe("markdownCodec", () => {
     expect(html).toContain('data-type="block-math"');
   });
 
+  it("converts single-line $$...$$ into block math", () => {
+    const html = markdownToHtml("$$ddadf$$");
+
+    expect(html).toContain('data-type="block-math"');
+    expect(html).toContain('data-latex="ddadf"');
+    expect(html).not.toContain('data-type="inline-math"');
+  });
+
+  it("converts blockquote single-line $$...$$ into block math", () => {
+    const html = markdownToHtml("> $$ddadf$$");
+
+    expect(html).toContain("<blockquote>");
+    expect(html).toContain('data-type="block-math"');
+    expect(html).toContain('data-latex="ddadf"');
+    expect(html).not.toContain('data-type="inline-math"');
+  });
+
+  it("converts blockquote fenced $$...$$ into block math", () => {
+    const markdown = "> $$\n> a+b\n> $$";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<blockquote>");
+    expect(html).toContain('data-type="block-math"');
+    expect(html).toContain('data-latex="a+b"');
+  });
+
   it("converts GitHub callout syntax to blockquote callout html", () => {
     const markdown = "> [!TIP]\n> Keep this in mind.\n>\n> Extra detail.";
     const html = markdownToHtml(markdown);
@@ -28,6 +54,22 @@ describe("markdownCodec", () => {
     expect(html).toContain("<p>Keep this in mind.</p>");
     expect(html).toContain("<p>Extra detail.</p>");
     expect(html).not.toContain("[!TIP]");
+  });
+
+  it("parses markdown syntax after a normal blockquote", () => {
+    const markdown = "> quoted\n## next";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<blockquote>");
+    expect(html).toContain("<h2>next</h2>");
+  });
+
+  it("parses markdown syntax after a callout blockquote", () => {
+    const markdown = "> [!TIP]\n> Keep this in mind.\n## next";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain('blockquote data-callout="tip"');
+    expect(html).toContain("<h2>next</h2>");
   });
 
   it("serializes task list, math and media nodes back to markdown", () => {

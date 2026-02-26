@@ -141,3 +141,14 @@
 - Obsidian image embeds (`![[file.png]]`) are not standard markdown and must be preprocessed explicitly before `marked.parse`.
 - Size hints may be width-only (`400x`) or height-only (`x300`); parser models should allow either side to be optional.
 - For mixed editor ecosystems, treat paste parsing and file-load parsing as one compatibility surface and keep them in one shared parser module.
+
+## 2026-02-26 Theme-specific Task Checkbox Consistency
+- Task list checkbox should not always inherit app accent color; theme styles (GitHub/Notion) need dedicated `accent-color` values.
+- For checkbox vertical alignment, avoid hardcoded one-size-fits-all offset; expose a variable and tune per markdown theme.
+- When users report “checkbox too high + blue background”, verify both base task rules and theme override sections together.
+- If users still report “too high” after a first pass, prioritize larger offset adjustment before structural layout changes; this keeps impact minimal and iteration fast.
+
+## 2026-02-26 Bubble Menu Density and Direction
+- For compact bubble toolbars, keep style selector width minimal and move its option panel to the side to avoid covering content below selection.
+- When adding more actions to selection toolbar, enforce horizontal layout (`nowrap`) with safe horizontal overflow instead of wrapping to a second row.
+- If users ask to remove wording from dropdown triggers, keep icon-only trigger but add explicit `aria-label` to preserve accessibility.

@@ -29,6 +29,7 @@ import {
 import TopBar from "./features/window/TopBar";
 import StatusBar from "./features/window/StatusBar";
 import type {
+  MarkdownTheme,
   OpenFilePayload,
   PendingAction,
   SaveState,
@@ -42,8 +43,10 @@ import {
   isMarkdownPath
 } from "./shared/utils/path";
 import {
+  readMarkdownThemePreference,
   readThemeModePreference,
   readUiThemePreference,
+  writeMarkdownThemePreference,
   writeThemeModePreference,
   writeUiThemePreference
 } from "./shared/utils/themePreferences";
@@ -68,6 +71,10 @@ function getInitialThemeMode(): ThemeMode {
 
 function getInitialUiTheme(): UiTheme {
   return readUiThemePreference("classic");
+}
+
+function getInitialMarkdownTheme(): MarkdownTheme {
+  return readMarkdownThemePreference("default");
 }
 
 function formatError(error: unknown): string {
@@ -107,6 +114,12 @@ const WINDOW_SIZE_STORAGE_KEY = "mdpad.window-size.v1";
 const MIN_WINDOW_WIDTH = 420;
 const MIN_WINDOW_HEIGHT = 320;
 const TOAST_AUTO_HIDE_MS = 3200;
+const MARKDOWN_THEME_ORDER: MarkdownTheme[] = [
+  "default",
+  "notionish",
+  "github",
+  "academic"
+];
 
 type PersistedWindowSize = {
   width: number;
@@ -154,6 +167,9 @@ export default function App() {
   const [doc, dispatch] = useReducer(docReducer, undefined, createEmptyDocState);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(getInitialUiTheme);
+  const [markdownTheme, setMarkdownTheme] = useState<MarkdownTheme>(
+    getInitialMarkdownTheme
+  );
   const [isStartupReady, setIsStartupReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -189,6 +205,10 @@ export default function App() {
   useEffect(() => {
     writeUiThemePreference(uiTheme);
   }, [uiTheme]);
+
+  useEffect(() => {
+    writeMarkdownThemePreference(markdownTheme);
+  }, [markdownTheme]);
 
   useEffect(() => {
     try {
@@ -459,6 +479,20 @@ export default function App() {
     setUiTheme((current) => (current === "modern" ? "classic" : "modern"));
   }, []);
 
+  const handleToggleMarkdownTheme = useCallback(() => {
+    setMarkdownTheme((current) => {
+      const currentIndex = MARKDOWN_THEME_ORDER.indexOf(current);
+      if (currentIndex < 0) {
+        return MARKDOWN_THEME_ORDER[0];
+      }
+      return MARKDOWN_THEME_ORDER[(currentIndex + 1) % MARKDOWN_THEME_ORDER.length];
+    });
+  }, []);
+
+  const handleSelectMarkdownTheme = useCallback((theme: MarkdownTheme) => {
+    setMarkdownTheme(theme);
+  }, []);
+
   useEffect(() => {
     const handleShortcuts = (event: KeyboardEvent) => {
       const metaPressed = event.ctrlKey || event.metaKey;
@@ -584,7 +618,8 @@ export default function App() {
         className={[
           "app-root",
           themeMode === "dark" ? "theme-dark dark" : "theme-light",
-          uiTheme === "classic" ? "ui-classic" : "ui-modern"
+          uiTheme === "classic" ? "ui-classic" : "ui-modern",
+          `md-theme-${markdownTheme}`
         ].join(" ")}
       >
         <div className="workspace-shell">
@@ -626,6 +661,9 @@ export default function App() {
           <StatusBar
             saveState={saveState}
             charCount={charCount}
+            markdownTheme={markdownTheme}
+            onToggleMarkdownTheme={handleToggleMarkdownTheme}
+            onSelectMarkdownTheme={handleSelectMarkdownTheme}
             onToggleUiTheme={handleToggleUiTheme}
             uiTheme={uiTheme}
           />

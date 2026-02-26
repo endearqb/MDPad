@@ -688,3 +688,211 @@
   - `sha256: 2606f452db2030f88a745fb14a475b5607ccf3650101762d9bf00cf83268d795`
 - 发布地址：
   - `https://github.com/endearqb/MDPad/releases/tag/v0.1.4`
+
+## 新任务：Notion-ish Markdown 主题并行切换（2026-02-26）
+- [x] 扩展主题类型：新增 `MarkdownTheme = "default" | "notionish"`
+- [x] 增加 markdown 主题偏好读写能力（localStorage key + type guard + read/write）
+- [x] 在 `App` 接入 markdown 主题状态、持久化与根类名（`md-theme-default` / `md-theme-notionish`）
+- [x] 在 `StatusBar` 增加 markdown 主题切换入口，并与现有 UI 主题切换并存
+- [x] 在 `styles.css` 增加 Notion-ish markdown 样式覆盖（light/dark）且不影响现有默认主题
+- [x] 补充/更新单测（themePreferences）
+- [x] 更新 `docs/Notion-ish-style.md` 落地映射说明
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（Notion-ish Markdown 主题并行切换）
+- 类型与偏好层：
+  - `src/shared/types/doc.ts` 新增 `MarkdownTheme`。
+  - `src/shared/utils/themePreferences.ts` 新增 `MARKDOWN_THEME_STORAGE_KEY` 与 markdown 主题读写/守卫函数。
+  - `src/shared/utils/themePreferences.test.ts` 扩展默认值、持久化、非法值回退与 type guard 覆盖。
+- 应用接入：
+  - `src/App.tsx` 新增 `markdownTheme` state 与持久化 effect。
+  - 根容器新增 `md-theme-default` / `md-theme-notionish` 类名切换。
+  - `StatusBar` 入参扩展并接入 markdown 主题切换回调。
+- UI 入口：
+  - `src/features/window/StatusBar.tsx` 新增 `Default Markdown / Notion-ish Markdown` 切换按钮；
+  - 保留原 `Classic Theme / Modern Theme` 切换，两者并行。
+- 样式实现：
+  - `src/styles.css` 新增 markdown 主题变量与 `.md-theme-notionish .mdpad-editor` 覆盖；
+  - 覆盖正文宽度、标题节奏、段落/列表、普通引用、代码、链接、表格、分割线、选区；
+  - 增加 dark 下的 Notion-ish 对应覆盖，默认主题视觉保持不变。
+- 文档落地：
+  - `docs/Notion-ish-style.md` 新增“MDPad 当前仓库落地映射（2026-02-26）”章节，标注真实文件与接入点。
+- 验证结果：
+  - `pnpm test`：通过（7 files / 57 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：新增 GitHub / Academic Markdown 主题（2026-02-26）
+- [x] 扩展 `MarkdownTheme`：新增 `github`、`academic`
+- [x] 扩展 markdown 主题偏好守卫与读写回退测试
+- [x] 在 `App` 实现四主题循环顺序（Default → Notion-ish → GitHub → Academic）
+- [x] 在 `StatusBar` 增加 markdown 主题下拉菜单（与循环按钮并存）
+- [x] 在 `styles.css` 新增 `md-theme-github` 与 `md-theme-academic`（含 light/dark）
+- [x] 补充状态栏主题菜单样式（含 classic/modern 兼容）
+- [x] 更新文档：补充 4 主题矩阵与社区参考来源
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（新增 GitHub / Academic Markdown 主题）
+- 类型与偏好层：
+  - `src/shared/types/doc.ts`：`MarkdownTheme` 扩展为 `default | notionish | github | academic`。
+  - `src/shared/utils/themePreferences.ts`：`isMarkdownTheme` 扩展新主题值。
+  - `src/shared/utils/themePreferences.test.ts`：新增 `github/academic` 守卫校验，并用 `github` 验证持久化回读。
+- 应用状态与切换：
+  - `src/App.tsx`：新增四主题循环顺序常量 `MARKDOWN_THEME_ORDER`；
+  - 循环顺序固定为 `Default -> Notion-ish -> GitHub -> Academic`；
+  - 根类名改为统一模板 `md-theme-${markdownTheme}`；
+  - 新增 `onSelectMarkdownTheme` 直选回调给状态栏下拉菜单。
+- 状态栏双入口：
+  - `src/features/window/StatusBar.tsx`：
+    - 保留循环按钮（单击轮换）；
+    - 新增 `Themes` 下拉菜单（直接选择）；
+    - 菜单支持点击外部关闭与 `Escape` 关闭；
+    - 选项使用 `menuitemradio` + `aria-checked` 标识当前主题。
+- 样式实现：
+  - `src/styles.css`：
+    - 新增 `md-theme-github` 与 `md-theme-academic` 的 light/dark 视觉覆盖；
+    - 覆盖正文排版、标题层级、引用、链接、行内代码、代码块、表格、分割线；
+    - 新增状态栏主题菜单样式与 classic UI 下圆角兼容。
+- 文档与来源：
+  - `docs/Notion-ish-style.md`：新增“4 主题矩阵更新”和“高星来源策略”章节；
+  - `docs/markdown-theme-sources.md`（新增）：记录社区高星来源与 MDPad 映射原则。
+- 验证结果：
+  - `pnpm test`：通过（7 files / 57 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：引用/公式/TaskList 渲染修复（2026-02-26）
+- [x] 写入实施计划并确认范围（仅数学规则、blockquote 预处理、tasklist 样式、相关测试）
+- [x] 修复引用内 `$$...$$` 渲染失败（编辑输入/粘贴 + 文件打开预处理）
+- [x] 修复独立行粘贴 `$$ddadf$$` 误判为行内公式并残留 `$$`
+- [x] 修复引用块后下一行 Markdown 语法不渲染
+- [x] 修复 task list checkbox 与文本分行（适配当前 `li[data-checked]` 结构）
+- [x] 补充回归测试（blockquote/callout + math + 后续语法）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（引用/公式/TaskList 渲染修复）
+- 数学输入/粘贴规则：
+  - `src/features/editor/extensions/mathExtensions.tsx`：
+    - 行内公式正则增加双 `$` 边界排除，避免 `$$...$$` 被 inline 规则误吃；
+    - block math 输入规则取消“仅顶层段落”假设，改为按当前段落替换；
+    - 新增 block math paste 规则，粘贴独立行 `$$...$$` 直接转 block math。
+- 回车快捷转换：
+  - `src/features/editor/extensions/markdownShortcuts.ts`：
+    - `tryConvertMathFenceAtSelection` 改为按“当前段落父容器”扫描 `$$` 开闭行；
+    - 支持 blockquote（含 callout 内容）中的 `$$...$$` 转换，不再限制 `depth === 1`。
+- Markdown 打开预处理：
+  - `src/features/editor/markdownCodec.ts`：
+    - `rewriteInlineMath` 增加双 `$` 边界判断，避免 `$$...$$` 误转 inline；
+    - 新增单行 `$$...$$` 识别为 block math；
+    - 新增普通 blockquote 预处理分支（剥离一层 `>` 后递归预处理再加回），支持 `> $$...$$` 与 `> $$` fenced 形式；
+    - task/callout/blockquote 预处理输出后补空行，避免后续 Markdown 语法被 HTML 块吞掉。
+- task list 样式：
+  - `src/styles.css`：
+    - task list 选择器从仅 `li[data-type="taskItem"]` 扩展为兼容 `li[data-checked]`；
+    - 维持 checkbox 与文本容器同一行布局，修复分行问题。
+- 回归测试：
+  - `src/features/editor/markdownCodec.test.ts` 新增用例：
+    - 单行 `$$...$$` 转 block math；
+    - `> $$...$$` 与 `> $$ ... $$` fenced 转 block math；
+    - 普通引用/callout 后下一行 `##` 标题语法仍可解析。
+- 验证结果：
+  - `pnpm test`：通过（7 files / 62 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：GitHub/Notion 主题 Task 按钮样式与位置修正（2026-02-26）
+- [x] 检查 `md-theme-github` / `md-theme-notionish` 的 task list checkbox 样式覆盖缺口
+- [x] 修正 checkbox 位置偏上问题（按主题调整垂直偏移）
+- [x] 去除蓝色对勾背景（按主题覆盖 `accent-color`）
+- [x] 运行验证：`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（GitHub/Notion 主题 Task 按钮样式与位置修正）
+- `src/styles.css`：
+  - 在 `.mdpad-editor` 增加 task checkbox 样式变量：
+    - `--task-checkbox-offset`
+    - `--task-checkbox-accent`
+  - 基础 task 规则改为读取变量，避免固定使用主题主色（蓝色）。
+  - `md-theme-notionish`：
+    - 设置更低的 checkbox 偏移（下移）；
+    - `accent-color` 改为中性灰，避免蓝色背景；
+    - checkbox 尺寸调整为 `15px` 并加轻微圆角。
+  - `md-theme-github`：
+    - 设置更低的 checkbox 偏移（下移）；
+    - `accent-color` 改为 GitHub 风格绿色（dark 下对应亮绿），避免蓝色背景；
+    - checkbox 尺寸调整为 `15px` 并加轻微圆角。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：GitHub/Notion Task Checkbox 再下移并放大（2026-02-26）
+- [x] 将 GitHub/Notion 主题的 checkbox 垂直位置进一步下移
+- [x] 将 GitHub/Notion 主题 checkbox 尺寸从 `15px` 增加到 `16px`
+- [x] 保持现有颜色策略不变（Notion 灰色 / GitHub 绿色）
+- [x] 运行验证：`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（GitHub/Notion Task Checkbox 再下移并放大）
+- `src/styles.css`：
+  - `md-theme-notionish`：
+    - `--task-checkbox-offset` 从 `0.32rem` 调整到 `0.46rem`；
+    - checkbox 尺寸从 `15px` 调整到 `16px`。
+  - `md-theme-github`：
+    - `--task-checkbox-offset` 从 `0.33rem` 调整到 `0.45rem`；
+    - checkbox 尺寸从 `15px` 调整到 `16px`。
+- 颜色维持不变：
+  - Notion：灰色（light `#8f8f8f` / dark `#a1a1a1`）
+  - GitHub：绿色（light `#2da44e` / dark `#3fb950`）
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：风格下拉与划词菜单交互调整（2026-02-26）
+- [x] 将风格选项中的 `Notion-ish` 更名为 `Notion`
+- [x] 风格下拉触发器移除 `Theme(s)` 文本，仅保留现有图标入口
+- [x] 划词菜单增加更多横向操作项
+- [x] 将划词菜单中的文本格式下拉从按钮下方改为右侧弹出
+- [x] 缩小文本格式按钮宽度为紧凑样式
+- [x] 运行验证：`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（风格下拉与划词菜单交互调整）
+- `src/features/window/StatusBar.tsx`：
+  - `markdownThemeCopy.notionish` 从 `Notion-ish` 调整为 `Notion`；
+  - 主题下拉触发按钮移除 `Themes` 文本，仅保留当前使用的下拉图标，并补充 `aria-label`。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 划词菜单新增横向按钮：`Strikethrough`、`Heading 1`、`Heading 2`、`Bullet List`、`Numbered List`、`Todo List`；
+  - 保留原有 `Bold/Italic/Quote/Inline Code/Link` 与表格上下文按钮。
+- `src/styles.css`：
+  - `bubble-menu-shell` 强制横向不换行并支持横向滚动；
+  - 文本格式按钮改为紧凑宽度（更小 `min-width` 与 `padding`）；
+  - 文本格式下拉改为右侧弹出（`left: calc(100% + 8px)` + `top: 50%`），不再从按钮下方出现；
+  - 文本格式下拉项尺寸同步收敛（更小字号与内边距）。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：Checkbox/公式入口/表格光标/统一编辑弹窗（2026-02-26）
+- [x] 按 markdown 风格分别校准 task checkbox 底部对齐（default/notion/github/academic）
+- [x] 默认 markdown 风格的 checkbox 对勾背景改为蓝色
+- [x] 行间公式入口图标改为 `SquareSigma`，并在划词菜单增加行内/行间公式按钮
+- [x] 表格列宽可调位置 hover 光标改为左右方向
+- [x] 统一替换编辑器内所有 `window.prompt` 为主题一致弹窗（公式/链接/图片/视频/音频/alt）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（Checkbox/公式入口/表格光标/统一编辑弹窗）
+- `src/styles.css`：
+  - task checkbox 基础样式改为变量驱动：`--task-checkbox-offset`、`--task-checkbox-size`、`--task-checkbox-accent`；
+  - `default/notionish/github/academic` 四种 markdown 风格分别设置 checkbox 对齐参数；
+  - 默认风格 accent 调整为蓝色；
+  - 表格列宽拖拽相关样式新增 `col-resize` 光标；
+  - 新增编辑器统一输入弹窗样式（无 head、主题一致、输入框可拉伸、顶部偏移 `4px`）。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - slash 命令中的 block math 图标从 `Sigma` 改为 `SquareSigma`；
+  - 划词菜单新增 `Inline Formula` 与 `Math Block` 两个按钮；
+  - 新增统一输入弹窗状态机，替换链接/媒体/公式输入流；
+  - 链接设置与媒体插入不再使用 `window.prompt`。
+- `src/features/editor/extensions/mathExtensions.tsx`：
+  - 数学节点编辑改为可注入 `onRequestEdit` 回调；
+  - 双击公式编辑走编辑器统一弹窗链路，不再依赖原生 `prompt`。
+- 验证结果：
+  - `pnpm test`：通过（7 files / 62 tests passed）。
+  - `pnpm build`：通过。

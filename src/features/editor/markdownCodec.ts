@@ -67,7 +67,12 @@ function isEscaped(text: string, index: number): boolean {
 
 function findClosingDollar(line: string, start: number): number {
   for (let pointer = start; pointer < line.length; pointer += 1) {
-    if (line[pointer] === "$" && !isEscaped(line, pointer)) {
+    if (
+      line[pointer] === "$" &&
+      !isEscaped(line, pointer) &&
+      line[pointer - 1] !== "$" &&
+      line[pointer + 1] !== "$"
+    ) {
       return pointer;
     }
   }
@@ -80,6 +85,15 @@ function toInlineMathTag(latex: string): string {
 
 function toBlockMathTag(latex: string): string {
   return `<div data-type="block-math" data-latex="${escapeHtmlAttr(latex)}"></div>`;
+}
+
+function parseSingleLineBlockMath(line: string): string | null {
+  const matched = line.trim().match(/^\$\$([^$\n]+)\$\$$/u);
+  if (!matched) {
+    return null;
+  }
+  const latex = (matched[1] ?? "").trim();
+  return latex === "" ? null : latex;
 }
 
 function rewriteInlineMath(source: string): string {
@@ -97,7 +111,13 @@ function rewriteInlineMath(source: string): string {
       continue;
     }
 
-    if (current === "$" && !inCodeSpan && !isEscaped(source, pointer)) {
+    if (
+      current === "$" &&
+      !inCodeSpan &&
+      !isEscaped(source, pointer) &&
+      source[pointer - 1] !== "$" &&
+      source[pointer + 1] !== "$"
+    ) {
       const closing = findClosingDollar(source, pointer + 1);
       if (closing > pointer + 1) {
         const latex = source.slice(pointer + 1, closing).trim();
@@ -227,6 +247,14 @@ function renderCalloutBlock(callout: CalloutBlock): string {
   return `<blockquote data-callout="${callout.type}">\n${bodyHtml}\n</blockquote>`;
 }
 
+function renderStandardBlockquote(lines: string[]): string {
+  const bodyMarkdown = preprocessMarkdown(lines.join("\n")).trim();
+  if (!bodyMarkdown) {
+    return ">";
+  }
+  return quoteMarkdown(bodyMarkdown);
+}
+
 function renderTaskList(lines: TaskLine[]): string {
   const items = lines
     .map((item) => {
@@ -249,12 +277,14 @@ function preprocessMarkdown(markdown: string): string {
   let pendingBlockMath: string[] | null = null;
   let pendingTasks: TaskLine[] = [];
   let pendingCallout: CalloutBlock | null = null;
+  let pendingBlockquote: string[] = [];
 
   const flushTasks = () => {
     if (pendingTasks.length === 0) {
       return;
     }
     output.push(renderTaskList(pendingTasks));
+    output.push("");
     pendingTasks = [];
   };
 
@@ -263,7 +293,17 @@ function preprocessMarkdown(markdown: string): string {
       return;
     }
     output.push(renderCalloutBlock(pendingCallout));
+    output.push("");
     pendingCallout = null;
+  };
+
+  const flushBlockquote = () => {
+    if (pendingBlockquote.length === 0) {
+      return;
+    }
+    output.push(renderStandardBlockquote(pendingBlockquote));
+    output.push("");
+    pendingBlockquote = [];
   };
 
   for (const line of lines) {
@@ -279,9 +319,14 @@ function preprocessMarkdown(markdown: string): string {
       flushCallout();
     }
 
+    if (pendingBlockquote.length > 0 && !isBlockquoteLine(line)) {
+      flushBlockquote();
+    }
+
     if (isFenceDelimiter(line)) {
       flushTasks();
       flushCallout();
+      flushBlockquote();
       if (pendingBlockMath) {
         output.push("$$");
         output.push(...pendingBlockMath);
@@ -300,6 +345,7 @@ function preprocessMarkdown(markdown: string): string {
     if (pendingBlockMath) {
       if (line.trim() === "$$") {
         output.push(toBlockMathTag(pendingBlockMath.join("\n").trim()));
+        output.push("");
         pendingBlockMath = null;
       } else {
         pendingBlockMath.push(line);
@@ -307,9 +353,20 @@ function preprocessMarkdown(markdown: string): string {
       continue;
     }
 
+    const singleLineBlockMath = parseSingleLineBlockMath(line);
+    if (singleLineBlockMath) {
+      flushTasks();
+      flushCallout();
+      flushBlockquote();
+      output.push(toBlockMathTag(singleLineBlockMath));
+      output.push("");
+      continue;
+    }
+
     if (line.trim() === "$$") {
       flushTasks();
       flushCallout();
+      flushBlockquote();
       pendingBlockMath = [];
       continue;
     }
@@ -317,7 +374,14 @@ function preprocessMarkdown(markdown: string): string {
     const calloutType = parseCalloutStart(line);
     if (calloutType) {
       flushTasks();
+      flushBlockquote();
       pendingCallout = { type: calloutType, lines: [] };
+      continue;
+    }
+
+    if (isBlockquoteLine(line)) {
+      flushTasks();
+      pendingBlockquote.push(stripBlockquotePrefix(line));
       continue;
     }
 
@@ -340,6 +404,7 @@ function preprocessMarkdown(markdown: string): string {
 
   flushTasks();
   flushCallout();
+  flushBlockquote();
   if (pendingBlockMath) {
     output.push("$$");
     output.push(...pendingBlockMath);
