@@ -26,10 +26,24 @@ describe("markdownCodec", () => {
     expect(html).toContain("<mark>highlighted</mark>");
   });
 
+  it("converts ==highlight== syntax inside heading content", () => {
+    const html = markdownToHtml("## Title ==highlighted==");
+
+    expect(html).toContain("<h2>Title <mark>highlighted</mark></h2>");
+  });
+
   it("serializes mark tags back to ==highlight== syntax", () => {
     const markdown = htmlToMarkdown("<p><mark>highlighted</mark></p>");
 
     expect(markdown).toContain("==highlighted==");
+  });
+
+  it("keeps double-backtick inline code untouched during inline rewrite", () => {
+    const html = markdownToHtml("prefix ``code ==highlight== and $x$`` suffix");
+
+    expect(html).toContain("<code>code ==highlight== and $x$</code>");
+    expect(html).not.toContain('data-type="inline-math"');
+    expect(html).not.toContain("<mark>highlight</mark>");
   });
 
   it("converts single-line $$...$$ into block math", () => {

@@ -1227,3 +1227,96 @@
 - 验证结果：
   - `pnpm test -- src/features/editor/markdownCodec.test.ts`：通过（1 file / 27 tests passed）。
   - `pnpm build`：通过。
+
+## 新任务：表格手柄裁切 + 菜单互斥 + 列宽装饰条灰色（2026-02-26）
+- [x] 修复表格左侧“整行/整表”选择手柄被切割（保持手柄在表格外侧视觉）
+- [x] 表格 CellSelection 时仅显示表格菜单，不显示划词菜单
+- [x] 表格内仅选中文字（TextSelection）时，继续显示划词菜单
+- [x] 将列宽拖拽垂直装饰条改为灰色
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（表格手柄裁切 + 菜单互斥 + 列宽装饰条灰色）
+- `src/styles.css`：
+  - 为真实表格容器新增 `.tableWrapper:not(.mermaid-block-shell)` 左侧可见空间（`padding-left: 0.6rem`），保留左侧手柄“在表格外侧”的交互视觉并避免裁切；
+  - 将 `.column-resize-handle` 的颜色从 `var(--accent)` 调整为灰色系 `var(--editor-border)`。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - `shouldShowBubbleMenu` 新增 `isCellSelection(state.selection)` 判定；
+  - 当选区为表格单元格/行列/整表选区（CellSelection）时直接隐藏划词菜单，仅保留表格菜单；
+  - 表格内纯文本选区（TextSelection）仍可正常显示划词菜单。
+- 验证结果：
+  - `pnpm test`：通过（9 files / 74 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：代码块复制按钮 + Mermaid 双态重构（2026-02-26）
+- [x] 给所有代码块增加右上角复制 icon，复制成功短暂显示 `√`
+- [x] Mermaid 移除外层 shell 与 split 展现，仅保留 code / preview 双态
+- [x] Mermaid code 侧复用代码块插件：hover mermaid 代码块显示眼睛 icon，点击切 preview
+- [x] Mermaid preview 侧 hover 图形显示 `code` + `download` icon（右上角）
+- [x] 补充/调整样式，确保交互在四套 markdown theme 下一致
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（代码块复制按钮 + Mermaid 双态重构）
+- `src/features/editor/extensions/codeBlockWithActions.tsx`（新增）：
+  - 新增 `CodeBlockWithActions` 扩展（继承 `CodeBlockLowlight`）；
+  - 所有代码块 hover 时显示右上角复制按钮，复制成功后 icon 短暂切换为 `√`；
+  - 当 `language=mermaid` 时额外显示 `eye` icon，点击将该 `codeBlock` 原位切换为 `mermaidBlock`（preview）。
+- `src/features/editor/extensions/mermaidExtensions.tsx`：
+  - Mermaid NodeView 重构为 preview-only，不再包含 split/code 自绘编辑器；
+  - 移除外层 shell 结构，仅保留预览区域；
+  - hover 预览图时在右上角显示 `code` + `download` icon；
+  - 点击 `code` icon 将 `mermaidBlock` 原位切回 `codeBlock(language=mermaid)`；
+  - 点击 `download` icon 下载 PNG。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 编辑器扩展接入由 `CodeBlockLowlight` 切换为 `CodeBlockWithActions`；
+  - Slash 插入 Mermaid 改为插入 `codeBlock(language=mermaid)`（默认 code 形态）。
+- `src/styles.css`：
+  - 新增代码块动作按钮层样式（右上角 icon、hover 显示、禁用态）；
+  - Mermaid 样式替换为 preview-only 结构样式（预览容器 + hover toolbar）；
+  - 删除 split 相关样式与移动端 split 规则残留。
+- 验证结果：
+  - `pnpm test`：通过（9 files / 74 tests passed）。
+  - `pnpm build`：通过（TypeScript + Vite 构建成功）。
+
+## 新任务：高亮/行内代码/Slash/公式弹窗/划词菜单/Mermaid 下载修复（2026-02-27）
+- [x] 修复 `==xxxx==` 高亮在行内输入、粘贴、Heading 下的生效问题
+- [x] 修复行内代码在渲染时错误显示反引号的问题（保留 Markdown 存储语法）
+- [x] 从 slash 菜单移除 Mermaid 项
+- [x] 调整空白处插入行内/行间公式弹窗：不预填示例文本，保留语法提示
+- [x] 修复划词菜单在编辑区右侧选区时被边框遮挡问题
+- [x] 修复 Mermaid 下载按钮无效：改为原生“另存为”保存 PNG
+- [x] 补充/更新相关测试并完成验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（高亮/行内代码/Slash/公式弹窗/划词菜单/Mermaid 下载修复）
+- `src/features/editor/extensions/highlightExtensions.ts`（新增）：
+  - 新增自定义高亮扩展 `HighlightWithFlexibleSyntax`，覆盖输入/粘贴规则；
+  - 支持 `prefix==mark==` 这类无前置空格场景，保持 heading 内可用。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 高亮扩展接入改为 `HighlightWithFlexibleSyntax`；
+  - slash 菜单移除 Mermaid 命令；
+  - 公式插入弹窗改为默认空文本，保留语法提示；
+  - BubbleMenu 增加 `appendTo: document.body` + `fixed`/`flip`/`preventOverflow`，避免右侧遮挡。
+- `src/features/editor/markdownCodec.ts`：
+  - 新增 code span 分段处理，正确识别多反引号分隔的行内代码，避免在 code span 内错误改写高亮/公式语法。
+- `src/features/editor/extensions/mermaidExtensions.tsx`：
+  - Mermaid 下载改为调用 `savePngAsDialog` 原生另存为；
+  - 由 Blob 转字节数组后交给后端保存，成功后提示 `PNG saved.`。
+- `src-tauri/src/lib.rs` / `src/features/file/fileService.ts`：
+  - 新增命令/接口 `save_png_as_dialog`（`defaultName + bytes` -> `savedPath | null`）。
+- 测试补充：
+  - `src/features/editor/extensions/highlightExtensions.test.ts`（新增）；
+  - `src/features/editor/markdownCodec.test.ts` 增加 heading 高亮与 double-backtick code span 回归；
+  - `src/features/file/fileService.test.ts` 增加 `save_png_as_dialog` 调用断言。
+- 验证结果：
+  - `pnpm test`：通过（10 files / 80 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：版本 +0.0.1 构建并发布 Release（2026-02-27）
+- [ ] 将版本从 `0.1.4` 升级到 `0.1.5`（`package.json` / `src-tauri/Cargo.toml` / `src-tauri/tauri.conf.json`）
+- [ ] 运行验证：`pnpm test`、`pnpm build`
+- [ ] 构建安装包：`pnpm tauri:build`
+- [ ] 提交并推送到 `origin/main`
+- [ ] 创建并推送标签 `v0.1.5`
+- [ ] 创建 GitHub Release 并上传安装包

@@ -14,6 +14,7 @@ import {
   renameFile,
   saveAttachmentBytesToLibrary,
   saveFileAsDialog,
+  savePngAsDialog,
   saveImageBytesToLibrary,
   setAttachmentLibraryDir
 } from "./fileService";
@@ -32,6 +33,18 @@ describe("fileService", () => {
       defaultName: "draft.md"
     });
     expect(path).toBe("D:\\Docs\\draft.md");
+  });
+
+  it("passes defaultName and bytes to save_png_as_dialog", async () => {
+    invokeMock.mockResolvedValue("D:\\Exports\\diagram.png");
+
+    const path = await savePngAsDialog("diagram.png", [137, 80, 78, 71]);
+
+    expect(invokeMock).toHaveBeenCalledWith("save_png_as_dialog", {
+      defaultName: "diagram.png",
+      bytes: [137, 80, 78, 71]
+    });
+    expect(path).toBe("D:\\Exports\\diagram.png");
   });
 
   it("passes camelCase newBaseName to rename_file", async () => {

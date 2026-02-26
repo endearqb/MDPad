@@ -9,8 +9,6 @@ import {
 } from "react";
 import { isTextSelection } from "@tiptap/core";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import Highlight from "@tiptap/extension-highlight";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import SubscriptExtension from "@tiptap/extension-subscript";
@@ -72,6 +70,7 @@ import {
   tryConvertMarkdownTableAtSelection,
   tryConvertMathFenceAtSelection
 } from "./extensions/markdownShortcuts";
+import { HighlightWithFlexibleSyntax } from "./extensions/highlightExtensions";
 import {
   AudioBlock,
   ResizableImage,
@@ -79,6 +78,7 @@ import {
   mediaDefaults,
   setMediaSourceResolver
 } from "./extensions/mediaExtensions";
+import { CodeBlockWithActions } from "./extensions/codeBlockWithActions";
 import {
   MermaidBlock
 } from "./extensions/mermaidExtensions";
@@ -88,6 +88,7 @@ import {
   TableKit,
   TableRowKit
 } from "./extensions/tableKit";
+import { isCellSelection } from "./extensions/tableKit/tableSelection";
 import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
@@ -427,7 +428,10 @@ export default function MarkdownEditor({
     async (mode: MathEditMode, initialValue: string, confirmLabel: string): Promise<string | null> => {
       const value = await requestEditorPrompt({
         label: mode === "inline" ? "Inline formula ($...$)" : "Block formula ($$...$$)",
-        placeholder: mode === "inline" ? "x^2 + y^2 = z^2" : "\\int_0^1 x^2 dx = 1/3",
+        placeholder:
+          mode === "inline"
+            ? "Enter LaTeX content only. $...$ is added automatically."
+            : "Enter LaTeX content only. $$...$$ is added automatically.",
         confirmLabel,
         initialValue
       });
@@ -452,8 +456,7 @@ export default function MarkdownEditor({
   const insertMathFromPrompt = useCallback(
     (activeEditor: Editor, mode: MathEditMode) => {
       void (async () => {
-        const fallback = mode === "inline" ? "x^2 + y^2 = z^2" : "\\int_0^1 x^2 dx = 1/3";
-        const latex = await requestMathInput(mode, fallback, "Insert");
+        const latex = await requestMathInput(mode, "", "Insert");
         if (!latex) {
           return;
         }
@@ -468,22 +471,6 @@ export default function MarkdownEditor({
       })();
     },
     [requestMathInput]
-  );
-
-  const insertMermaidBlock = useCallback(
-    (activeEditor: Editor) => {
-      activeEditor
-        .chain()
-        .focus()
-        .insertContent({
-          type: "mermaidBlock",
-          attrs: {
-            code: "graph TD\n  A[Start] --> B[End]"
-          }
-        })
-        .run();
-    },
-    []
   );
 
   const requestAttachmentLibrarySetup = useCallback((): Promise<boolean> => {
@@ -568,7 +555,6 @@ export default function MarkdownEditor({
     return resolveMediaSource(src, documentPathRef.current);
   }, []);
   setMediaSourceResolver(resolveMediaSrc);
-
   const slashItems = useMemo<SlashCommandItem[]>(
     () => [
       {
@@ -576,7 +562,7 @@ export default function MarkdownEditor({
         group: "Basic",
         label: "Paragraph",
         icon: Pilcrow,
-        keywords: ["正文", "text"],
+        keywords: ["paragraph", "text"],
         run: (editor) => editor.chain().focus().setParagraph().run()
       },
       {
@@ -584,7 +570,7 @@ export default function MarkdownEditor({
         group: "Basic",
         label: "Heading 1",
         icon: Heading1,
-        keywords: ["标题", "title", "h1"],
+        keywords: ["heading", "title", "h1"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run()
       },
       {
@@ -592,7 +578,7 @@ export default function MarkdownEditor({
         group: "Basic",
         label: "Heading 2",
         icon: Heading2,
-        keywords: ["标题", "h2"],
+        keywords: ["heading", "h2"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run()
       },
       {
@@ -600,7 +586,7 @@ export default function MarkdownEditor({
         group: "Basic",
         label: "Heading 3",
         icon: Heading3,
-        keywords: ["标题", "h3"],
+        keywords: ["heading", "h3"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run()
       },
       {
@@ -608,7 +594,7 @@ export default function MarkdownEditor({
         group: "Basic",
         label: "Heading 4",
         icon: Heading4,
-        keywords: ["标题", "h4"],
+        keywords: ["heading", "h4"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 4 }).run()
       },
       {
@@ -616,7 +602,7 @@ export default function MarkdownEditor({
         group: "Basic",
         label: "Bullet List",
         icon: List,
-        keywords: ["列表", "unordered"],
+        keywords: ["list", "unordered"],
         run: (editor) => editor.chain().focus().toggleBulletList().run()
       },
       {
@@ -624,7 +610,7 @@ export default function MarkdownEditor({
         group: "Basic",
         label: "Numbered List",
         icon: ListOrdered,
-        keywords: ["列表", "ordered"],
+        keywords: ["list", "ordered"],
         run: (editor) => editor.chain().focus().toggleOrderedList().run()
       },
       {
@@ -632,7 +618,7 @@ export default function MarkdownEditor({
         group: "Basic",
         label: "Todo List",
         icon: CheckSquare,
-        keywords: ["task", "checklist", "待办"],
+        keywords: ["task", "checklist", "todo"],
         run: (editor) => editor.chain().focus().toggleTaskList().run()
       },
       {
@@ -640,7 +626,7 @@ export default function MarkdownEditor({
         group: "Insert",
         label: "Quote",
         icon: TextQuote,
-        keywords: ["blockquote", "引用"],
+        keywords: ["blockquote", "quote"],
         run: (editor) => editor.chain().focus().toggleBlockquote().run()
       },
       {
@@ -648,7 +634,7 @@ export default function MarkdownEditor({
         group: "Insert",
         label: "Code Block",
         icon: Code2,
-        keywords: ["fenced", "代码块"],
+        keywords: ["fenced", "code"],
         run: (editor) => editor.chain().focus().toggleCodeBlock().run()
       },
       {
@@ -656,7 +642,7 @@ export default function MarkdownEditor({
         group: "Insert",
         label: "Table",
         icon: Table2,
-        keywords: ["表格", "insert table"],
+        keywords: ["table", "insert table"],
         run: (editor) =>
           editor
             .chain()
@@ -669,23 +655,15 @@ export default function MarkdownEditor({
         group: "Insert",
         label: "Divider",
         icon: Minus,
-        keywords: ["horizontal rule", "分割线"],
+        keywords: ["horizontal rule", "divider"],
         run: (editor) => editor.chain().focus().setHorizontalRule().run()
-      },
-      {
-        id: "mermaid",
-        group: "Insert",
-        label: "Mermaid",
-        icon: Code2,
-        keywords: ["diagram", "flowchart", "graph", "mermaid", "图表"],
-        run: (editor) => insertMermaidBlock(editor)
       },
       {
         id: "image",
         group: "Media",
         label: "Image",
         icon: ImageIcon,
-        keywords: ["图片", "img"],
+        keywords: ["image", "img"],
         run: (editor) => {
           void (async () => {
             const src = await requestSourceInput("image");
@@ -718,7 +696,7 @@ export default function MarkdownEditor({
         group: "Media",
         label: "Video",
         icon: Video,
-        keywords: ["视频"],
+        keywords: ["video"],
         run: (editor) => {
           void (async () => {
             const src = await requestSourceInput("video");
@@ -745,7 +723,7 @@ export default function MarkdownEditor({
         group: "Media",
         label: "Audio",
         icon: AudioLines,
-        keywords: ["音频", "voice"],
+        keywords: ["audio", "voice"],
         run: (editor) => {
           void (async () => {
             const src = await requestSourceInput("audio");
@@ -783,7 +761,7 @@ export default function MarkdownEditor({
         run: (editor) => insertMathFromPrompt(editor, "block")
       }
     ],
-    [insertMathFromPrompt, insertMermaidBlock, requestEditorPrompt, requestSourceInput]
+    [insertMathFromPrompt, requestEditorPrompt, requestSourceInput]
   );
 
   const slashCommandController = useMemo(
@@ -804,10 +782,10 @@ export default function MarkdownEditor({
         codeBlock: false
       }),
       CalloutBlockquote,
-      CodeBlockLowlight.configure({
+      CodeBlockWithActions.configure({
         lowlight
       }),
-      Highlight,
+      HighlightWithFlexibleSyntax,
       SubscriptExtension,
       SuperscriptExtension,
       BubbleMenuExtension,
@@ -816,7 +794,7 @@ export default function MarkdownEditor({
         openOnClick: false
       }),
       Placeholder.configure({
-        placeholder: "空白行输入 '/' 唤起菜单，或任意位置使用 Ctrl+/ 强制唤起..."
+        placeholder: "Type \"/\" on empty line, or press Ctrl+/ anywhere to open slash menu..."
       }),
       TaskList,
       TaskItem.configure({
@@ -890,14 +868,14 @@ export default function MarkdownEditor({
 
   const currentTextStyle = useMemo(() => {
     if (!editor) {
-      return "正文";
+      return "Paragraph";
     }
     for (let level = 1; level <= 4; level += 1) {
       if (editor.isActive("heading", { level })) {
         return `H${level}`;
       }
     }
-    return "正文";
+    return "Paragraph";
   }, [editor, markdown]);
 
   const updateStyleMenuPlacement = useCallback(() => {
@@ -1034,7 +1012,7 @@ export default function MarkdownEditor({
   }, [editor, requestEditorPrompt]);
 
   const textStyleOptions: Array<{ value: TextStyleValue; label: string }> = [
-    { value: "paragraph", label: "正文" },
+    { value: "paragraph", label: "Paragraph" },
     { value: 1, label: "H1" },
     { value: 2, label: "H2" },
     { value: 3, label: "H3" },
@@ -1062,6 +1040,10 @@ export default function MarkdownEditor({
         activeEditor.isActive("audioBlock") ||
         activeEditor.isActive("mermaidBlock");
       if (isMediaSelection) {
+        return false;
+      }
+
+      if (isCellSelection(state.selection)) {
         return false;
       }
 
@@ -1124,9 +1106,30 @@ export default function MarkdownEditor({
           editor={editor}
           shouldShow={shouldShowBubbleMenu}
           tippyOptions={{
+            appendTo: () => document.body,
             duration: 140,
             offset: [0, 10],
             placement: "top",
+            popperOptions: {
+              strategy: "fixed",
+              modifiers: [
+                {
+                  name: "flip",
+                  options: {
+                    padding: 8,
+                    rootBoundary: "viewport"
+                  }
+                },
+                {
+                  name: "preventOverflow",
+                  options: {
+                    padding: 8,
+                    rootBoundary: "viewport"
+                  }
+                }
+              ]
+            },
+            zIndex: 5200,
             theme: "mdpad-bubble"
           }}
         >
@@ -1393,6 +1396,8 @@ export default function MarkdownEditor({
     </div>
   );
 }
+
+
 
 
 

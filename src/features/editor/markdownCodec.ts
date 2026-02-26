@@ -118,24 +118,85 @@ function parseSingleLineBlockMath(line: string): string | null {
   return latex === "" ? null : latex;
 }
 
-function rewriteInlineMath(source: string): string {
+function findCodeSpanClosingDelimiter(
+  source: string,
+  start: number,
+  delimiterLength: number
+): number {
+  for (let pointer = start; pointer < source.length; pointer += 1) {
+    if (source[pointer] !== "`" || isEscaped(source, pointer)) {
+      continue;
+    }
+
+    let runLength = 1;
+    while (source[pointer + runLength] === "`") {
+      runLength += 1;
+    }
+
+    if (runLength === delimiterLength) {
+      return pointer;
+    }
+
+    pointer += runLength - 1;
+  }
+
+  return -1;
+}
+
+function rewriteOutsideCodeSpan(
+  source: string,
+  rewriter: (segment: string) => string
+): string {
   let output = "";
+  let segmentStart = 0;
   let pointer = 0;
-  let inCodeSpan = false;
 
   while (pointer < source.length) {
-    const current = source[pointer];
-
-    if (current === "`" && !isEscaped(source, pointer)) {
-      inCodeSpan = !inCodeSpan;
-      output += current;
+    if (source[pointer] !== "`" || isEscaped(source, pointer)) {
       pointer += 1;
       continue;
     }
 
+    if (segmentStart < pointer) {
+      output += rewriter(source.slice(segmentStart, pointer));
+    }
+
+    let delimiterLength = 1;
+    while (source[pointer + delimiterLength] === "`") {
+      delimiterLength += 1;
+    }
+
+    const closing = findCodeSpanClosingDelimiter(
+      source,
+      pointer + delimiterLength,
+      delimiterLength
+    );
+    if (closing === -1) {
+      output += rewriter(source.slice(pointer));
+      return output;
+    }
+
+    output += source.slice(pointer, closing + delimiterLength);
+    pointer = closing + delimiterLength;
+    segmentStart = pointer;
+  }
+
+  if (segmentStart < source.length) {
+    output += rewriter(source.slice(segmentStart));
+  }
+
+  return output;
+}
+
+function rewriteInlineMathSegment(source: string): string {
+  let output = "";
+  let pointer = 0;
+
+  while (pointer < source.length) {
+    const current = source[pointer];
+
     if (
       current === "$" &&
-      !inCodeSpan &&
       !isEscaped(source, pointer) &&
       source[pointer - 1] !== "$" &&
       source[pointer + 1] !== "$"
@@ -158,25 +219,20 @@ function rewriteInlineMath(source: string): string {
   return output;
 }
 
-function rewriteHighlight(source: string): string {
+function rewriteInlineMath(source: string): string {
+  return rewriteOutsideCodeSpan(source, rewriteInlineMathSegment);
+}
+
+function rewriteHighlightSegment(source: string): string {
   let output = "";
   let pointer = 0;
-  let inCodeSpan = false;
 
   while (pointer < source.length) {
     const current = source[pointer];
 
-    if (current === "`" && !isEscaped(source, pointer)) {
-      inCodeSpan = !inCodeSpan;
-      output += current;
-      pointer += 1;
-      continue;
-    }
-
     if (
       current === "=" &&
       source[pointer + 1] === "=" &&
-      !inCodeSpan &&
       !isEscaped(source, pointer)
     ) {
       const closing = findClosingDoubleEquals(source, pointer + 2);
@@ -199,6 +255,10 @@ function rewriteHighlight(source: string): string {
   }
 
   return output;
+}
+
+function rewriteHighlight(source: string): string {
+  return rewriteOutsideCodeSpan(source, rewriteHighlightSegment);
 }
 
 function rewriteInlineSyntax(source: string): string {
