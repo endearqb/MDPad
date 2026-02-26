@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Tooltip } from "baseui/tooltip";
 import { Check, ChevronDown, CircleAlert, CircleDot, Loader2 } from "lucide-react";
 import type { MarkdownTheme, SaveState, UiTheme } from "../../shared/types/doc";
 
@@ -129,39 +128,29 @@ export default function StatusBar({
           className="statusbar-theme-group"
           ref={menuRootRef}
         >
-          <Tooltip
-            content="Cycle markdown style"
-            placement="top"
-            showArrow
+          <button
+            aria-label="Cycle markdown theme"
+            className="statusbar-theme-switch"
+            onClick={onToggleMarkdownTheme}
+            title="Cycle markdown style"
+            type="button"
           >
-            <button
-              aria-label="Cycle markdown theme"
-              className="statusbar-theme-switch"
-              onClick={onToggleMarkdownTheme}
-              type="button"
-            >
-              {currentMarkdownThemeLabel}
-            </button>
-          </Tooltip>
-          <Tooltip
-            content="Select markdown style"
-            placement="top"
-            showArrow
+            {currentMarkdownThemeLabel}
+          </button>
+          <button
+            aria-expanded={isThemeMenuOpen}
+            aria-label="Select markdown style"
+            aria-haspopup="menu"
+            className="statusbar-theme-switch statusbar-theme-menu-trigger"
+            onClick={() => setIsThemeMenuOpen((current) => !current)}
+            title="Select markdown style"
+            type="button"
           >
-            <button
-              aria-expanded={isThemeMenuOpen}
-              aria-label="Select markdown style"
-              aria-haspopup="menu"
-              className="statusbar-theme-switch statusbar-theme-menu-trigger"
-              onClick={() => setIsThemeMenuOpen((current) => !current)}
-              type="button"
-            >
-              <ChevronDown
-                aria-hidden="true"
-                className="statusbar-theme-menu-icon"
-              />
-            </button>
-          </Tooltip>
+            <ChevronDown
+              aria-hidden="true"
+              className="statusbar-theme-menu-icon"
+            />
+          </button>
           {isThemeMenuOpen ? (
             <div
               className="statusbar-theme-menu"
@@ -188,20 +177,15 @@ export default function StatusBar({
             </div>
           ) : null}
         </div>
-        <Tooltip
-          content="Click to switch window UI"
-          placement="top"
-          showArrow
+        <button
+          aria-label={uiTheme === "classic" ? "Switch to modern UI" : "Switch to classic UI"}
+          className="statusbar-theme-switch"
+          onClick={onToggleUiTheme}
+          title="Click to switch window UI"
+          type="button"
         >
-          <button
-            aria-label={uiTheme === "classic" ? "Switch to modern UI" : "Switch to classic UI"}
-            className="statusbar-theme-switch"
-            onClick={onToggleUiTheme}
-            type="button"
-          >
-            {uiTheme === "classic" ? "Classic Theme" : "Modern Theme"}
-          </button>
-        </Tooltip>
+          {uiTheme === "classic" ? "Classic Theme" : "Modern Theme"}
+        </button>
         <span>{charCount.toLocaleString()} chars</span>
       </section>
     </footer>

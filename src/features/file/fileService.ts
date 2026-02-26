@@ -59,12 +59,19 @@ export async function setAttachmentLibraryDir(path: string): Promise<void> {
   });
 }
 
+export async function saveAttachmentBytesToLibrary(
+  fileName: string,
+  bytes: number[]
+): Promise<string> {
+  return invoke<string>("save_attachment_bytes_to_library", {
+    fileName,
+    bytes
+  });
+}
+
 export async function saveImageBytesToLibrary(
   fileName: string,
   bytes: number[]
 ): Promise<string> {
-  return invoke<string>("save_image_bytes_to_library", {
-    fileName,
-    bytes
-  });
+  return saveAttachmentBytesToLibrary(fileName, bytes);
 }

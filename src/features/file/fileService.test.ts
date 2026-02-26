@@ -12,6 +12,7 @@ import {
   getAttachmentLibraryDir,
   pickAttachmentLibraryDir,
   renameFile,
+  saveAttachmentBytesToLibrary,
   saveFileAsDialog,
   saveImageBytesToLibrary,
   setAttachmentLibraryDir
@@ -73,12 +74,24 @@ describe("fileService", () => {
     });
   });
 
-  it("passes camelCase fileName and bytes to save_image_bytes_to_library", async () => {
+  it("passes camelCase fileName and bytes to save_attachment_bytes_to_library", async () => {
+    invokeMock.mockResolvedValue("D:\\MDPadAssets\\img-20260225.png");
+
+    const path = await saveAttachmentBytesToLibrary("img-20260225.png", [1, 2, 3]);
+
+    expect(invokeMock).toHaveBeenCalledWith("save_attachment_bytes_to_library", {
+      fileName: "img-20260225.png",
+      bytes: [1, 2, 3]
+    });
+    expect(path).toBe("D:\\MDPadAssets\\img-20260225.png");
+  });
+
+  it("keeps saveImageBytesToLibrary as compatibility alias", async () => {
     invokeMock.mockResolvedValue("D:\\MDPadAssets\\img-20260225.png");
 
     const path = await saveImageBytesToLibrary("img-20260225.png", [1, 2, 3]);
 
-    expect(invokeMock).toHaveBeenCalledWith("save_image_bytes_to_library", {
+    expect(invokeMock).toHaveBeenCalledWith("save_attachment_bytes_to_library", {
       fileName: "img-20260225.png",
       bytes: [1, 2, 3]
     });

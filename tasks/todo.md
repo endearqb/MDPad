@@ -896,3 +896,334 @@
 - 验证结果：
   - `pnpm test`：通过（7 files / 62 tests passed）。
   - `pnpm build`：通过。
+
+## 新任务：图片链接条与图片分行显示（2026-02-26）
+- [x] 定位图片节点与链接条同一行导致图片压缩的根因
+- [x] 调整图片容器布局为纵向排列，保证链接条固定在图片下一行
+- [x] 运行验证：`pnpm build`
+
+### 回顾（图片链接条与图片分行显示）
+- 根因：`.media-node` 使用横向 `flex` 布局，图片被选中时追加的链接条（`media-markdown-bar`）与图片并排，导致图片可点击区域被压缩。
+- `src/styles.css`：
+  - `.media-node` 从横向布局改为纵向布局（`flex-direction: column`）并居中对齐，确保链接条始终在图片下方单独一行。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：划词菜单文本格式下拉位置回调（2026-02-26）
+- [x] 将文本格式下拉从右侧弹出恢复为下方弹出
+- [x] 将下拉箭头图标调整到“正文”文本右侧
+- [x] 运行验证：`pnpm build`
+
+### 回顾（划词菜单文本格式下拉位置回调）
+- `src/styles.css`：
+  - `.bubble-style-popover` 从 `left: calc(100% + 8px) / top: 50%` 改回 `left: 0 / top: calc(100% + 8px)`，恢复下方弹出。
+  - `.bubble-style-btn` 改为 `justify-content: space-between` 并调整按钮最小宽度与间距，确保箭头显示在“正文”右侧。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：划词菜单弹层可见性与图片选中行为修复（2026-02-26）
+- [x] 修复文本格式下拉菜单被遮挡/切割导致不可见
+- [x] 选中图片（含视频/音频）时不显示划词菜单
+- [x] 运行验证：`pnpm build`
+
+### 回顾（划词菜单弹层可见性与图片选中行为修复）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - `BubbleMenu` 增加 `appendTo: () => document.body` 和更高 `zIndex`，避免下拉弹层受编辑区裁剪。
+  - 在渲染条件中增加媒体节点判断：当 `resizableImage/videoBlock/audioBlock` 选中时不渲染 `BubbleMenu`。
+- `src/styles.css`：
+  - `mdpad-bubble` 的 tippy 容器与 content 显式设置 `overflow: visible`，确保文本格式下拉可见。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：下拉回退/弹窗深灰/图片点击崩溃修复（2026-02-26）
+- [x] 将文本格式下拉菜单回退到初始样式与行为基线
+- [x] 弹窗输入框 focus 改为深灰，Apply 按钮改深灰并缩小
+- [x] 修复点击图片时 `BubbleMenu` 崩溃（`removeChild` / destroyed tippy）
+- [x] 移除 TopBar/StatusBar 的 BaseUI Tooltip，改用原生 `title`（消除 `Popover defaultProps` 警告）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（下拉回退/弹窗深灰/图片点击崩溃修复）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 移除“媒体选中时条件卸载 BubbleMenu”的做法，改为 `shouldShow` 过滤媒体节点，避免 BubbleMenu 销毁时序导致的 DOM 删除异常。
+  - `BubbleMenu` 的 tippy 配置回退到初始基线（移除 `appendTo`/`zIndex` 覆盖）。
+- `src/styles.css`：
+  - 文本格式下拉相关样式回退到初始基线（`bubble-menu-shell`、`bubble-style-btn`、`bubble-style-popover`、`bubble-style-item`）。
+  - `mdpad-bubble` 的 tippy 容器样式回退（移除近期 overflow 覆盖）。
+  - 编辑弹窗输入框 focus 改为深灰，Apply 按钮改为深灰并缩小，整体更贴近编辑器主题。
+- `src/features/window/TopBar.tsx` / `src/features/window/StatusBar.tsx`：
+  - 移除 `baseui/tooltip` 依赖与包裹组件，统一改用原生 `title` + `aria-label` 提示。
+- 验证结果：
+  - `pnpm test`：通过（7 files / 62 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：下拉防遮挡 + 高亮语法 + 音视频粘贴 + Mermaid（2026-02-26）
+- [x] 修复文档底部时划词菜单文本格式下拉被窗口边框遮挡（智能翻转）
+- [x] 增加 `==高亮==` 语法支持（编辑器输入/粘贴、markdown 编解码、分主题样式）
+- [x] 增加音频/视频二进制文件直接粘贴支持（保存到附件库并插入节点）
+- [x] 使用社区方案新增 Mermaid 支持（fenced mermaid 编解码 + 编辑器渲染/编辑）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（下拉防遮挡 + 高亮语法 + 音视频粘贴 + Mermaid）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 划词菜单“文本格式”下拉新增智能翻转逻辑：根据 `.app-root` 可用空间在下方/上方切换，避免文档底部被窗口边框遮挡。
+  - `BubbleMenu` 的 `shouldShow` 增加 `mermaidBlock` 过滤，块级媒体/图表节点选中时不显示划词菜单。
+  - 粘贴逻辑从“仅图片”扩展到图片/音频/视频二进制文件，统一落地附件库后插入对应节点。
+  - Slash 菜单新增 Mermaid 插入项，支持弹窗输入图源码。
+- `src/features/editor/extensions/mermaidExtensions.tsx`（新增）：
+  - 新增 `MermaidBlock` TipTap 节点扩展，支持代码/预览分栏编辑、`Split/Code/Preview` 切换与渲染错误兜底。
+- `src/features/editor/markdownCodec.ts`：
+  - 新增 `==...==` -> `<mark>` 预处理与 `<mark>` -> `==...==` Turndown 规则。
+  - 新增 fenced `mermaid` -> `data-type="mermaid-block"` 预处理与反向序列化规则。
+- `src/styles.css`：
+  - `bubble-style-popover` 增加 `is-drop-up` 样式与最大高度滚动兜底。
+  - 新增 `mark` 基础样式与 Default/Notion/GitHub/Academic 主题高亮变量（含深色模式）。
+  - 新增 Mermaid 节点渲染样式（选中态、错误态、SVG 自适应）。
+- `src/features/file/fileService.ts` / `src-tauri/src/lib.rs`：
+  - 新增通用附件保存接口 `save_attachment_bytes_to_library`，旧图片接口保留兼容。
+- `src/features/editor/markdownCodec.test.ts` / `src/features/file/fileService.test.ts`：
+  - 补充高亮、Mermaid、通用附件保存兼容相关测试。
+- 验证结果：
+  - `pnpm test`：通过（7 files / 67 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：源码级借鉴 PoC（Parser Hook / Clipboard Pipeline / Mermaid 交互）（2026-02-26）
+- [x] 按“仅源码级借鉴”原则落地 Markdown parser/serializer hook 机制（不替换运行时主干）
+- [x] 抽离并接入 Clipboard 分发管线（binary media + markdown image 文本）
+- [x] 保持现有 markdown 语法约定（fenced mermaid、公式、任务列表）不回归
+- [x] 补充 PoC 基础单测（hook registry / clipboard pipeline）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（源码级借鉴 PoC）
+- `src/features/editor/codec/hooks/types.ts` / `registry.ts`：
+  - 新增可排序、可替换（同 id 覆盖）的 markdown hook 注册器，支持 preprocess 与 turndown 两类 hook。
+- `src/features/editor/markdownCodec.ts`：
+  - 将预处理与 Turndown 规则安装改为通过 `MarkdownHookRegistry` 执行；
+  - 保留原有规则实现与顺序（包含 fenced mermaid、公式、task list、highlight、link/media 序列化）；
+  - 未引入 npm 运行时替换，属于源码级抽象升级。
+- `src/features/editor/clipboard/pipeline.ts` / `types.ts`：
+  - 新增粘贴处理分发管线，按 handler 顺序短路执行。
+- `src/features/editor/clipboard/handlers/binaryMedia.ts`：
+  - 保留二进制图片/音频/视频粘贴逻辑，改为依赖注入式 handler，便于复用与测试。
+- `src/features/editor/clipboard/handlers/textMarkdownImage.ts`（新增）：
+  - 抽离 markdown 图片文本粘贴（`![...](...)` / `![[...]]`）逻辑为独立 handler。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - `handlePaste` 改为接入 clipboard pipeline，组合 binary + text image handlers；
+  - 保持现有附件库落盘与媒体节点插入行为不变。
+- 新增测试：
+  - `src/features/editor/codec/hooks/registry.test.ts`
+  - `src/features/editor/clipboard/pipeline.test.ts`
+- 验证结果：
+  - `pnpm test`：通过（9 files / 73 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：Mermaid 极简三态切换与 PNG 下载/复制（2026-02-26）
+- [x] 三态视图按钮改为单一 icon 按钮，占用一个位置并循环切换（preview -> split -> code -> preview）
+- [x] Mermaid 默认视图改为 Preview
+- [x] 在 Preview 提供 PNG 下载与复制按钮（icon）
+- [x] Mermaid 容器圆角跟随编辑器主题圆角（modern/classic）
+- [x] Mermaid code 面板复用各 Markdown style 的代码块风格（default/notion/github/academic）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（Mermaid 极简三态切换与 PNG 下载/复制）
+- `src/features/editor/extensions/mermaidExtensions.tsx`：
+  - 新增单一模式按钮，按 `preview -> split -> code -> preview` 循环切换；
+  - 默认模式从 `split` 调整为 `preview`；
+  - 工具栏改为 icon 按钮：`mode`、`download png`、`copy png`；
+  - 新增 SVG -> PNG 导出逻辑、下载逻辑和剪贴板复制逻辑（含环境不支持时错误提示）。
+- `src/styles.css`：
+  - Mermaid 面板改为极简风格，工具栏右上角 icon 化；
+  - 新增 `--editor-surface-radius`，Mermaid 圆角跟随 editor 容器主题圆角；
+  - Mermaid code/pane 新增变量化主题映射，在 `default/notion/github/academic` 及 dark 对应风格下对齐代码块视觉。
+- 验证结果：
+  - `pnpm test`：通过（9 files / 73 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：Mermaid 高亮/容器 + 行间公式样式 + 邻列宽拖拽（2026-02-26）
+- [x] Mermaid 编辑区增加语法高亮（保持可编辑输入）
+- [x] Mermaid 容器对齐表格容器风格，`split/code` 高度跟随代码内容，不出现内部纵向滚动
+- [x] Mermaid `preview` 面板按图片展示方式居中自适应
+- [x] 行间公式去除容器边框与背景，仅保留选中态提示
+- [x] 表格列宽拖拽改为仅影响相邻两列，不改变其他列
+- [x] 修复 Mermaid 高亮操作符正则错误
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（Mermaid 高亮/容器 + 行间公式样式 + 邻列宽拖拽）
+- `src/features/editor/extensions/mermaidExtensions.tsx`：
+  - 新增 Mermaid 源码高亮渲染（覆盖关键字/方向/连线操作符/注释/数字/标题）；
+  - 采用“高亮层 + 透明 textarea”叠层方案，保持编辑体验与高亮同步；
+  - 修复操作符匹配正则中误写片段（`-\\. -` -> `-\\.-`）。
+- `src/styles.css`：
+  - Mermaid 节点容器复用表格容器语义（`tableWrapper`）并统一圆角、边框、背景；
+  - `split/code` 模式下编辑高度按内容自适应，禁用内部纵向滚动条；
+  - `preview` 面板按图片预览方式居中、`svg` 自适应显示；
+  - 行间公式样式改为无边框、无背景，保留选中高亮描边。
+- `src/features/editor/extensions/tableNeighborResize.ts`（新增）：
+  - 新增邻列联动插件：检测单列宽度变化后回写“当前列 + 邻列”宽度，保持该列对总宽不变；
+  - 通过 transaction meta 防止递归触发；
+  - 类型定义补全（`EditorState` / `Transaction`）。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - `Table` 启用 `resizable` 并接入 `NeighborColumnResize`，`cellMinWidth` 统一配置。
+- 依赖：
+  - `package.json` 增加 `@tiptap/pm` 直接依赖，确保 `@tiptap/pm/*` 类型可解析。
+- 验证结果：
+  - `pnpm test`：通过（9 files / 73 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：统一 Mermaid 各 style 容器间距（2026-02-26）
+- [x] 以当前最小间距（GitHub 基准）统一 Mermaid 外边距与内部间距
+- [x] Mermaid 间距改为变量化配置，避免硬编码分散
+- [x] 在 `default/notion/github/academic` 显式声明同一套 Mermaid spacing
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（统一 Mermaid 各 style 容器间距）
+- `src/styles.css`：
+  - 在 `.mdpad-editor` 新增 Mermaid spacing 变量：
+    - `--mermaid-margin-top/bottom`
+    - `--mermaid-shell-padding`
+    - `--mermaid-toolbar-gap/margin-bottom`
+    - `--mermaid-workspace-gap`
+    - `--mermaid-code-padding-y/x`
+    - `--mermaid-preview-padding`
+    - `--mermaid-action-note-margin-top`
+  - 将 Mermaid 相关样式从固定值改为变量读取：
+    - `.mermaid-block-shell`（覆盖 `tableWrapper` 引入的 style 差异 margin）
+    - `.mermaid-toolbar`
+    - `.mermaid-workspace`
+    - `.mermaid-code-highlight` / `.mermaid-code-input`
+    - `.mermaid-preview-pane`
+    - `.mermaid-action-note`
+  - 在 `md-theme-default/notionish/github/academic` 四套 style 中显式设置同一组 spacing 值（统一为当前最小基准）。
+- 验证结果：
+  - `pnpm test`：通过（9 files / 73 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：公式节点点击编辑弹窗修复（2026-02-26）
+- [x] 修复行内/行间公式无法通过点击唤起编辑弹窗
+- [x] 保持公式编辑仍走统一主题弹窗链路
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（公式节点点击编辑弹窗修复）
+- `src/features/editor/extensions/mathExtensions.tsx`：
+  - 将公式节点编辑触发从“仅双击”调整为“选中后点击即编辑”（首次点击选中、再次点击弹窗；已选中时单击直接弹窗）；
+  - 继续复用 `onRequestEdit` -> 编辑器统一弹窗状态机，不回退到原生 prompt。
+- `src/styles.css`：
+  - 为 `.math-inline-node` 与 `.math-block-node` 增加 `cursor: pointer`，强化可编辑反馈。
+- 验证结果：
+  - `pnpm test`：通过（9 files / 73 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：表格总宽固定占满容器（2026-02-26）
+- [x] 修复表格拖拽列宽后总宽变化问题（默认占满容器且保持）
+- [x] 保持“仅相邻两列联动”规则
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（表格总宽固定占满容器）
+- `src/styles.css`：
+  - `.mdpad-editor table` 改为 `width/min-width: 100% !important`，确保默认与拖拽后总宽都贴合容器最大宽度，不再漂移。
+- `src/features/editor/extensions/tableNeighborResize.ts`：
+  - 邻列联动算法增加“真实渲染宽度”回退源（从当前 table DOM 的 `colgroup/首行单元格` 读取列宽）；
+  - 解决首次拖拽时 `colwidth` 缺失被 `cellMinWidth` 误回退导致总宽/列宽异常的问题；
+  - 保持仅当前列与相邻列成对守恒，不影响其他列。
+- 验证结果：
+  - `pnpm test`：通过（9 files / 73 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：划词菜单按钮调整（2026-02-26）
+- [x] 移除划词菜单下拉框外的 `H1` / `H2` 按钮
+- [x] 增加划词菜单 `上标` / `下标` 按钮
+- [x] 接入 `@tiptap/extension-superscript` / `@tiptap/extension-subscript`
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（划词菜单按钮调整）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 扩展层新增 `SuperscriptExtension` 与 `SubscriptExtension`；
+  - 划词菜单中移除下拉框外的 `H1/H2` 快捷按钮；
+  - 在原位置替换为 `Superscript/Subscript` 按钮，并绑定 `toggleSuperscript/toggleSubscript`。
+- 依赖：
+  - `package.json` / `pnpm-lock.yaml` 新增：
+    - `@tiptap/extension-superscript`
+    - `@tiptap/extension-subscript`
+- 验证结果：
+  - `pnpm test`：通过（9 files / 73 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：源码级替换表格为 starter-kit 交互（2026-02-26）
+- [x] 新增本地 `tableKit` 扩展骨架（`FloatMenuView` / table 选区工具 / table 节点扩展）
+- [x] 用本地 `tableKit` 替换 `MarkdownEditor` 中原 `@tiptap/extension-table*` 直连接入
+- [x] 移除 `NeighborColumnResize` 在编辑器扩展链中的接入（保留文件，不再启用）
+- [x] 移除 BubbleMenu 内表格 `R+/C+/R-/C-` 按钮，由 table float menu 接管
+- [x] 迁移 table/grip/float-menu 样式并恢复列宽拖拽光标与选区视觉
+- [x] 增加 `tippy.js` 直接依赖以支持本地 float menu 实现
+- [x] 运行验证：`pnpm lint`、`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（源码级替换表格为 starter-kit 交互）
+- 新增文件：
+  - `src/features/editor/extensions/tableKit/floatMenuView.ts`
+  - `src/features/editor/extensions/tableKit/tableSelection.ts`
+  - `src/features/editor/extensions/tableKit/tableIcons.ts`
+  - `src/features/editor/extensions/tableKit/tableExtensions.ts`
+  - `src/features/editor/extensions/tableKit/index.ts`
+- `src/features/editor/MarkdownEditor.tsx`：
+  - table 扩展接入改为 `TableKit/TableRowKit/TableHeaderKit/TableCellKit`；
+  - 删除 `NeighborColumnResize` 接入与 `lastColumnResizable: false` 配置；
+  - 删除 BubbleMenu 内表格增删行列按钮，避免与新表格浮动菜单重复。
+- `src/styles.css`：
+  - 表格样式回归上游交互所需形态（去掉强制 `width/min-width: 100% !important` 与 `table-layout: fixed`）；
+  - 新增 `selectedCell`、`column-resize-handle`、`ProseMirror-table-grip-*`、`ProseMirror-fm*` 样式；
+  - 新增整表选择 grip（左上角圆点）交互样式。
+- `package.json` / `pnpm-lock.yaml`：新增直接依赖 `tippy.js`。
+- 验证结果：
+  - `pnpm lint`：通过；
+  - `pnpm test`：通过（9 files / 73 tests passed）；
+  - `pnpm build`：通过。
+
+## 新任务：表格/ Mermaid 容器贴合 + Mermaid 识别回归（2026-02-26）
+- [x] 表格默认占满编辑容器宽度，表格容器边框改为透明
+- [x] Mermaid 默认占满编辑容器宽度，容器边框改为透明
+- [x] Mermaid 三按钮位于右上角，鼠标 hover 容器时显示
+- [x] Mermaid 工具栏按视图切换动作：code/split(激活 code) 显示切换+复制代码；preview 显示切换+下载+复制
+- [x] 增加 markdownCodec 回归测试，覆盖“fenced mermaid + 后续 blockquote/表格”场景
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（表格/ Mermaid 容器贴合 + Mermaid 识别回归）
+- `src/styles.css`：
+  - `.tableWrapper` 统一改为 `width/max-width: 100%`，边框透明、背景透明；
+  - `table` 统一 `width/min-width/max-width: 100%`，默认贴合编辑容器宽度；
+  - Mermaid 容器 `.mermaid-block-shell` 改为全宽、透明边框、透明背景；
+  - Mermaid 工具栏改为绝对定位右上角，仅在容器 `hover/focus/selected` 时显示；
+  - Notion/GitHub/Academic 及 dark 变体中的 `.tableWrapper` 边框色统一收敛为透明，消除主题覆盖残留。
+- `src/features/editor/markdownCodec.test.ts`：
+  - 新增回归用例：`fenced mermaid + 后续 blockquote + 分隔线 + 表格`；
+  - 验证 Mermaid 仍被识别为 `data-type="mermaid-block"`，后续引用与表格语法继续正常渲染。
+- 结论：
+  - 当前解析链路下，后续引用块不会影响前置 fenced mermaid 的识别；若仍有个别样例渲染失败，更可能是 Mermaid 图源码本身或渲染阶段错误，而不是 markdown fence 被 blockquote 干扰。
+- 验证结果：
+  - `pnpm test`：通过（9 files / 74 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：Mermaid fenced 空行导致终点识别错误修复（2026-02-26）
+- [x] 复现并确认 `marked` 在 Mermaid 原文空行处提前终止 HTML block 的问题
+- [x] 将 Mermaid 节点预处理改为单行安全标签（`data-code` 行内编码，不再内嵌多行文本）
+- [x] 增加回归测试覆盖“空行 + 缩进 + 虚线连线标签”的真实样例
+- [x] 运行验证：`pnpm test -- src/features/editor/markdownCodec.test.ts`、`pnpm build`
+
+### 回顾（Mermaid fenced 空行导致终点识别错误修复）
+- 根因：
+  - 旧实现把 Mermaid 源码（含空行/缩进）直接塞到 `<div data-type="mermaid-block">...</div>` 文本体中；
+  - `marked` 处理 Markdown HTML block 时在空行处提前结束，后半段被当作 markdown/代码块解析，产生 `-.-&gt;` 断裂与语法错误。
+- 代码修复：
+  - `src/features/editor/markdownCodec.ts`：
+    - 新增 `encodeMermaidDataCode/decodeMermaidDataCode`；
+    - `toMermaidTag` 改为输出单行节点：`<div data-type="mermaid-block" data-code=\"...&#10;...\"></div>`，避免多行内文触发 HTML block 终止；
+    - Turndown 的 Mermaid 规则改为使用 `decodeMermaidDataCode`，兼容编码与历史内容。
+  - `src/features/editor/markdownCodec.test.ts`：
+    - Mermaid 转换测试新增 `&#10;` 与“无 `<pre><code>` 裂解”断言；
+    - 强化回归样例：含空行、缩进、`-.->|"..."|` 标签及后续 blockquote/table，确认解析稳定。
+- 验证结果：
+  - `pnpm test -- src/features/editor/markdownCodec.test.ts`：通过（1 file / 27 tests passed）。
+  - `pnpm build`：通过。

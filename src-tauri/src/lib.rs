@@ -220,14 +220,13 @@ fn set_attachment_library_dir(
     Ok(())
 }
 
-#[tauri::command]
-fn save_image_bytes_to_library(
+fn save_attachment_bytes_to_library_impl(
     file_name: String,
     bytes: Vec<u8>,
-    state: tauri::State<'_, AttachmentLibraryState>
+    state: &tauri::State<'_, AttachmentLibraryState>
 ) -> Result<String, String> {
     if bytes.is_empty() {
-        return Err("Image data is empty.".to_string());
+        return Err("Attachment data is empty.".to_string());
     }
 
     let attachment_dir = {
@@ -252,9 +251,27 @@ fn save_image_bytes_to_library(
     let sanitized_name = sanitize_attachment_file_name(&file_name)?;
     let target_path = next_available_file_path(&directory, &sanitized_name);
     fs::write(&target_path, bytes)
-        .map_err(|error| format!("Failed to save image file: {error}"))?;
+        .map_err(|error| format!("Failed to save attachment file: {error}"))?;
 
     Ok(normalize_path(target_path))
+}
+
+#[tauri::command]
+fn save_attachment_bytes_to_library(
+    file_name: String,
+    bytes: Vec<u8>,
+    state: tauri::State<'_, AttachmentLibraryState>
+) -> Result<String, String> {
+    save_attachment_bytes_to_library_impl(file_name, bytes, &state)
+}
+
+#[tauri::command]
+fn save_image_bytes_to_library(
+    file_name: String,
+    bytes: Vec<u8>,
+    state: tauri::State<'_, AttachmentLibraryState>
+) -> Result<String, String> {
+    save_attachment_bytes_to_library_impl(file_name, bytes, &state)
 }
 
 #[tauri::command]
@@ -420,6 +437,7 @@ pub fn run() {
             pick_attachment_library_dir,
             get_attachment_library_dir,
             set_attachment_library_dir,
+            save_attachment_bytes_to_library,
             save_image_bytes_to_library
         ])
         .run(tauri::generate_context!())

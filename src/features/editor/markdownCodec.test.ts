@@ -20,6 +20,18 @@ describe("markdownCodec", () => {
     expect(html).toContain('data-type="block-math"');
   });
 
+  it("converts ==highlight== syntax into mark tags", () => {
+    const html = markdownToHtml("prefix ==highlighted== suffix");
+
+    expect(html).toContain("<mark>highlighted</mark>");
+  });
+
+  it("serializes mark tags back to ==highlight== syntax", () => {
+    const markdown = htmlToMarkdown("<p><mark>highlighted</mark></p>");
+
+    expect(markdown).toContain("==highlighted==");
+  });
+
   it("converts single-line $$...$$ into block math", () => {
     const html = markdownToHtml("$$ddadf$$");
 
@@ -44,6 +56,59 @@ describe("markdownCodec", () => {
     expect(html).toContain("<blockquote>");
     expect(html).toContain('data-type="block-math"');
     expect(html).toContain('data-latex="a+b"');
+  });
+
+  it("converts mermaid fenced code block to mermaid node html", () => {
+    const markdown = "```mermaid\ngraph TD\n  A --> B\n```";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain('data-type="mermaid-block"');
+    expect(html).toContain('data-code="graph TD');
+    expect(html).toContain("&#10;");
+    expect(html).not.toContain("<pre><code>");
+  });
+
+  it("keeps mermaid fenced block parsing stable when followed by blockquote and table", () => {
+    const markdown = [
+      "## ️ 全局知识地图回顾",
+      "",
+      "```mermaid",
+      "flowchart TD",
+      '    C0["第0章<br>为什么学？"] --> C1["第1章<br>记账本直觉"]',
+      '    C1 --> C2["第2章<br>Y→系数"]',
+      '    C2 --> C3["第3章<br>连续性检查"]',
+      "",
+      '    C1 -.->|"每行=0"| C3',
+      '    C2 -.->|"S就是S_S"| C4',
+      "```",
+      "",
+      "> **实线** = 主线学习路径 · **虚线** = 跨章关联",
+      "",
+      "---",
+      "",
+      "| 教程简化符号 | ASM1 标准符号 |",
+      "| :----------- | :------------ |",
+      "| S（食物） | $S_S$ |"
+    ].join("\n");
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<h2>️ 全局知识地图回顾</h2>");
+    expect(html).toContain('data-type="mermaid-block"');
+    expect(html).toContain("flowchart TD");
+    expect(html).toContain('-.-&gt;|&quot;每行=0&quot;| C3');
+    expect(html).toContain("<blockquote>");
+    expect(html).toContain("<table>");
+    expect(html).not.toContain("<pre><code>C1 -.-&amp;gt;");
+  });
+
+  it("serializes mermaid node html back to fenced mermaid markdown", () => {
+    const markdown = htmlToMarkdown(
+      '<div data-type="mermaid-block" data-code="graph TD&#10;A--&gt;B">graph TD\nA--&gt;B</div>'
+    );
+
+    expect(markdown).toContain("```mermaid");
+    expect(markdown).toContain("graph TD");
+    expect(markdown).toContain("A-->B");
   });
 
   it("converts GitHub callout syntax to blockquote callout html", () => {

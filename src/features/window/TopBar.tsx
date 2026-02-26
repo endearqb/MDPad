@@ -6,7 +6,6 @@ import {
   useRef,
   useState
 } from "react";
-import { Tooltip } from "baseui/tooltip";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -269,21 +268,16 @@ export default function TopBar({
     disabled?: boolean;
     children: ReactNode;
   }) => (
-    <Tooltip
-      content={label}
-      placement="bottom"
-      showArrow
+    <button
+      aria-label={label}
+      className="titlebar-icon-btn"
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      type="button"
     >
-      <button
-        aria-label={label}
-        className="titlebar-icon-btn"
-        disabled={disabled}
-        onClick={onClick}
-        type="button"
-      >
-        {children}
-      </button>
-    </Tooltip>
+      {children}
+    </button>
   );
 
   const FileMenuItem = ({
@@ -297,21 +291,16 @@ export default function TopBar({
     disabled?: boolean;
     children: ReactNode;
   }) => (
-    <Tooltip
-      content={label}
-      placement="bottom"
-      showArrow
+    <button
+      aria-label={label}
+      className="titlebar-icon-btn titlebar-file-item"
+      disabled={disabled}
+      onClick={() => runFileMenuAction(onClick)}
+      title={label}
+      type="button"
     >
-      <button
-        aria-label={label}
-        className="titlebar-icon-btn titlebar-file-item"
-        disabled={disabled}
-        onClick={() => runFileMenuAction(onClick)}
-        type="button"
-      >
-        {children}
-      </button>
-    </Tooltip>
+      {children}
+    </button>
   );
 
   const WindowControlButton = ({
@@ -325,20 +314,15 @@ export default function TopBar({
     className?: string;
     children: ReactNode;
   }) => (
-    <Tooltip
-      content={label}
-      placement="bottom"
-      showArrow
+    <button
+      aria-label={label}
+      className={className ? `win-btn ${className}` : "win-btn"}
+      onClick={onClick}
+      title={label}
+      type="button"
     >
-      <button
-        aria-label={label}
-        className={className ? `win-btn ${className}` : "win-btn"}
-        onClick={onClick}
-        type="button"
-      >
-        {children}
-      </button>
-    </Tooltip>
+      {children}
+    </button>
   );
 
   return (
@@ -361,28 +345,23 @@ export default function TopBar({
             }
           }}
         >
-          <Tooltip
-            content="File"
-            placement="bottom"
-            showArrow
+          <button
+            aria-expanded={isFileMenuOpen}
+            aria-haspopup="menu"
+            aria-label="File"
+            className="titlebar-icon-btn titlebar-file-trigger"
+            onClick={() => {
+              if (isFileMenuOpen) {
+                closeFileMenu();
+                return;
+              }
+              openFileMenu();
+            }}
+            title="File"
+            type="button"
           >
-            <button
-              aria-expanded={isFileMenuOpen}
-              aria-haspopup="menu"
-              aria-label="File"
-              className="titlebar-icon-btn titlebar-file-trigger"
-              onClick={() => {
-                if (isFileMenuOpen) {
-                  closeFileMenu();
-                  return;
-                }
-                openFileMenu();
-              }}
-              type="button"
-            >
-              <File className="titlebar-icon" />
-            </button>
-          </Tooltip>
+            <File className="titlebar-icon" />
+          </button>
           {isFileMenuOpen && (
             <div
               aria-label="File actions"

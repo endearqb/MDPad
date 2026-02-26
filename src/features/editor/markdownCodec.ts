@@ -1,6 +1,7 @@
 import TurndownService from "turndown";
 import { marked } from "marked";
 import { gfm } from "turndown-plugin-gfm";
+import { MarkdownHookRegistry } from "./codec/hooks/registry";
 import {
   hasMarkdownImageSizeHint,
   parseObsidianEmbedImageSyntax,
@@ -34,17 +35,17 @@ const turndown = new TurndownService({
 });
 turndown.use(gfm);
 
-turndown.addRule("strikethrough", {
-  filter: ["del", "s"],
-  replacement(content: string) {
-    return `~~${content}~~`;
-  }
-});
-
 function escapeHtmlAttr(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
@@ -55,6 +56,14 @@ function unescapeHtmlAttr(value: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+
+function encodeMermaidDataCode(value: string): string {
+  return escapeHtmlAttr(value.replace(/\r\n/g, "\n")).replace(/\n/g, "&#10;");
+}
+
+function decodeMermaidDataCode(value: string): string {
+  return unescapeHtmlAttr(value).replace(/&#10;/g, "\n");
 }
 
 function isEscaped(text: string, index: number): boolean {
@@ -72,6 +81,19 @@ function findClosingDollar(line: string, start: number): number {
       !isEscaped(line, pointer) &&
       line[pointer - 1] !== "$" &&
       line[pointer + 1] !== "$"
+    ) {
+      return pointer;
+    }
+  }
+  return -1;
+}
+
+function findClosingDoubleEquals(line: string, start: number): number {
+  for (let pointer = start; pointer < line.length - 1; pointer += 1) {
+    if (
+      line[pointer] === "=" &&
+      line[pointer + 1] === "=" &&
+      !isEscaped(line, pointer)
     ) {
       return pointer;
     }
@@ -136,6 +158,53 @@ function rewriteInlineMath(source: string): string {
   return output;
 }
 
+function rewriteHighlight(source: string): string {
+  let output = "";
+  let pointer = 0;
+  let inCodeSpan = false;
+
+  while (pointer < source.length) {
+    const current = source[pointer];
+
+    if (current === "`" && !isEscaped(source, pointer)) {
+      inCodeSpan = !inCodeSpan;
+      output += current;
+      pointer += 1;
+      continue;
+    }
+
+    if (
+      current === "=" &&
+      source[pointer + 1] === "=" &&
+      !inCodeSpan &&
+      !isEscaped(source, pointer)
+    ) {
+      const closing = findClosingDoubleEquals(source, pointer + 2);
+      if (closing > pointer + 2) {
+        const content = source.slice(pointer + 2, closing);
+        if (
+          content.trim() !== "" &&
+          !content.includes("<") &&
+          !content.includes(">")
+        ) {
+          output += `<mark>${escapeHtmlText(content)}</mark>`;
+          pointer = closing + 2;
+          continue;
+        }
+      }
+    }
+
+    output += current;
+    pointer += 1;
+  }
+
+  return output;
+}
+
+function rewriteInlineSyntax(source: string): string {
+  return rewriteHighlight(rewriteInlineMath(source));
+}
+
 const MARKDOWN_IMAGE_WITH_SIZE_CANDIDATE_PATTERN =
   /!\[[^\]\n]*\]\([^)\n]*=\s*\d*x\d*\s*\)/gu;
 const OBSIDIAN_IMAGE_EMBED_CANDIDATE_PATTERN = /!\[\[[^\]\n]+\]\]/gu;
@@ -154,6 +223,11 @@ function toImageTag(attrs: {
   const heightPart =
     attrs.heightPx !== null ? ` data-height-px="${attrs.heightPx}"` : "";
   return `<img src="${escapeHtmlAttr(attrs.src)}"${altPart}${titlePart}${widthPart}${heightPart} />`;
+}
+
+function toMermaidTag(code: string): string {
+  // Keep this node single-line to prevent Markdown HTML-block termination on blank lines in Mermaid source.
+  return `<div data-type="mermaid-block" data-code="${encodeMermaidDataCode(code)}"></div>`;
 }
 
 function rewriteMarkdownImageSizeHints(line: string): string {
@@ -258,7 +332,7 @@ function renderStandardBlockquote(lines: string[]): string {
 function renderTaskList(lines: TaskLine[]): string {
   const items = lines
     .map((item) => {
-      const inline = (marked.parseInline(rewriteInlineMath(item.content)) as string).trim();
+      const inline = (marked.parseInline(rewriteInlineSyntax(item.content)) as string).trim();
       const body = inline === "" ? "<br>" : inline;
       return `<li data-type="taskItem" data-checked="${item.checked ? "true" : "false"}"><div><p>${body}</p></div></li>`;
     })
@@ -270,11 +344,12 @@ function isFenceDelimiter(line: string): boolean {
   return /^\s*(```|~~~)/u.test(line);
 }
 
-function preprocessMarkdown(markdown: string): string {
+function preprocessMarkdownCore(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const output: string[] = [];
   let inFence = false;
   let pendingBlockMath: string[] | null = null;
+  let pendingMermaid: { delimiter: "```" | "~~~"; lines: string[] } | null = null;
   let pendingTasks: TaskLine[] = [];
   let pendingCallout: CalloutBlock | null = null;
   let pendingBlockquote: string[] = [];
@@ -307,6 +382,17 @@ function preprocessMarkdown(markdown: string): string {
   };
 
   for (const line of lines) {
+    if (pendingMermaid) {
+      if (line.trim() === pendingMermaid.delimiter) {
+        output.push(toMermaidTag(pendingMermaid.lines.join("\n").trimEnd()));
+        output.push("");
+        pendingMermaid = null;
+      } else {
+        pendingMermaid.lines.push(line);
+      }
+      continue;
+    }
+
     if (pendingCallout) {
       if (isBlockquoteLine(line)) {
         pendingCallout.lines.push(stripBlockquotePrefix(line));
@@ -321,6 +407,23 @@ function preprocessMarkdown(markdown: string): string {
 
     if (pendingBlockquote.length > 0 && !isBlockquoteLine(line)) {
       flushBlockquote();
+    }
+
+    const mermaidFenceMatched = line.match(/^\s*(```|~~~)mermaid\s*$/iu);
+    if (mermaidFenceMatched) {
+      flushTasks();
+      flushCallout();
+      flushBlockquote();
+      if (pendingBlockMath) {
+        output.push("$$");
+        output.push(...pendingBlockMath);
+        pendingBlockMath = null;
+      }
+      pendingMermaid = {
+        delimiter: mermaidFenceMatched[1] === "~~~" ? "~~~" : "```",
+        lines: []
+      };
+      continue;
     }
 
     if (isFenceDelimiter(line)) {
@@ -396,7 +499,7 @@ function preprocessMarkdown(markdown: string): string {
 
     flushTasks();
     output.push(
-      rewriteInlineMath(
+      rewriteInlineSyntax(
         rewriteObsidianEmbedImages(rewriteMarkdownImageSizeHints(line))
       )
     );
@@ -405,6 +508,10 @@ function preprocessMarkdown(markdown: string): string {
   flushTasks();
   flushCallout();
   flushBlockquote();
+  if (pendingMermaid) {
+    output.push(`${pendingMermaid.delimiter}mermaid`);
+    output.push(...pendingMermaid.lines);
+  }
   if (pendingBlockMath) {
     output.push("$$");
     output.push(...pendingBlockMath);
@@ -463,6 +570,15 @@ function toMarkdownLink(label: string, href: string, title: string | null): stri
   }
   const titlePart = title ? ` "${markdownEscapeTitle(title)}"` : "";
   return `[${label}](${destination}${titlePart})`;
+}
+
+function toFencedCodeBlock(language: string, content: string): string {
+  const normalized = content.replace(/\r\n/g, "\n").trimEnd();
+  const fence = normalized.includes("```") ? "~~~" : "```";
+  if (!normalized) {
+    return `\n${fence}${language}\n${fence}\n`;
+  }
+  return `\n${fence}${language}\n${normalized}\n${fence}\n`;
 }
 
 function shouldSerializeImageAsHtml(src: string): boolean {
@@ -547,7 +663,10 @@ function rewriteLinkedImageAnchors(html: string): string {
   );
 }
 
-function toMarkdownFromTaskList(element: Element): string {
+function toMarkdownFromTaskList(
+  element: Element,
+  service: TurndownService
+): string {
   const items = Array.from(element.children).filter(
     (child) => child.tagName === "LI"
   );
@@ -557,7 +676,7 @@ function toMarkdownFromTaskList(element: Element): string {
     const contentHost = Array.from(item.children).find(
       (child) => child.tagName === "DIV"
     );
-    const contentMarkdown = turndown
+    const contentMarkdown = service
       .turndown(contentHost ? contentHost.innerHTML : item.innerHTML)
       .trim()
       .replace(/\n{2,}/g, "\n");
@@ -574,14 +693,17 @@ function toMarkdownFromTaskList(element: Element): string {
   return `\n${lines.join("\n")}\n`;
 }
 
-function toMarkdownFromCallout(element: Element): string {
+function toMarkdownFromCallout(
+  element: Element,
+  service: TurndownService
+): string {
   const calloutType = normalizeCalloutType(element.getAttribute("data-callout") ?? "");
   if (!calloutType) {
-    return turndown.turndown(element.innerHTML).trim();
+    return service.turndown(element.innerHTML).trim();
   }
 
   const markerLine = `> [!${calloutType.toUpperCase()}]`;
-  const contentMarkdown = turndown.turndown(element.innerHTML).trim();
+  const contentMarkdown = service.turndown(element.innerHTML).trim();
   if (!contentMarkdown) {
     return `\n${markerLine}\n`;
   }
@@ -589,149 +711,198 @@ function toMarkdownFromCallout(element: Element): string {
   return `\n${markerLine}\n${quoteMarkdown(contentMarkdown)}\n`;
 }
 
-turndown.addRule("calloutBlockquote", {
-  filter(node) {
-    return hasTagName(node, "BLOCKQUOTE") && !!normalizeCalloutType(node.getAttribute("data-callout") ?? "");
-  },
-  replacement(_, node) {
-    return toMarkdownFromCallout(node as Element);
-  }
-});
-
-turndown.addRule("taskListDataType", {
-  filter(node) {
-    return hasTagName(node, "UL") && node.getAttribute("data-type") === "taskList";
-  },
-  replacement(_, node) {
-    return toMarkdownFromTaskList(node as Element);
-  }
-});
-
-turndown.addRule("inlineMath", {
-  filter(node) {
-    return hasTagName(node, "SPAN") && node.getAttribute("data-type") === "inline-math";
-  },
-  replacement(_, node) {
-    const latex = (node as Element).getAttribute("data-latex") ?? "";
-    return latex ? `$${unescapeHtmlAttr(latex)}$` : "";
-  }
-});
-
-turndown.addRule("blockMath", {
-  filter(node) {
-    return hasTagName(node, "DIV") && node.getAttribute("data-type") === "block-math";
-  },
-  replacement(_, node) {
-    const latex = (node as Element).getAttribute("data-latex") ?? "";
-    if (!latex) {
-      return "";
+function installCoreTurndownRules(service: TurndownService): void {
+  service.addRule("strikethrough", {
+    filter: ["del", "s"],
+    replacement(content: string) {
+      return `~~${content}~~`;
     }
-    return `\n$$\n${unescapeHtmlAttr(latex)}\n$$\n`;
-  }
-});
+  });
 
-turndown.addRule("link", {
-  filter(node) {
-    return hasTagName(node, "A");
-  },
-  replacement(content, node) {
-    const element = node as Element;
-    const href = element.getAttribute("href")?.trim();
-    if (!href) {
-      return content;
+  service.addRule("calloutBlockquote", {
+    filter(node) {
+      return hasTagName(node, "BLOCKQUOTE") && !!normalizeCalloutType(node.getAttribute("data-callout") ?? "");
+    },
+    replacement(_, node) {
+      return toMarkdownFromCallout(node as Element, service);
     }
+  });
 
-    const rawTitle = element.getAttribute("title");
-    const title =
-      rawTitle && rawTitle.trim() !== "" && rawTitle.trim() !== href
-        ? rawTitle
-        : null;
-    const label = content.trim() !== "" ? content : href;
-
-    return toMarkdownLink(label, href, title);
-  }
-});
-
-turndown.addRule("resizableImage", {
-  filter(node) {
-    return hasTagName(node, "IMG");
-  },
-  replacement(_, node) {
-    const element = node as Element;
-    const src = element.getAttribute("src");
-    if (!src) {
-      return "";
+  service.addRule("taskListDataType", {
+    filter(node) {
+      return hasTagName(node, "UL") && node.getAttribute("data-type") === "taskList";
+    },
+    replacement(_, node) {
+      return toMarkdownFromTaskList(node as Element, service);
     }
+  });
 
-    const alt = element.getAttribute("alt") ?? "";
-    const title = element.getAttribute("title");
-    const linkHref = element.getAttribute("data-link-href")?.trim() ?? "";
-    const linkTitle = element.getAttribute("data-link-title");
-    const width = readMediaWidth(element);
-    const hasCustomWidth = width !== null && Math.abs(width - 72) > 0.01;
-    const forceHtml =
-      hasCustomWidth ||
-      shouldSerializeImageAsHtml(src) ||
-      (!!linkHref && shouldSerializeImageAsHtml(linkHref));
+  service.addRule("inlineMath", {
+    filter(node) {
+      return hasTagName(node, "SPAN") && node.getAttribute("data-type") === "inline-math";
+    },
+    replacement(_, node) {
+      const latex = (node as Element).getAttribute("data-latex") ?? "";
+      return latex ? `$${unescapeHtmlAttr(latex)}$` : "";
+    }
+  });
 
-    if (forceHtml) {
-      const titlePart = title ? ` title="${escapeHtmlAttr(title)}"` : "";
-      const altPart = alt ? ` alt="${escapeHtmlAttr(alt)}"` : "";
-      const widthPart = hasCustomWidth ? ` data-width="${width}"` : "";
-      const imageHtml = `<img src="${escapeHtmlAttr(src)}"${altPart}${titlePart}${widthPart} />`;
-      if (!linkHref) {
-        return imageHtml;
+  service.addRule("blockMath", {
+    filter(node) {
+      return hasTagName(node, "DIV") && node.getAttribute("data-type") === "block-math";
+    },
+    replacement(_, node) {
+      const latex = (node as Element).getAttribute("data-latex") ?? "";
+      if (!latex) {
+        return "";
+      }
+      return `\n$$\n${unescapeHtmlAttr(latex)}\n$$\n`;
+    }
+  });
+
+  service.addRule("highlightMark", {
+    filter(node) {
+      return hasTagName(node, "MARK");
+    },
+    replacement(content) {
+      return content.trim() === "" ? content : `==${content}==`;
+    }
+  });
+
+  service.addRule("mermaidBlock", {
+    filter(node) {
+      return hasTagName(node, "DIV") && node.getAttribute("data-type") === "mermaid-block";
+    },
+    replacement(_, node) {
+      const element = node as Element;
+      const rawCode = element.getAttribute("data-code") ?? element.textContent ?? "";
+      return toFencedCodeBlock("mermaid", decodeMermaidDataCode(rawCode));
+    }
+  });
+
+  service.addRule("link", {
+    filter(node) {
+      return hasTagName(node, "A");
+    },
+    replacement(content, node) {
+      const element = node as Element;
+      const href = element.getAttribute("href")?.trim();
+      if (!href) {
+        return content;
       }
 
-      const linkTitlePart =
-        linkTitle && linkTitle.trim() !== ""
-          ? ` title="${escapeHtmlAttr(linkTitle)}"`
-          : "";
-      return `<a href="${escapeHtmlAttr(linkHref)}"${linkTitlePart}>${imageHtml}</a>`;
+      const rawTitle = element.getAttribute("title");
+      const title =
+        rawTitle && rawTitle.trim() !== "" && rawTitle.trim() !== href
+          ? rawTitle
+          : null;
+      const label = content.trim() !== "" ? content : href;
+
+      return toMarkdownLink(label, href, title);
     }
+  });
 
-    const destination = formatMarkdownDestination(src);
-    const imageTitlePart = title ? ` "${markdownEscapeTitle(title)}"` : "";
-    const imageMarkdown = `![${markdownEscapeAlt(alt)}](${destination}${imageTitlePart})`;
+  service.addRule("resizableImage", {
+    filter(node) {
+      return hasTagName(node, "IMG");
+    },
+    replacement(_, node) {
+      const element = node as Element;
+      const src = element.getAttribute("src");
+      if (!src) {
+        return "";
+      }
 
-    if (!linkHref) {
-      return imageMarkdown;
+      const alt = element.getAttribute("alt") ?? "";
+      const title = element.getAttribute("title");
+      const linkHref = element.getAttribute("data-link-href")?.trim() ?? "";
+      const linkTitle = element.getAttribute("data-link-title");
+      const width = readMediaWidth(element);
+      const hasCustomWidth = width !== null && Math.abs(width - 72) > 0.01;
+      const forceHtml =
+        hasCustomWidth ||
+        shouldSerializeImageAsHtml(src) ||
+        (!!linkHref && shouldSerializeImageAsHtml(linkHref));
+
+      if (forceHtml) {
+        const titlePart = title ? ` title="${escapeHtmlAttr(title)}"` : "";
+        const altPart = alt ? ` alt="${escapeHtmlAttr(alt)}"` : "";
+        const widthPart = hasCustomWidth ? ` data-width="${width}"` : "";
+        const imageHtml = `<img src="${escapeHtmlAttr(src)}"${altPart}${titlePart}${widthPart} />`;
+        if (!linkHref) {
+          return imageHtml;
+        }
+
+        const linkTitlePart =
+          linkTitle && linkTitle.trim() !== ""
+            ? ` title="${escapeHtmlAttr(linkTitle)}"`
+            : "";
+        return `<a href="${escapeHtmlAttr(linkHref)}"${linkTitlePart}>${imageHtml}</a>`;
+      }
+
+      const destination = formatMarkdownDestination(src);
+      const imageTitlePart = title ? ` "${markdownEscapeTitle(title)}"` : "";
+      const imageMarkdown = `![${markdownEscapeAlt(alt)}](${destination}${imageTitlePart})`;
+
+      if (!linkHref) {
+        return imageMarkdown;
+      }
+
+      const linkMarkdownTitle =
+        linkTitle && linkTitle.trim() !== "" ? linkTitle : null;
+      return toMarkdownLink(imageMarkdown, linkHref, linkMarkdownTitle);
     }
+  });
 
-    const linkMarkdownTitle =
-      linkTitle && linkTitle.trim() !== "" ? linkTitle : null;
-    return toMarkdownLink(imageMarkdown, linkHref, linkMarkdownTitle);
-  }
-});
-
-turndown.addRule("video", {
-  filter(node) {
-    return hasTagName(node, "VIDEO");
-  },
-  replacement(_, node) {
-    const element = node as Element;
-    const src = element.getAttribute("src");
-    if (!src) {
-      return "";
+  service.addRule("video", {
+    filter(node) {
+      return hasTagName(node, "VIDEO");
+    },
+    replacement(_, node) {
+      const element = node as Element;
+      const src = element.getAttribute("src");
+      if (!src) {
+        return "";
+      }
+      const width = readMediaWidth(element);
+      const widthPart = width !== null ? ` data-width="${width}"` : "";
+      return `<video src="${escapeHtmlAttr(src)}"${widthPart} controls></video>`;
     }
-    const width = readMediaWidth(element);
-    const widthPart = width !== null ? ` data-width="${width}"` : "";
-    return `<video src="${escapeHtmlAttr(src)}"${widthPart} controls></video>`;
-  }
-});
+  });
 
-turndown.addRule("audio", {
-  filter(node) {
-    return hasTagName(node, "AUDIO");
-  },
-  replacement(_, node) {
-    const src = (node as Element).getAttribute("src");
-    if (!src) {
-      return "";
+  service.addRule("audio", {
+    filter(node) {
+      return hasTagName(node, "AUDIO");
+    },
+    replacement(_, node) {
+      const src = (node as Element).getAttribute("src");
+      if (!src) {
+        return "";
+      }
+      return `<audio src="${escapeHtmlAttr(src)}" controls></audio>`;
     }
-    return `<audio src="${escapeHtmlAttr(src)}" controls></audio>`;
-  }
-});
+  });
+}
+
+function createMarkdownHookRegistry(): MarkdownHookRegistry {
+  const registry = new MarkdownHookRegistry();
+  registry.registerPreprocessHook({
+    id: "core-preprocess",
+    apply: preprocessMarkdownCore
+  });
+  registry.registerTurndownHook({
+    id: "core-turndown-rules",
+    install: installCoreTurndownRules
+  });
+  return registry;
+}
+
+const markdownHookRegistry = createMarkdownHookRegistry();
+markdownHookRegistry.installTurndownHooks(turndown);
+
+function preprocessMarkdown(markdown: string): string {
+  return markdownHookRegistry.runPreprocess(markdown);
+}
 
 export function markdownToHtml(markdown: string): string {
   const parsed = marked.parse(preprocessMarkdown(markdown)) as string;

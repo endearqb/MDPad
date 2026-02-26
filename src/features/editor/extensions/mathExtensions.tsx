@@ -5,7 +5,7 @@ import {
   type NodeViewProps
 } from "@tiptap/react";
 import katex from "katex";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, type MouseEvent as ReactMouseEvent } from "react";
 
 const inlineMathInputRegex = /(^|[\s([{])(?<!\$)\$([^$\n]+)\$(?!\$)$/u;
 const inlineMathPasteRegex = /(?<!\$)\$([^$\n]+)\$(?!\$)/gu;
@@ -50,6 +50,7 @@ function MathNodeView({
   editor,
   deleteNode,
   node,
+  selected,
   updateAttributes
 }: NodeViewProps) {
   const displayMode = node.type.name === "blockMath";
@@ -84,12 +85,31 @@ function MathNodeView({
     }
   }, [deleteNode, editor.isEditable, extension.options, latex, mode, updateAttributes]);
 
+  const handleNodeClick = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      if (!editor.isEditable) {
+        return;
+      }
+
+      // First click selects the math atom; second click (or any click while selected)
+      // opens the themed edit prompt.
+      if (!selected && event.detail <= 1) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      editFormula();
+    },
+    [editFormula, editor.isEditable, selected]
+  );
+
   return (
     <NodeViewWrapper
       className={displayMode ? "math-block-node" : "math-inline-node"}
       data-latex={latex}
       data-type={displayMode ? "block-math" : "inline-math"}
-      onDoubleClick={editFormula}
+      onClick={handleNodeClick}
     >
       {displayMode ? (
         <div

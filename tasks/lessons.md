@@ -152,3 +152,18 @@
 - For compact bubble toolbars, keep style selector width minimal and move its option panel to the side to avoid covering content below selection.
 - When adding more actions to selection toolbar, enforce horizontal layout (`nowrap`) with safe horizontal overflow instead of wrapping to a second row.
 - If users ask to remove wording from dropdown triggers, keep icon-only trigger but add explicit `aria-label` to preserve accessibility.
+
+## 2026-02-26 BubbleMenu Lifecycle Safety
+- 不要通过条件渲染频繁卸载 `BubbleMenu`（例如媒体节点选中时直接不渲染组件）；优先使用 `shouldShow` 控制显示，避免 tippy 实例销毁时序导致 `removeChild` 异常。
+- 当出现 `tippy.js hide() was called on a destroyed instance` 警告时，优先检查 React 卸载路径和 TipTap 插件生命周期，而不是先叠加 `z-index/appendTo` 样式补丁。
+- 若仅为 hover 提示，优先原生 `title`，减少对第三方 `Tooltip/Popover` 的生命周期耦合和升级告警噪声。
+
+## 2026-02-26 Table Width Invariance During Column Resize
+- 当业务要求“表格总宽固定贴合容器”时，不能仅依赖 `prosemirror-tables` 默认 `colwidth` 行为；默认会把 `table.style.width` 写成像素值并导致总宽漂移。
+- 邻列联动算法若在 `colwidth` 缺失时回退到 `cellMinWidth`，首次拖拽会错误收缩列宽；应优先读取真实渲染列宽（`colgroup` 或首行单元格宽度）作为回退基准。
+- 在需要强制容器占满时，使用 `table { width/min-width: 100% !important; }` 与逻辑层联动一起生效，避免仅改样式或仅改算法造成半修复。
+
+## 2026-02-26 Mermaid HTML Block Safety in Markdown Preprocess
+- 不要把 Mermaid 多行源码直接放进原始 HTML block 的文本体（`<div>...multi-line...</div>`）后再交给 `marked`，尤其源码中存在空行时会提前终止 HTML block。
+- 对这类自定义节点，优先输出“单行安全标签”，把源码放在属性里并做换行编码（如 `&#10;`），避免被 Markdown block-level 规则二次切分。
+- 回归测试必须覆盖“空行 + 4 空格缩进 + `-.->|\"...\"|`”的 Mermaid 真实样例，并断言不会裂解出 `<pre><code>`。

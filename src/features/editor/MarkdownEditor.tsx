@@ -7,14 +7,14 @@ import {
   type FormEvent as ReactFormEvent,
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
+import { isTextSelection } from "@tiptap/core";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import Highlight from "@tiptap/extension-highlight";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
+import SubscriptExtension from "@tiptap/extension-subscript";
+import SuperscriptExtension from "@tiptap/extension-superscript";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import {
@@ -43,6 +43,8 @@ import {
   Minus,
   Pilcrow,
   SquareSigma,
+  Subscript,
+  Superscript,
   Sigma,
   Strikethrough,
   Table2,
@@ -56,6 +58,9 @@ import {
   parseMarkdownImageSyntax,
   widthPxToPercent
 } from "./markdownImageSyntax";
+import { createClipboardPipeline } from "./clipboard/pipeline";
+import { createBinaryMediaPasteHandler } from "./clipboard/handlers/binaryMedia";
+import { createTextMarkdownImagePasteHandler } from "./clipboard/handlers/textMarkdownImage";
 import { CalloutBlockquote } from "./extensions/calloutBlockquote";
 import {
   BlockMath,
@@ -74,6 +79,15 @@ import {
   mediaDefaults,
   setMediaSourceResolver
 } from "./extensions/mediaExtensions";
+import {
+  MermaidBlock
+} from "./extensions/mermaidExtensions";
+import {
+  TableCellKit,
+  TableHeaderKit,
+  TableKit,
+  TableRowKit
+} from "./extensions/tableKit";
 import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
@@ -82,7 +96,7 @@ import { getFileBaseName } from "../../shared/utils/path";
 import {
   getAttachmentLibraryDir,
   pickAttachmentLibraryDir,
-  saveImageBytesToLibrary,
+  saveAttachmentBytesToLibrary,
   setAttachmentLibraryDir
 } from "../file/fileService";
 import {
@@ -111,6 +125,7 @@ interface EditorPromptState {
 }
 
 type TextStyleValue = "paragraph" | 1 | 2 | 3 | 4;
+type ClipboardMediaKind = "image" | "audio" | "video";
 const lowlight = createLowlight(common);
 const IMAGE_MIME_EXTENSION_MAP: Record<string, string> = {
   "image/png": "png",
@@ -122,6 +137,26 @@ const IMAGE_MIME_EXTENSION_MAP: Record<string, string> = {
   "image/tiff": "tiff",
   "image/x-icon": "ico"
 };
+const AUDIO_MIME_EXTENSION_MAP: Record<string, string> = {
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/ogg": "ogg",
+  "audio/webm": "webm",
+  "audio/flac": "flac",
+  "audio/aac": "aac",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a"
+};
+const VIDEO_MIME_EXTENSION_MAP: Record<string, string> = {
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/ogg": "ogv",
+  "video/quicktime": "mov",
+  "video/x-matroska": "mkv",
+  "video/x-msvideo": "avi"
+};
 const IMAGE_FILE_EXTENSION_SET = new Set<string>([
   "png",
   "jpg",
@@ -132,6 +167,24 @@ const IMAGE_FILE_EXTENSION_SET = new Set<string>([
   "tiff",
   "ico"
 ]);
+const AUDIO_FILE_EXTENSION_SET = new Set<string>([
+  "mp3",
+  "wav",
+  "ogg",
+  "webm",
+  "flac",
+  "aac",
+  "m4a"
+]);
+const VIDEO_FILE_EXTENSION_SET = new Set<string>([
+  "mp4",
+  "webm",
+  "ogv",
+  "mov",
+  "mkv",
+  "avi"
+]);
+const STYLE_MENU_MIN_HEIGHT = 172;
 
 function pad2(value: number): string {
   return value.toString().padStart(2, "0");
@@ -156,35 +209,75 @@ function randomSuffix(length: number): string {
     .padEnd(length, "0");
 }
 
-function isImageMimeType(value: string): boolean {
-  return value.toLowerCase().startsWith("image/");
+function normalizeFileExtension(fileName: string): string | null {
+  const extension = fileName.match(/\.([A-Za-z0-9]+)$/u)?.[1]?.toLowerCase();
+  return extension ?? null;
 }
 
-function isImageFile(file: File): boolean {
-  if (isImageMimeType(file.type)) {
-    return true;
-  }
-  const extension = file.name.match(/\.([A-Za-z0-9]+)$/u)?.[1]?.toLowerCase();
-  return extension ? IMAGE_FILE_EXTENSION_SET.has(extension) : false;
-}
-
-function guessImageExtension(file: File): string {
+function detectClipboardMediaKind(file: File): ClipboardMediaKind | null {
   const mime = file.type.toLowerCase();
-  const byMime = IMAGE_MIME_EXTENSION_MAP[mime];
+  if (mime.startsWith("image/")) {
+    return "image";
+  }
+  if (mime.startsWith("audio/")) {
+    return "audio";
+  }
+  if (mime.startsWith("video/")) {
+    return "video";
+  }
+
+  const extension = normalizeFileExtension(file.name);
+  if (!extension) {
+    return null;
+  }
+  if (IMAGE_FILE_EXTENSION_SET.has(extension)) {
+    return "image";
+  }
+  if (AUDIO_FILE_EXTENSION_SET.has(extension)) {
+    return "audio";
+  }
+  if (VIDEO_FILE_EXTENSION_SET.has(extension)) {
+    return "video";
+  }
+  return null;
+}
+
+function guessMediaExtension(file: File, kind: ClipboardMediaKind): string {
+  const mime = file.type.toLowerCase();
+  const extensionMap =
+    kind === "image"
+      ? IMAGE_MIME_EXTENSION_MAP
+      : kind === "audio"
+        ? AUDIO_MIME_EXTENSION_MAP
+        : VIDEO_MIME_EXTENSION_MAP;
+  const extensionSet =
+    kind === "image"
+      ? IMAGE_FILE_EXTENSION_SET
+      : kind === "audio"
+        ? AUDIO_FILE_EXTENSION_SET
+        : VIDEO_FILE_EXTENSION_SET;
+  const byMime = extensionMap[mime];
   if (byMime) {
     return byMime;
   }
 
-  const byName = file.name.match(/\.([A-Za-z0-9]+)$/u)?.[1]?.toLowerCase();
-  if (byName && IMAGE_FILE_EXTENSION_SET.has(byName)) {
+  const byName = normalizeFileExtension(file.name);
+  if (byName && extensionSet.has(byName)) {
     return byName;
   }
 
+  if (kind === "audio") {
+    return "mp3";
+  }
+  if (kind === "video") {
+    return "mp4";
+  }
   return "png";
 }
 
-function buildAttachmentImageName(
+function buildAttachmentMediaName(
   documentPath: string | null,
+  kind: ClipboardMediaKind,
   extension: string
 ): string {
   const docBaseName = getFileBaseName(documentPath) || "untitled";
@@ -193,7 +286,9 @@ function buildAttachmentImageName(
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   const prefix = normalizedBase || "untitled";
-  return `${prefix}-img-${formatTimestamp(new Date())}-${randomSuffix(6)}.${extension}`;
+  const mediaToken =
+    kind === "image" ? "img" : kind === "audio" ? "audio" : "video";
+  return `${prefix}-${mediaToken}-${formatTimestamp(new Date())}-${randomSuffix(6)}.${extension}`;
 }
 
 function formatErrorMessage(error: unknown, fallback: string): string {
@@ -234,6 +329,7 @@ export default function MarkdownEditor({
     null
   );
   const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
+  const [isStyleMenuDropUp, setIsStyleMenuDropUp] = useState(false);
   const [isAttachmentSetupOpen, setIsAttachmentSetupOpen] = useState(false);
   const [editorPrompt, setEditorPrompt] = useState<EditorPromptState | null>(null);
   const [editorPromptValue, setEditorPromptValue] = useState("");
@@ -374,6 +470,22 @@ export default function MarkdownEditor({
     [requestMathInput]
   );
 
+  const insertMermaidBlock = useCallback(
+    (activeEditor: Editor) => {
+      activeEditor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "mermaidBlock",
+          attrs: {
+            code: "graph TD\n  A[Start] --> B[End]"
+          }
+        })
+        .run();
+    },
+    []
+  );
+
   const requestAttachmentLibrarySetup = useCallback((): Promise<boolean> => {
     return new Promise((resolve) => {
       firstPasteSetupResolverRef.current = resolve;
@@ -422,119 +534,33 @@ export default function MarkdownEditor({
     return pickedPath;
   }, [requestAttachmentLibrarySetup]);
 
-  const handleImagePaste = useCallback(
-    (event: ClipboardEvent, activeEditor: Editor): boolean => {
-      const clipboardData = event.clipboardData;
-      if (!clipboardData) {
-        return false;
-      }
-
-      const imageFromFiles = Array.from(clipboardData.files).find(isImageFile);
-      const imageFromItems = imageFromFiles
-        ? null
-        : Array.from(clipboardData.items).find(
-            (item) => item.kind === "file" && isImageMimeType(item.type)
-          );
-      const imageFile = imageFromFiles ?? imageFromItems?.getAsFile() ?? null;
-      if (imageFile) {
-        event.preventDefault();
-        const selection = activeEditor.state.selection;
-
-        void (async () => {
-          try {
-            const currentDocumentPath = documentPathRef.current;
-
-            const attachmentLibraryDirectory = await ensureAttachmentLibraryDirectory();
-            if (!attachmentLibraryDirectory) {
-              reportEditorError(
-                "Image paste canceled because attachment library directory was not selected."
-              );
-              return;
-            }
-
-            await setAttachmentLibraryDir(attachmentLibraryDirectory);
-            const extension = guessImageExtension(imageFile);
-            const imageFileName = buildAttachmentImageName(
-              currentDocumentPath,
-              extension
-            );
-            const imageBytes = Array.from(
-              new Uint8Array(await imageFile.arrayBuffer())
-            );
-            const savedImagePath = await saveImageBytesToLibrary(
-              imageFileName,
-              imageBytes
-            );
-            const imageSource = resolveMediaSource(
-              savedImagePath,
-              currentDocumentPath
-            );
-
-            activeEditor
-              .chain()
-              .focus()
-              .insertContentAt(
-                {
-                  from: selection.from,
-                  to: selection.to
-                },
-                {
-                  type: "resizableImage",
-                  attrs: {
-                    src: imageSource,
-                    alt: "",
-                    width: mediaDefaults.defaultWidth
-                  }
-                }
-              )
-              .run();
-          } catch (error) {
-            reportEditorError(
-              formatErrorMessage(error, "Failed to paste image from clipboard.")
-            );
-          }
-        })();
-
-        return true;
-      }
-
-      const pastedText = clipboardData.getData("text/plain");
-      const markdownImage =
-        parseMarkdownImageSyntax(pastedText) ??
-        parseObsidianEmbedImageSyntax(pastedText);
-      if (!markdownImage) {
-        return false;
-      }
-
-      event.preventDefault();
-      const selection = activeEditor.state.selection;
-      const hintedWidthPx =
-        markdownImage.size?.widthPx ?? markdownImage.size?.heightPx ?? null;
-      const width = hintedWidthPx
-        ? widthPxToPercent(hintedWidthPx)
-        : mediaDefaults.defaultWidth;
-      activeEditor
-        .chain()
-        .focus()
-        .insertContentAt(
-          {
-            from: selection.from,
-            to: selection.to
-          },
-          {
-            type: "resizableImage",
-            attrs: {
-              src: markdownImage.src,
-              alt: markdownImage.alt,
-              title: markdownImage.title,
-              width
-            }
-          }
-        )
-        .run();
-
-      return true;
-    },
+  const clipboardPipeline = useMemo(
+    () =>
+      createClipboardPipeline({
+        handlers: [
+          createBinaryMediaPasteHandler({
+            detectClipboardMediaKind,
+            ensureAttachmentLibraryDirectory,
+            reportEditorError,
+            setAttachmentLibraryDir,
+            guessMediaExtension,
+            buildAttachmentMediaName,
+            getDocumentPath: () => documentPathRef.current,
+            saveAttachmentBytesToLibrary,
+            resolveMediaSource,
+            mediaDefaults: {
+              defaultWidth: mediaDefaults.defaultWidth
+            },
+            formatErrorMessage
+          }),
+          createTextMarkdownImagePasteHandler({
+            parseMarkdownImageSyntax,
+            parseObsidianEmbedImageSyntax,
+            widthPxToPercent,
+            defaultWidth: mediaDefaults.defaultWidth
+          })
+        ]
+      }),
     [ensureAttachmentLibraryDirectory, reportEditorError]
   );
 
@@ -647,6 +673,14 @@ export default function MarkdownEditor({
         run: (editor) => editor.chain().focus().setHorizontalRule().run()
       },
       {
+        id: "mermaid",
+        group: "Insert",
+        label: "Mermaid",
+        icon: Code2,
+        keywords: ["diagram", "flowchart", "graph", "mermaid", "图表"],
+        run: (editor) => insertMermaidBlock(editor)
+      },
+      {
         id: "image",
         group: "Media",
         label: "Image",
@@ -749,7 +783,7 @@ export default function MarkdownEditor({
         run: (editor) => insertMathFromPrompt(editor, "block")
       }
     ],
-    [insertMathFromPrompt, requestEditorPrompt, requestSourceInput]
+    [insertMathFromPrompt, insertMermaidBlock, requestEditorPrompt, requestSourceInput]
   );
 
   const slashCommandController = useMemo(
@@ -773,6 +807,9 @@ export default function MarkdownEditor({
       CodeBlockLowlight.configure({
         lowlight
       }),
+      Highlight,
+      SubscriptExtension,
+      SuperscriptExtension,
       BubbleMenuExtension,
       slashCommandController.extension,
       Link.configure({
@@ -785,15 +822,17 @@ export default function MarkdownEditor({
       TaskItem.configure({
         nested: true
       }),
-      Table.configure({
-        resizable: true
+      TableKit.configure({
+        resizable: true,
+        cellMinWidth: 25
       }),
-      TableRow,
-      TableHeader,
-      TableCell,
+      TableRowKit,
+      TableHeaderKit,
+      TableCellKit,
       ResizableImage,
       VideoBlock,
       AudioBlock,
+      MermaidBlock,
       InlineMath.configure({
         onRequestEdit: handleMathEditRequest
       }),
@@ -812,7 +851,7 @@ export default function MarkdownEditor({
         if (!activeEditor) {
           return false;
         }
-        return handleImagePaste(event, activeEditor);
+        return clipboardPipeline.handle(event, activeEditor);
       }
     },
     onUpdate({ editor: activeEditor }) {
@@ -861,6 +900,22 @@ export default function MarkdownEditor({
     return "正文";
   }, [editor, markdown]);
 
+  const updateStyleMenuPlacement = useCallback(() => {
+    const trigger = styleMenuRef.current;
+    if (!trigger) {
+      return;
+    }
+    const triggerRect = trigger.getBoundingClientRect();
+    const appRoot = trigger.closest(".app-root");
+    const boundaryRect = appRoot
+      ? appRoot.getBoundingClientRect()
+      : new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+    const spaceBelow = boundaryRect.bottom - triggerRect.bottom;
+    const spaceAbove = triggerRect.top - boundaryRect.top;
+    const nextDropUp = spaceBelow < STYLE_MENU_MIN_HEIGHT && spaceAbove > spaceBelow;
+    setIsStyleMenuDropUp((current) => (current === nextDropUp ? current : nextDropUp));
+  }, []);
+
   useEffect(() => {
     if (!editor) {
       return;
@@ -868,6 +923,7 @@ export default function MarkdownEditor({
 
     const handleBlur = () => {
       setIsStyleMenuOpen(false);
+      setIsStyleMenuDropUp(false);
     };
 
     editor.on("blur", handleBlur);
@@ -883,6 +939,7 @@ export default function MarkdownEditor({
 
     const closeStyleMenu = () => {
       setIsStyleMenuOpen(false);
+      setIsStyleMenuDropUp(false);
     };
 
     editor.on("selectionUpdate", closeStyleMenu);
@@ -893,6 +950,7 @@ export default function MarkdownEditor({
 
   useEffect(() => {
     if (!isStyleMenuOpen) {
+      setIsStyleMenuDropUp(false);
       return;
     }
 
@@ -902,12 +960,41 @@ export default function MarkdownEditor({
         return;
       }
       setIsStyleMenuOpen(false);
+      setIsStyleMenuDropUp(false);
     };
     window.addEventListener("pointerdown", handlePointerDown);
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [isStyleMenuOpen]);
+
+  useEffect(() => {
+    if (!isStyleMenuOpen) {
+      return;
+    }
+
+    let rafId: number | null = null;
+    const schedule = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        updateStyleMenuPlacement();
+      });
+    };
+
+    schedule();
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, true);
+    return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
+    };
+  }, [isStyleMenuOpen, updateStyleMenuPlacement]);
 
   const applyTextStyle = useCallback(
     (style: TextStyleValue) => {
@@ -953,7 +1040,46 @@ export default function MarkdownEditor({
     { value: 3, label: "H3" },
     { value: 4, label: "H4" }
   ];
-  const isTableSelection = editor?.isActive("table") ?? false;
+  const shouldShowBubbleMenu = useCallback(
+    ({
+      editor: activeEditor,
+      element,
+      from,
+      state,
+      to,
+      view
+    }: {
+      editor: Editor;
+      element: HTMLElement;
+      from: number;
+      state: Editor["state"];
+      to: number;
+      view: Editor["view"];
+    }) => {
+      const isMediaSelection =
+        activeEditor.isActive("resizableImage") ||
+        activeEditor.isActive("videoBlock") ||
+        activeEditor.isActive("audioBlock") ||
+        activeEditor.isActive("mermaidBlock");
+      if (isMediaSelection) {
+        return false;
+      }
+
+      const { doc, selection } = state;
+      const { empty } = selection;
+      const isEmptyTextBlock =
+        !doc.textBetween(from, to).length && isTextSelection(state.selection);
+      const isChildOfMenu = element.contains(document.activeElement);
+      const hasEditorFocus = view.hasFocus() || isChildOfMenu;
+
+      if (!hasEditorFocus || empty || isEmptyTextBlock || !activeEditor.isEditable) {
+        return false;
+      }
+
+      return true;
+    },
+    []
+  );
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       if (!editor) {
@@ -996,6 +1122,7 @@ export default function MarkdownEditor({
       {editor && (
         <BubbleMenu
           editor={editor}
+          shouldShow={shouldShowBubbleMenu}
           tippyOptions={{
             duration: 140,
             offset: [0, 10],
@@ -1019,7 +1146,7 @@ export default function MarkdownEditor({
               </button>
               {isStyleMenuOpen && (
                 <div
-                  className="bubble-style-popover"
+                  className={`bubble-style-popover ${isStyleMenuDropUp ? "is-drop-up" : ""}`}
                   onMouseDown={(event) => event.preventDefault()}
                 >
                   {textStyleOptions.map((option) => (
@@ -1072,28 +1199,28 @@ export default function MarkdownEditor({
               <Strikethrough className="bubble-icon" />
             </button>
             <button
-              className={`bubble-btn ${editor.isActive("heading", { level: 1 }) ? "is-active" : ""}`}
+              className={`bubble-btn ${editor.isActive("superscript") ? "is-active" : ""}`}
               onClick={() => {
                 setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleHeading({ level: 1 }).run();
+                editor.chain().focus().toggleSuperscript().run();
               }}
               onMouseDown={(event) => event.preventDefault()}
-              title="Heading 1"
+              title="Superscript"
               type="button"
             >
-              <Heading1 className="bubble-icon" />
+              <Superscript className="bubble-icon" />
             </button>
             <button
-              className={`bubble-btn ${editor.isActive("heading", { level: 2 }) ? "is-active" : ""}`}
+              className={`bubble-btn ${editor.isActive("subscript") ? "is-active" : ""}`}
               onClick={() => {
                 setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleHeading({ level: 2 }).run();
+                editor.chain().focus().toggleSubscript().run();
               }}
               onMouseDown={(event) => event.preventDefault()}
-              title="Heading 2"
+              title="Subscript"
               type="button"
             >
-              <Heading2 className="bubble-icon" />
+              <Subscript className="bubble-icon" />
             </button>
             <button
               className={`bubble-btn ${editor.isActive("blockquote") ? "is-active" : ""}`}
@@ -1191,58 +1318,6 @@ export default function MarkdownEditor({
             >
               <Link2 className="bubble-icon" />
             </button>
-            {isTableSelection && (
-              <>
-                <button
-                  className="bubble-btn bubble-table-btn"
-                  onClick={() => {
-                    setIsStyleMenuOpen(false);
-                    editor.chain().focus().addRowAfter().run();
-                  }}
-                  onMouseDown={(event) => event.preventDefault()}
-                  title="Add Row"
-                  type="button"
-                >
-                  <span className="bubble-table-label">R+</span>
-                </button>
-                <button
-                  className="bubble-btn bubble-table-btn"
-                  onClick={() => {
-                    setIsStyleMenuOpen(false);
-                    editor.chain().focus().addColumnAfter().run();
-                  }}
-                  onMouseDown={(event) => event.preventDefault()}
-                  title="Add Column"
-                  type="button"
-                >
-                  <span className="bubble-table-label">C+</span>
-                </button>
-                <button
-                  className="bubble-btn bubble-table-btn"
-                  onClick={() => {
-                    setIsStyleMenuOpen(false);
-                    editor.chain().focus().deleteRow().run();
-                  }}
-                  onMouseDown={(event) => event.preventDefault()}
-                  title="Delete Row"
-                  type="button"
-                >
-                  <span className="bubble-table-label">R-</span>
-                </button>
-                <button
-                  className="bubble-btn bubble-table-btn"
-                  onClick={() => {
-                    setIsStyleMenuOpen(false);
-                    editor.chain().focus().deleteColumn().run();
-                  }}
-                  onMouseDown={(event) => event.preventDefault()}
-                  title="Delete Column"
-                  type="button"
-                >
-                  <span className="bubble-table-label">C-</span>
-                </button>
-              </>
-            )}
           </div>
         </BubbleMenu>
       )}
