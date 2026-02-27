@@ -1,0 +1,181 @@
+✒️ 极简 Markdown 编辑器 (ZenMark) 设计规范与技术蓝图
+
+版本: v1.0.0
+技术栈: Tauri v2 | React 18 | Vite | TipTap | BaseUI | TailwindCSS
+
+1. 设计理念 (Design Philosophy)
+
+内容即UI (Content as UI)：消除一切不必要的边框和背景，让用户的注意力100%集中在文字上。
+
+操作直觉化 (Intuitive Interaction)：废弃传统的顶部菜单栏（File/Edit/View），将所有的排版和插入操作转移到光标所在之处（划词菜单与斜杠菜单）。
+
+原生融合 (Native Integration)：通过 Tauri 深度定制无边框窗口 (Frameless Window)，实现与 Windows 11/MacOS 完美融合的自定义标题栏。
+
+2. 色彩系统 (Color Palette - Tailwind)
+
+采用低饱和度的中性色调 (Zinc/Gray)，配合单一的主题强调色 (Blue)，以减少视觉疲劳，并完美支持亮暗色模式切换。
+
+亮色模式 (Light Mode)
+
+应用背景 (App Bg): bg-[#FCFCFC] (极浅灰白，避免纯白刺眼)
+
+标题栏/状态栏: bg-white/80 (配合 backdrop-blur-md 实现毛玻璃)
+
+主文本 (Primary Text): text-zinc-800 (正文内容)
+
+次文本 (Secondary Text): text-zinc-500 (占位符、状态栏信息、图标)
+
+边框/分割线 (Borders): border-zinc-200
+
+强调色 (Accent): text-blue-500 / bg-blue-500 (链接、选中状态、菜单Hover)
+
+选中文本背景 (Selection): selection:bg-blue-200 selection:text-blue-900
+
+暗色模式 (Dark Mode)
+
+应用背景 (App Bg): bg-zinc-900
+
+标题栏/状态栏: bg-zinc-900/80 (毛玻璃)
+
+主文本 (Primary Text): text-zinc-200
+
+次文本 (Secondary Text): text-zinc-400
+
+边框/分割线 (Borders): border-zinc-800
+
+强调色 (Accent): text-blue-400 / bg-blue-500/20
+
+选中文本背景 (Selection): selection:bg-blue-500/30 selection:text-blue-200
+
+3. 排版规范 (Typography - TipTap Editor)
+
+排版是 Markdown 编辑器的灵魂。我们使用 Tailwind 的 prose 插件思想，但进行深度定制。
+
+基础字体 (Base Font): 系统默认无衬线字体 (font-sans)
+
+代码字体 (Code Font): font-mono (JetBrains Mono 或 Fira Code)
+
+基础字号 (Base Size): text-[15px] 或 text-base
+
+行高 (Line Height): leading-[1.8] (宽松的行高，提升阅读体验)
+
+段落间距 (Paragraph Spacing): mb-5
+
+标题层级设计 (Headings)
+
+H1: text-4xl font-extrabold tracking-tight mt-10 mb-6 text-zinc-900 dark:text-zinc-50
+
+H2: text-2xl font-bold mt-8 mb-4 pb-2 border-b border-zinc-100 dark:border-zinc-800 text-zinc-800 dark:text-zinc-100
+
+H3: text-xl font-semibold mt-6 mb-3 text-zinc-800 dark:text-zinc-200
+
+块级元素 (Blocks)
+
+引用 (Blockquote): border-l-4 border-blue-500 pl-4 py-1 my-5 italic text-zinc-600 dark:text-zinc-400 bg-blue-50/50 dark:bg-blue-900/10 rounded-r-md
+
+行内代码 (Inline Code): bg-zinc-100 dark:bg-zinc-800 text-pink-500 dark:text-pink-400 px-1.5 py-0.5 rounded text-[0.9em] font-mono
+
+4. 核心 UI 组件规范 (Components)
+
+结合 BaseUI 的无头组件特性与 Tailwind 的样式。
+
+4.1 自定义标题栏 (Custom Titlebar)
+
+Tauri 交互: 必须在容器上添加 data-tauri-drag-region 属性，以实现原生窗口拖拽。
+
+高度: h-12 (48px)
+
+左侧工具区:
+
+使用 BaseUI Button (设置为 kind="tertiary") 或简单的 <button> 配合 Tailwind hover:bg-zinc-100。
+
+图标大小: w-[18px] h-[18px] (推荐使用 lucide-react)。
+
+悬浮提示: 使用 BaseUI Tooltip 包装按钮，提供 "保存(Ctrl+S)" 等提示。
+
+中间标题区: text-[13px] font-semibold tracking-wide absolute left-1/2 -translate-x-1/2 pointer-events-none。
+
+右侧控制区: Windows 三键，需调用 Tauri API (appWindow.minimize(), maximize(), close())。关闭按钮 hover:bg-red-500 hover:text-white。
+
+4.2 划词菜单 (Bubble Menu)
+
+触发条件: TipTap 的 BubbleMenu 扩展。当用户选中文本且不为空时触发。
+
+UI 容器:
+
+深色气泡风格: bg-zinc-900 dark:bg-zinc-800 text-white shadow-xl rounded-lg p-1 border border-zinc-700
+
+底部带小三角指示器 (TipTap 默认集成 Tippy.js，可通过 CSS 调整 arrow)。
+
+按钮状态:
+
+未激活: text-zinc-400 hover:text-white hover:bg-zinc-800
+
+激活状态 (如已加粗): text-blue-400 bg-zinc-800
+
+4.3 行首斜杠菜单 (Slash Menu)
+
+触发条件: TipTap 监听输入，当在空行输入 / 时，计算光标坐标。
+
+组件实现: 使用 BaseUI Popover/Menu 或 TipTap 的 FloatingMenu。
+
+UI 规范:
+
+面板: w-64 bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-100 dark:border-zinc-800 py-1.5 overflow-hidden
+
+分组标题: text-[11px] font-bold text-zinc-400 uppercase tracking-wider px-3 py-1.5
+
+列表项 (Item): flex items-center gap-3 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer transition-colors
+
+列表图标: w-8 h-8 rounded bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500。Hover时图标变为蓝色。
+
+4.4 状态栏 (Status Bar)
+
+高度: h-7 (28px)
+
+位置: 吸底 (absolute bottom-0 w-full)
+
+UI规范: bg-zinc-50/80 dark:bg-zinc-900/80 border-t border-zinc-200 dark:border-zinc-800 text-[11px] font-medium text-zinc-400
+
+左侧: 编码格式 (UTF-8)、保存状态 (使用 BaseUI 的 Spinner 或打勾图标表示状态同步)。
+
+右侧: 实时字数统计 (监听 TipTap 的 onUpdate 事件，提取 editor.getText().length)。
+
+5. TipTap 架构指南
+
+为实现该设计，您的 TipTap 实例需要以下核心 Extensions：
+
+@tiptap/starter-kit: 包含基础的 Heading, Bold, Italic, BulletList 等。
+
+@tiptap/extension-placeholder: 实现空行提示 "输入 '/' 唤起菜单..."。
+
+@tiptap/extension-bubble-menu: 绑定划词悬浮菜单 React 组件。
+
+@tiptap/extension-floating-menu: 绑定斜杠菜单 React 组件（或自定义 Slash Command 扩展，拦截 / 键并渲染 BaseUI Popover）。
+
+@tiptap/extension-link: 用于划词菜单中的超链接插入。
+
+6. Tauri v2 窗口配置 (tauri.conf.json)
+
+要实现沉浸式的自定义标题栏，必须在 Tauri 配置文件中关闭系统默认边框：
+
+{
+  "app": {
+    "windows": [
+      {
+        "title": "ZenMark",
+        "width": 900,
+        "height": 700,
+        "decorations": false,      // 【核心】关闭系统原生边框和标题栏
+        "transparent": true,       // 【可选】允许实现圆角和毛玻璃阴影
+        "resizable": true,
+        "center": true,
+        "minWidth": 400,
+        "minHeight": 300
+      }
+    ]
+  }
+}
+
+
+注意：在 React 代码中，标题栏的 div 必须加上 data-tauri-drag-region 属性。在内部的按钮 (保存、关闭等) 上千万不要加此属性，否则点击事件会被拖拽拦截。

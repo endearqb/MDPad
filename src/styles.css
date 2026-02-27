@@ -2396,10 +2396,12 @@ body {
 
 .tippy-box[data-theme~="mdpad-bubble"] {
   background: transparent;
+  overflow: visible;
 }
 
 .tippy-box[data-theme~="mdpad-bubble"] > .tippy-content {
   padding: 0;
+  overflow: visible;
 }
 
 .tippy-box[data-theme~="mdpad-bubble"] > .tippy-arrow {

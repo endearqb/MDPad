@@ -167,3 +167,13 @@
 - 不要把 Mermaid 多行源码直接放进原始 HTML block 的文本体（`<div>...multi-line...</div>`）后再交给 `marked`，尤其源码中存在空行时会提前终止 HTML block。
 - 对这类自定义节点，优先输出“单行安全标签”，把源码放在属性里并做换行编码（如 `&#10;`），避免被 Markdown block-level 规则二次切分。
 - 回归测试必须覆盖“空行 + 4 空格缩进 + `-.->|\"...\"|`”的 Mermaid 真实样例，并断言不会裂解出 `<pre><code>`。
+
+## 2026-02-27 React StrictMode + TipTap Warning Control
+- 当用户反馈控制台连续出现 `flushSync was called from inside a lifecycle method`，且栈位于 `@tiptap/react` 的 `PureEditorContent`，优先判断为 TipTap 与 React StrictMode 在开发态的兼容噪声。
+- 该类问题在开发体验层面要快速止血：入口层对 dev/prod 做渲染模式分流（dev 使用 `React.Fragment`，prod 保持 `React.StrictMode` 或既有策略）。
+- 避免在编辑器业务组件中零散绕过；优先在 `main.tsx` 统一控制根包裹器，减少副作用面和回归风险。
+
+## 2026-02-27 BubbleMenu Command Trigger Stability
+- 当用户反馈“划词菜单点击没效果”，优先排查事件时序：若按钮 `onMouseDown` 只做 `preventDefault` 而命令放在 `onClick`，在选区更新/菜单重绘时容易丢失点击执行。
+- 对 TipTap `BubbleMenu` 的格式化按钮，默认使用 `onMouseDown` 直接执行命令，并统一 `preventDefault + stopPropagation + editor.chain().focus()`。
+- `selectionUpdate` 自动关闭逻辑需要考虑菜单内部交互帧，避免在点击瞬间关闭菜单而打断命令。

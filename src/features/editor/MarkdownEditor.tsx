@@ -5,7 +5,8 @@ import {
   useRef,
   useState,
   type FormEvent as ReactFormEvent,
-  type KeyboardEvent as ReactKeyboardEvent
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent
 } from "react";
 import { isTextSelection } from "@tiptap/core";
 import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
@@ -320,6 +321,8 @@ export default function MarkdownEditor({
 }: MarkdownEditorProps) {
   const skipNextUpdate = useRef(false);
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
+  const bubbleInteractionResetTimerRef = useRef<number | null>(null);
+  const isBubbleInteractingRef = useRef(false);
   const documentPathRef = useRef<string | null>(documentPath);
   const onEditorErrorRef = useRef(onEditorError);
   const editorRef = useRef<Editor | null>(null);
@@ -355,6 +358,11 @@ export default function MarkdownEditor({
 
   useEffect(() => {
     return () => {
+      if (bubbleInteractionResetTimerRef.current !== null) {
+        window.clearTimeout(bubbleInteractionResetTimerRef.current);
+        bubbleInteractionResetTimerRef.current = null;
+      }
+      isBubbleInteractingRef.current = false;
       if (firstPasteSetupResolverRef.current) {
         firstPasteSetupResolverRef.current(false);
         firstPasteSetupResolverRef.current = null;
@@ -894,6 +902,17 @@ export default function MarkdownEditor({
     setIsStyleMenuDropUp((current) => (current === nextDropUp ? current : nextDropUp));
   }, []);
 
+  const markBubbleInteraction = useCallback(() => {
+    isBubbleInteractingRef.current = true;
+    if (bubbleInteractionResetTimerRef.current !== null) {
+      window.clearTimeout(bubbleInteractionResetTimerRef.current);
+    }
+    bubbleInteractionResetTimerRef.current = window.setTimeout(() => {
+      isBubbleInteractingRef.current = false;
+      bubbleInteractionResetTimerRef.current = null;
+    }, 0);
+  }, []);
+
   useEffect(() => {
     if (!editor) {
       return;
@@ -916,6 +935,9 @@ export default function MarkdownEditor({
     }
 
     const closeStyleMenu = () => {
+      if (isBubbleInteractingRef.current) {
+        return;
+      }
       setIsStyleMenuOpen(false);
       setIsStyleMenuDropUp(false);
     };
@@ -985,8 +1007,47 @@ export default function MarkdownEditor({
         editor.chain().focus().setHeading({ level: style }).run();
       }
       setIsStyleMenuOpen(false);
+      setIsStyleMenuDropUp(false);
     },
     [editor]
+  );
+
+  const runBubbleAction = useCallback(
+    (
+      event: ReactMouseEvent<HTMLButtonElement>,
+      action: () => void,
+      options?: { closeStyleMenu?: boolean }
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      markBubbleInteraction();
+      if (options?.closeStyleMenu !== false) {
+        setIsStyleMenuOpen(false);
+        setIsStyleMenuDropUp(false);
+      }
+      action();
+    },
+    [markBubbleInteraction]
+  );
+
+  const handleStyleMenuTriggerMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      markBubbleInteraction();
+      setIsStyleMenuOpen((current) => !current);
+    },
+    [markBubbleInteraction]
+  );
+
+  const handleStyleOptionMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>, style: TextStyleValue) => {
+      event.preventDefault();
+      event.stopPropagation();
+      markBubbleInteraction();
+      applyTextStyle(style);
+    },
+    [applyTextStyle, markBubbleInteraction]
   );
 
   const setLink = useCallback(async () => {
@@ -1140,8 +1201,7 @@ export default function MarkdownEditor({
             >
               <button
                 className={`bubble-btn bubble-style-btn ${isStyleMenuOpen ? "is-active" : ""}`}
-                onClick={() => setIsStyleMenuOpen((current) => !current)}
-                onMouseDown={(event) => event.preventDefault()}
+                onMouseDown={handleStyleMenuTriggerMouseDown}
                 type="button"
               >
                 <span className="bubble-style-label">{currentTextStyle}</span>
@@ -1156,7 +1216,9 @@ export default function MarkdownEditor({
                     <button
                       className={`bubble-style-item ${currentTextStyle === option.label ? "is-active" : ""}`}
                       key={option.label}
-                      onClick={() => applyTextStyle(option.value)}
+                      onMouseDown={(event) =>
+                        handleStyleOptionMouseDown(event, option.value)
+                      }
                       type="button"
                     >
                       {option.label}
@@ -1167,11 +1229,11 @@ export default function MarkdownEditor({
             </div>
             <button
               className={`bubble-btn ${editor.isActive("bold") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleBold().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleBold().run();
+                })
+              }
               title="Bold"
               type="button"
             >
@@ -1179,11 +1241,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("italic") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleItalic().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleItalic().run();
+                })
+              }
               title="Italic"
               type="button"
             >
@@ -1191,11 +1253,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("strike") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleStrike().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleStrike().run();
+                })
+              }
               title="Strikethrough"
               type="button"
             >
@@ -1203,11 +1265,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("superscript") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleSuperscript().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleSuperscript().run();
+                })
+              }
               title="Superscript"
               type="button"
             >
@@ -1215,11 +1277,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("subscript") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleSubscript().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleSubscript().run();
+                })
+              }
               title="Subscript"
               type="button"
             >
@@ -1227,11 +1289,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("blockquote") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleBlockquote().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleBlockquote().run();
+                })
+              }
               title="Quote"
               type="button"
             >
@@ -1239,11 +1301,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("code") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleCode().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleCode().run();
+                })
+              }
               title="Inline Code"
               type="button"
             >
@@ -1251,11 +1313,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("bulletList") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleBulletList().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleBulletList().run();
+                })
+              }
               title="Bullet List"
               type="button"
             >
@@ -1263,11 +1325,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("orderedList") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleOrderedList().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleOrderedList().run();
+                })
+              }
               title="Numbered List"
               type="button"
             >
@@ -1275,11 +1337,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("taskList") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                editor.chain().focus().toggleTaskList().run();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  editor.chain().focus().toggleTaskList().run();
+                })
+              }
               title="Todo List"
               type="button"
             >
@@ -1287,11 +1349,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("inlineMath") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                insertMathFromPrompt(editor, "inline");
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  insertMathFromPrompt(editor, "inline");
+                })
+              }
               title="Inline Formula"
               type="button"
             >
@@ -1299,11 +1361,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("blockMath") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                insertMathFromPrompt(editor, "block");
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  insertMathFromPrompt(editor, "block");
+                })
+              }
               title="Math Block"
               type="button"
             >
@@ -1311,11 +1373,11 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("link") ? "is-active" : ""}`}
-              onClick={() => {
-                setIsStyleMenuOpen(false);
-                void setLink();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) =>
+                runBubbleAction(event, () => {
+                  void setLink();
+                })
+              }
               title="Link"
               type="button"
             >

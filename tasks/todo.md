@@ -1320,3 +1320,62 @@
 - [ ] 提交并推送到 `origin/main`
 - [ ] 创建并推送标签 `v0.1.5`
 - [ ] 创建 GitHub Release 并上传安装包
+
+## 新任务：划词菜单下拉 + Mermaid 下载 + 安装版白屏启动修复（2026-02-27）
+- [x] 写入实施计划并确认边界（最小改动、优先根因）
+- [x] 修复划词菜单正文下拉（Paragraph / H1-H4）不显示问题
+- [x] 修复 Mermaid 预览下载按钮无效果问题（成功/取消/失败均有反馈）
+- [x] 修复安装版启动白屏/卡死风险（优化构建分包并增加启动期故障兜底）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`pnpm tauri:build`
+- [x] 在本文件追加回顾与验证结果
+
+### 回顾（划词菜单下拉 + Mermaid 下载 + 安装版白屏启动修复）
+- `src/styles.css`：
+  - 修复 `mdpad-bubble` 的 Tippy 容器裁剪问题（`overflow: visible`），保证正文样式下拉可在 BubbleMenu 外层正常显示。
+- `src/features/editor/extensions/mermaidExtensions.tsx`：
+  - 下载逻辑改为优先读取当前渲染区 `svg` 导出，避免状态与界面不同步导致“点击无效果”；
+  - 增加下载中态 `isDownloading`，防止重复触发；
+  - 对保存结果补齐反馈：成功 `PNG saved.`、取消 `Save canceled.`、失败显示错误；
+  - 非 Tauri 运行时增加浏览器锚点下载兜底 `PNG downloaded.`。
+- `src/main.tsx`：
+  - 新增启动期故障兜底层：全局 `error` / `unhandledrejection` 监听 + React `AppErrorBoundary`；
+  - 发生致命异常时渲染启动错误页，避免安装版白屏无信息。
+- `vite.config.ts`：
+  - 移除手工 `manualChunks` 规则，消除此前构建中的循环 chunk 风险。
+- 验证结果：
+  - `pnpm test`：通过（10 files / 80 tests passed）。
+  - `pnpm build`：通过（无循环 chunk 警告；仍有大 chunk 提示）。
+  - `pnpm tauri:build`：通过，产物 `src-tauri/target/release/bundle/nsis/MDPad_0.1.5_x64-setup.exe`。
+
+## 新任务：修复开发环境 TipTap `flushSync` 警告刷屏（2026-02-27）
+- [x] 定位警告来源（`PureEditorContent` + React StrictMode dev 双渲染）
+- [x] 调整入口渲染策略：开发模式禁用 `StrictMode` 包裹，生产保持不变
+- [x] 运行验证：`pnpm build`
+- [x] 记录本次回顾
+
+### 回顾（修复开发环境 TipTap `flushSync` 警告刷屏）
+- `src/main.tsx`：
+  - 新增 `RootMode = import.meta.env.DEV ? React.Fragment : React.StrictMode`；
+  - 在 `BootstrapRoot` 中改为 `<RootMode>...</RootMode>` 包裹应用树。
+- 结果：
+  - 避免开发环境下 TipTap `PureEditorContent` 触发的 `flushSync` 生命周期警告刷屏；
+  - 不影响生产构建输出。
+- 验证：
+  - `pnpm build`：通过。
+
+## 新任务：修复划词菜单点击无效果（2026-02-27）
+- [x] 定位 BubbleMenu 点击无效的事件时序问题（`onClick` + 选区更新冲突）
+- [x] 将 BubbleMenu 操作统一改为 `onMouseDown` 执行命令
+- [x] 增加菜单交互保护，避免 `selectionUpdate` 在点击瞬间打断命令执行
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 记录本次回顾
+
+### 回顾（修复划词菜单点击无效果）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增 `runBubbleAction` 统一处理 BubbleMenu 按钮的 `onMouseDown` 触发（`preventDefault + stopPropagation + focus/command`）；
+  - 所有 BubbleMenu 按钮由 `onClick` 改为 `onMouseDown` 执行命令；
+  - 样式下拉触发器和下拉项也改为 `onMouseDown`，保证 Paragraph/H1-H4 选择稳定生效；
+  - 新增交互保护（`isBubbleInteractingRef`），在菜单点击帧内跳过 `selectionUpdate` 自动关闭，避免动作被打断。
+- 验证结果：
+  - `pnpm test`：通过（10 files / 80 tests passed）。
+  - `pnpm build`：通过。

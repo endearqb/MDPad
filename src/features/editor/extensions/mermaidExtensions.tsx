@@ -49,6 +49,13 @@ function buildMermaidPngName(): string {
   )}${pad2(now.getMinutes())}${pad2(now.getSeconds())}.png`;
 }
 
+function isTauriRuntime(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
+}
+
 function parseSvgDimension(value: string | null): number | null {
   if (!value) {
     return null;
@@ -157,11 +164,34 @@ async function blobToByteArray(blob: Blob): Promise<number[]> {
   return Array.from(new Uint8Array(buffer));
 }
 
+function downloadBlobWithAnchor(fileName: string, blob: Blob): void {
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl);
+  }, 0);
+}
+
+function resolveRenderedSvgMarkup(container: HTMLDivElement | null, fallback: string): string {
+  const renderedSvg = container?.querySelector("svg");
+  if (renderedSvg) {
+    return renderedSvg.outerHTML;
+  }
+  return fallback;
+}
+
 function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
   const renderedRef = useRef<HTMLDivElement | null>(null);
   const [svg, setSvg] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
   const code = typeof node.attrs.code === "string" ? node.attrs.code : "";
   const renderBaseId = useMemo(() => {
     mermaidRenderCounter += 1;
@@ -217,7 +247,7 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
   }, [code, renderBaseId]);
 
   const canSwitchToCode = editor.isEditable;
-  const canExportPng = svg !== "" && !errorMessage;
+  const canExportPng = svg !== "" && !errorMessage && !isDownloading;
 
   const handleSwitchToCode = useCallback(() => {
     if (!canSwitchToCode || typeof getPos !== "function") {
@@ -269,16 +299,32 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
 
     void (async () => {
       try {
-        const pngBlob = await svgToPngBlob(svg);
-        const savedPath = await savePngAsDialog(
-          buildMermaidPngName(),
-          await blobToByteArray(pngBlob)
-        );
-        if (savedPath) {
-          setActionMessage("PNG saved.");
+        setIsDownloading(true);
+        const nextFileName = buildMermaidPngName();
+        const svgMarkup = resolveRenderedSvgMarkup(renderedRef.current, svg).trim();
+        if (!svgMarkup) {
+          throw new Error("Mermaid SVG is unavailable for export.");
+        }
+
+        const pngBlob = await svgToPngBlob(svgMarkup);
+        if (isTauriRuntime()) {
+          const savedPath = await savePngAsDialog(
+            nextFileName,
+            await blobToByteArray(pngBlob)
+          );
+          if (savedPath) {
+            setActionMessage("PNG saved.");
+          } else {
+            setActionMessage("Save canceled.");
+          }
+        } else {
+          downloadBlobWithAnchor(nextFileName, pngBlob);
+          setActionMessage("PNG downloaded.");
         }
       } catch (error) {
         setActionMessage(formatMermaidError(error));
+      } finally {
+        setIsDownloading(false);
       }
     })();
   }, [canExportPng, svg]);
@@ -322,7 +368,9 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
             disabled={!canExportPng}
             onClick={handleDownloadPng}
             title={
-              canExportPng
+              isDownloading
+                ? "Exporting PNG..."
+                : canExportPng
                 ? "Download PNG"
                 : "PNG unavailable while rendering or error exists."
             }
