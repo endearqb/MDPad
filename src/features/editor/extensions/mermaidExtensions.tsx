@@ -6,11 +6,20 @@ import {
 } from "@tiptap/react";
 import { Code2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MermaidCopy } from "../../../shared/i18n/appI18n";
 
 let isMermaidInitialized = false;
 let mermaidRenderCounter = 0;
 let mermaidLoader: Promise<typeof import("mermaid")["default"]> | null = null;
 let mermaidRuntime: typeof import("mermaid")["default"] | null = null;
+const DEFAULT_COPY: MermaidCopy = {
+  failedToRender: "Failed to render mermaid diagram.",
+  sourceEmpty: "Mermaid source is empty.",
+  showSourceAria: "Show mermaid source code",
+  switchToCodeTitle: "Switch to code",
+  cannotSwitchReadOnly: "Cannot switch while editor is read-only",
+  rendering: "Rendering diagram..."
+};
 
 async function getMermaidRuntime(): Promise<typeof import("mermaid")["default"]> {
   if (mermaidRuntime) {
@@ -40,20 +49,22 @@ async function ensureMermaidInitialized(): Promise<typeof import("mermaid")["def
   return runtime;
 }
 
-function formatMermaidError(error: unknown): string {
+function formatMermaidError(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim() !== "") {
     return error.message;
   }
   if (typeof error === "string" && error.trim() !== "") {
     return error;
   }
-  return "Failed to render mermaid diagram.";
+  return fallback;
 }
 
-function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
+function MermaidNodeView({ editor, extension, getPos, node, selected }: NodeViewProps) {
   const renderedRef = useRef<HTMLDivElement | null>(null);
   const [svg, setSvg] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const extensionCopy =
+    (extension.options as { copy?: MermaidCopy }).copy ?? DEFAULT_COPY;
   const code = typeof node.attrs.code === "string" ? node.attrs.code : "";
   const renderBaseId = useMemo(() => {
     mermaidRenderCounter += 1;
@@ -64,7 +75,7 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
     const normalizedCode = code.trim();
     if (!normalizedCode) {
       setSvg("");
-      setErrorMessage("Mermaid source is empty.");
+      setErrorMessage(extensionCopy.sourceEmpty);
       return;
     }
 
@@ -94,7 +105,7 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
           return;
         }
         setSvg("");
-        setErrorMessage(formatMermaidError(error));
+        setErrorMessage(formatMermaidError(error, extensionCopy.failedToRender));
       }
     };
 
@@ -106,7 +117,7 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
       isActive = false;
       window.clearTimeout(renderDelay);
     };
-  }, [code, renderBaseId]);
+  }, [code, extensionCopy.failedToRender, extensionCopy.sourceEmpty, renderBaseId]);
 
   const canSwitchToCode = editor.isEditable;
 
@@ -161,14 +172,14 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
       >
         <div className="mermaid-preview-toolbar">
           <button
-            aria-label="Show mermaid source code"
+            aria-label={extensionCopy.showSourceAria}
             className="mermaid-toolbar-btn"
             disabled={!canSwitchToCode}
             onClick={handleSwitchToCode}
             title={
               canSwitchToCode
-                ? "Switch to code"
-                : "Cannot switch while editor is read-only"
+                ? extensionCopy.switchToCodeTitle
+                : extensionCopy.cannotSwitchReadOnly
             }
             type="button"
           >
@@ -184,20 +195,28 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
             ref={renderedRef}
           />
         ) : (
-          <div className="mermaid-rendering">Rendering diagram...</div>
+          <div className="mermaid-rendering">{extensionCopy.rendering}</div>
         )}
       </div>
     </NodeViewWrapper>
   );
 }
 
-export const MermaidBlock = Node.create({
+export const MermaidBlock = Node.create<{
+  copy: MermaidCopy;
+}>({
   name: "mermaidBlock",
   group: "block",
   atom: true,
   draggable: true,
   selectable: true,
   isolating: true,
+
+  addOptions() {
+    return {
+      copy: DEFAULT_COPY
+    };
+  },
 
   addAttributes() {
     return {

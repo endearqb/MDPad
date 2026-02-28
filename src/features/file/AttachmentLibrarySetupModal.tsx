@@ -1,14 +1,17 @@
 import { Button, KIND } from "baseui/button";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "baseui/modal";
+import type { AttachmentModalCopy } from "../../shared/i18n/appI18n";
 
 interface AttachmentLibrarySetupModalProps {
   isOpen: boolean;
+  copy: AttachmentModalCopy;
   onCancel: () => void;
   onSelectFolder: () => void;
 }
 
 export default function AttachmentLibrarySetupModal({
   isOpen,
+  copy,
   onCancel,
   onSelectFolder
 }: AttachmentLibrarySetupModalProps) {
@@ -18,21 +21,21 @@ export default function AttachmentLibrarySetupModal({
       isOpen={isOpen}
       onClose={onCancel}
     >
-      <ModalHeader>Choose image save folder</ModalHeader>
+      <ModalHeader>{copy.title}</ModalHeader>
       <ModalBody>
-        This is your first time pasting an image.
+        {copy.bodyLine1}
         <br />
-        Please choose a global folder to store pasted images.
+        {copy.bodyLine2}
       </ModalBody>
       <ModalFooter>
         <Button
           kind={KIND.tertiary}
           onClick={onCancel}
         >
-          Cancel
+          {copy.cancel}
         </Button>
         <Button onClick={onSelectFolder}>
-          Choose Global Folder
+          {copy.chooseFolder}
         </Button>
       </ModalFooter>
     </Modal>

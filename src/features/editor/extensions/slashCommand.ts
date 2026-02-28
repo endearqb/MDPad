@@ -6,6 +6,7 @@ import Suggestion, {
 } from "@tiptap/suggestion";
 import { SlashMenu, type SlashMenuHandle } from "../components/SlashMenu";
 import type { SlashCommandItem } from "./slashCommandTypes";
+import type { EditorCopy } from "../../../shared/i18n/appI18n";
 
 export interface SlashCommandController {
   extension: Extension;
@@ -14,11 +15,13 @@ export interface SlashCommandController {
 
 interface CreateSlashCommandControllerOptions {
   items: SlashCommandItem[];
+  copy: EditorCopy["slash"];
 }
 
 interface SlashMenuRendererProps {
   command: (item: SlashCommandItem) => void;
   items: SlashCommandItem[];
+  copy: EditorCopy["slash"];
   query?: string;
 }
 
@@ -77,7 +80,8 @@ function placePopup(
 }
 
 export function createSlashCommandController({
-  items
+  items,
+  copy
 }: CreateSlashCommandControllerOptions): SlashCommandController {
   let forcedFrom: number | null = null;
   let forceMode = false;
@@ -174,6 +178,7 @@ export function createSlashCommandController({
                   props: {
                     command: props.command,
                     items: props.items,
+                    copy,
                     query: props.query
                   }
                 });
@@ -183,6 +188,7 @@ export function createSlashCommandController({
                 component?.updateProps({
                   command: props.command,
                   items: props.items,
+                  copy,
                   query: props.query
                 });
                 currentClientRect = props.clientRect ?? null;

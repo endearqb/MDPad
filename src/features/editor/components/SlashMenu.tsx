@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
+import type { EditorCopy } from "../../../shared/i18n/appI18n";
 import {
   slashGroupOrder,
   type SlashCommandGroup,
@@ -12,6 +13,7 @@ export interface SlashMenuHandle {
 
 interface SlashMenuProps {
   items: SlashCommandItem[];
+  copy: EditorCopy["slash"];
   query?: string;
   showQuery?: boolean;
   command: (item: SlashCommandItem) => void;
@@ -20,7 +22,7 @@ interface SlashMenuProps {
 const SLASH_COLUMNS = 3;
 
 export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
-  ({ items, query = "", showQuery = true, command }, ref) => {
+  ({ items, copy, query = "", showQuery = true, command }, ref) => {
     const [activeIndex, setActiveIndex] = useState(0);
     const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -121,14 +123,16 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
           event.preventDefault();
         }}
       >
-        {showQuery && <div className="slash-menu-query">/{query || "type to filter"}</div>}
+        {showQuery && (
+          <div className="slash-menu-query">/{query || copy.queryPlaceholder}</div>
+        )}
         {groupedItems.length > 0 ? (
           groupedItems.map((group) => (
             <div
               className="slash-group"
               key={group.label}
             >
-              <div className="slash-group-title">{group.label}</div>
+              <div className="slash-group-title">{copy.groupLabels[group.label]}</div>
               <div className="slash-group-grid">
                 {group.items.map((item) => {
                   const itemIndex = items.findIndex((entry) => entry.id === item.id);
@@ -156,7 +160,7 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
             </div>
           ))
         ) : (
-          <div className="slash-empty">No command matched</div>
+          <div className="slash-empty">{copy.empty}</div>
         )}
       </div>
     );

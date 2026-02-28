@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import type { PendingAction } from "../../shared/types/doc";
+import type { UnsavedModalCopy } from "../../shared/i18n/appI18n";
 
 interface UnsavedChangesModalProps {
   isOpen: boolean;
   pendingAction: PendingAction;
   isBusy: boolean;
+  copy: UnsavedModalCopy;
   onSave: () => void;
   onDiscard: () => void;
   onCancel: () => void;
@@ -14,12 +16,12 @@ export default function UnsavedChangesModal({
   isOpen,
   pendingAction,
   isBusy,
+  copy,
   onSave,
   onDiscard,
   onCancel
 }: UnsavedChangesModalProps) {
   void pendingAction;
-  const actionText = "close MDPad";
 
   useEffect(() => {
     if (!isOpen) {
@@ -88,10 +90,10 @@ export default function UnsavedChangesModal({
             className="app-modal-title"
             id="unsaved-modal-title"
           >
-            Unsaved changes
+            {copy.title}
           </h2>
           <p className="app-modal-subtitle">
-            You have unsaved edits. Save before you {actionText}?
+            {copy.subtitle}
           </p>
         </header>
         <footer className="app-modal-actions">
@@ -101,7 +103,7 @@ export default function UnsavedChangesModal({
             onClick={onCancel}
             type="button"
           >
-            Cancel
+            {copy.cancel}
           </button>
           <button
             className="app-modal-btn"
@@ -109,7 +111,7 @@ export default function UnsavedChangesModal({
             onClick={onDiscard}
             type="button"
           >
-            Don&apos;t Save
+            {copy.dontSave}
           </button>
           <button
             className="app-modal-btn is-confirm"
@@ -117,7 +119,7 @@ export default function UnsavedChangesModal({
             onClick={onSave}
             type="button"
           >
-            Save
+            {copy.save}
           </button>
         </footer>
       </section>

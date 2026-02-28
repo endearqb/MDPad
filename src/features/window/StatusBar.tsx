@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, CircleAlert, CircleDot, Loader2 } from "lucide-react";
-import type { MarkdownTheme, SaveState, UiTheme } from "../../shared/types/doc";
+import type {
+  AppLocale,
+  MarkdownTheme,
+  SaveState,
+  UiTheme
+} from "../../shared/types/doc";
+import type { StatusBarCopy } from "../../shared/i18n/appI18n";
 
 interface StatusBarProps {
   encoding?: "UTF-8";
+  locale: AppLocale;
+  copy: StatusBarCopy;
   saveState: SaveState;
   charCount: number;
   markdownTheme: MarkdownTheme;
@@ -11,21 +19,8 @@ interface StatusBarProps {
   onSelectMarkdownTheme: (theme: MarkdownTheme) => void;
   uiTheme: UiTheme;
   onToggleUiTheme: () => void;
+  onToggleLocale: () => void;
 }
-
-const saveStateCopy: Record<SaveState, string> = {
-  saved: "Saved",
-  saving: "Saving...",
-  unsaved: "Unsaved",
-  error: "Save failed"
-};
-
-const markdownThemeCopy: Record<MarkdownTheme, string> = {
-  default: "Default",
-  notionish: "Notion",
-  github: "GitHub",
-  academic: "Academic"
-};
 
 const markdownThemeOptions: MarkdownTheme[] = [
   "default",
@@ -72,19 +67,22 @@ function SaveStateIcon({ saveState }: { saveState: SaveState }) {
 
 export default function StatusBar({
   encoding = "UTF-8",
+  locale,
+  copy,
   saveState,
   charCount,
   markdownTheme,
   onToggleMarkdownTheme,
   onSelectMarkdownTheme,
   uiTheme,
-  onToggleUiTheme
+  onToggleUiTheme,
+  onToggleLocale
 }: StatusBarProps) {
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const currentMarkdownThemeLabel = useMemo(
-    () => markdownThemeCopy[markdownTheme],
-    [markdownTheme]
+    () => copy.markdownThemeNames[markdownTheme],
+    [copy.markdownThemeNames, markdownTheme]
   );
 
   useEffect(() => {
@@ -120,30 +118,39 @@ export default function StatusBar({
         <span className="statusbar-pill">{encoding}</span>
         <span className="statusbar-save-state">
           <SaveStateIcon saveState={saveState} />
-          <span>{saveStateCopy[saveState]}</span>
+          <span>{copy.saveState[saveState]}</span>
         </span>
       </section>
       <section className="statusbar-right">
+        <button
+          aria-label={locale === "zh" ? copy.switchToEnglish : copy.switchToChinese}
+          className="statusbar-theme-switch"
+          onClick={onToggleLocale}
+          title={copy.toggleLanguageTitle}
+          type="button"
+        >
+          {copy.languageButtonLabel}
+        </button>
         <div
           className="statusbar-theme-group"
           ref={menuRootRef}
         >
           <button
-            aria-label="Cycle markdown theme"
+            aria-label={copy.cycleMarkdownThemeAria}
             className="statusbar-theme-switch"
             onClick={onToggleMarkdownTheme}
-            title="Cycle markdown style"
+            title={copy.cycleMarkdownThemeTitle}
             type="button"
           >
             {currentMarkdownThemeLabel}
           </button>
           <button
             aria-expanded={isThemeMenuOpen}
-            aria-label="Select markdown style"
+            aria-label={copy.selectMarkdownThemeAria}
             aria-haspopup="menu"
             className="statusbar-theme-switch statusbar-theme-menu-trigger"
             onClick={() => setIsThemeMenuOpen((current) => !current)}
-            title="Select markdown style"
+            title={copy.selectMarkdownThemeTitle}
             type="button"
           >
             <ChevronDown
@@ -171,22 +178,24 @@ export default function StatusBar({
                   role="menuitemradio"
                   type="button"
                 >
-                  {markdownThemeCopy[themeOption]}
+                  {copy.markdownThemeNames[themeOption]}
                 </button>
               ))}
             </div>
           ) : null}
         </div>
         <button
-          aria-label={uiTheme === "classic" ? "Switch to modern UI" : "Switch to classic UI"}
+          aria-label={uiTheme === "classic" ? copy.switchToModernUi : copy.switchToClassicUi}
           className="statusbar-theme-switch"
           onClick={onToggleUiTheme}
-          title="Click to switch window UI"
+          title={copy.switchUiTitle}
           type="button"
         >
-          {uiTheme === "classic" ? "Classic Theme" : "Modern Theme"}
+          {uiTheme === "classic" ? copy.classicTheme : copy.modernTheme}
         </button>
-        <span>{charCount.toLocaleString()} chars</span>
+        <span>
+          {charCount.toLocaleString(locale === "zh" ? "zh-CN" : "en-US")} {copy.charsUnit}
+        </span>
       </section>
     </footer>
   );

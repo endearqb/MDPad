@@ -21,10 +21,12 @@ import {
   X
 } from "lucide-react";
 import type { ThemeMode } from "../../shared/types/doc";
+import type { TopBarCopy } from "../../shared/i18n/appI18n";
 
 interface TopBarProps {
   fileName: string;
   fileBaseName: string;
+  copy: TopBarCopy;
   canRename: boolean;
   isDirty: boolean;
   isBusy: boolean;
@@ -52,6 +54,7 @@ const MIN_WINDOW_HEIGHT = 320;
 export default function TopBar({
   fileName,
   fileBaseName,
+  copy,
   canRename,
   isDirty,
   isBusy,
@@ -348,7 +351,7 @@ export default function TopBar({
           <button
             aria-expanded={isFileMenuOpen}
             aria-haspopup="menu"
-            aria-label="File"
+            aria-label={copy.file}
             className="titlebar-icon-btn titlebar-file-trigger"
             onClick={() => {
               if (isFileMenuOpen) {
@@ -357,33 +360,33 @@ export default function TopBar({
               }
               openFileMenu();
             }}
-            title="File"
+            title={copy.file}
             type="button"
           >
             <File className="titlebar-icon" />
           </button>
           {isFileMenuOpen && (
             <div
-              aria-label="File actions"
+              aria-label={copy.fileActionsAria}
               className="titlebar-file-popover"
               role="menu"
             >
               <FileMenuItem
-                label="New Window (Ctrl+N)"
+                label={copy.newWindow}
                 disabled={isBusy}
                 onClick={onNewWindow}
               >
                 <FilePlus2 className="titlebar-icon" />
               </FileMenuItem>
               <FileMenuItem
-                label="Open (Ctrl+O)"
+                label={copy.open}
                 disabled={isBusy}
                 onClick={onOpen}
               >
                 <FileInput className="titlebar-icon" />
               </FileMenuItem>
               <FileMenuItem
-                label="Save As (Ctrl+Shift+S)"
+                label={copy.saveAs}
                 disabled={isBusy}
                 onClick={onSaveAs}
               >
@@ -393,14 +396,14 @@ export default function TopBar({
           )}
         </div>
         <IconButton
-          label="Save (Ctrl+S)"
+          label={copy.save}
           disabled={isBusy}
           onClick={onSave}
         >
           <Save className="titlebar-icon" />
         </IconButton>
         <IconButton
-          label={themeMode === "light" ? "Switch to dark theme" : "Switch to light theme"}
+          label={themeMode === "light" ? copy.switchToDarkTheme : copy.switchToLightTheme}
           onClick={onToggleTheme}
         >
           {themeMode === "light" ? (
@@ -414,7 +417,7 @@ export default function TopBar({
       <section className="titlebar-center">
         {isRenaming ? (
           <input
-            aria-label="Rename file"
+            aria-label={copy.renameFileAria}
             className="titlebar-rename-input"
             disabled={isSubmittingRename || isBusy}
             onBlur={() => {
@@ -443,7 +446,7 @@ export default function TopBar({
             disabled={!canRename || isBusy}
             onDoubleClick={beginRename}
             onMouseDown={(event) => event.stopPropagation()}
-            title={canRename ? "Double-click to rename file" : undefined}
+            title={canRename ? copy.renameHint : undefined}
             type="button"
           >
             <span className="titlebar-doc-name">{fileName}</span>
@@ -454,7 +457,7 @@ export default function TopBar({
 
       <section className="win-controls">
         <WindowControlButton
-          label="Minimize"
+          label={copy.minimize}
           onClick={() => {
             void handleMinimize();
           }}
@@ -462,7 +465,7 @@ export default function TopBar({
           <Minus className="win-icon" />
         </WindowControlButton>
         <WindowControlButton
-          label={isPseudoMaximized ? "Restore previous size" : "Resize to 40% x 90%"}
+          label={isPseudoMaximized ? copy.restorePreviousSize : copy.resizePreset}
           onClick={() => {
             void handlePseudoMaximize();
           }}
@@ -471,7 +474,7 @@ export default function TopBar({
         </WindowControlButton>
         <WindowControlButton
           className="close"
-          label="Close"
+          label={copy.close}
           onClick={() => {
             void handleClose();
           }}

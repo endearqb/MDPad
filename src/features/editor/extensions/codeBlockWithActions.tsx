@@ -1,4 +1,5 @@
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import type { CodeBlockLowlightOptions } from "@tiptap/extension-code-block-lowlight";
 import {
   NodeViewContent,
   NodeViewWrapper,
@@ -7,11 +8,21 @@ import {
 } from "@tiptap/react";
 import { Check, Copy, Eye } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CodeBlockActionsCopy } from "../../../shared/i18n/appI18n";
 
 const COPY_FEEDBACK_DURATION_MS = 1200;
+const DEFAULT_COPY: CodeBlockActionsCopy = {
+  previewMermaidAria: "Preview mermaid diagram",
+  previewMermaidTitle: "Preview mermaid diagram",
+  cannotSwitchReadOnly: "Cannot switch while editor is read-only",
+  copyCodeAria: "Copy code",
+  copyCodeTitle: "Copy code",
+  codeEmptyTitle: "Code is empty"
+};
 
 type CodeBlockNodeViewProps = NodeViewProps & {
   languageClassPrefix: string;
+  copy: CodeBlockActionsCopy;
 };
 
 async function copyTextToClipboard(value: string): Promise<boolean> {
@@ -31,6 +42,7 @@ function CodeBlockNodeView({
   editor,
   getPos,
   languageClassPrefix,
+  copy,
   node,
   selected
 }: CodeBlockNodeViewProps) {
@@ -127,14 +139,14 @@ function CodeBlockNodeView({
       >
         {isMermaidCode && (
           <button
-            aria-label="Preview mermaid diagram"
+            aria-label={copy.previewMermaidAria}
             className="mdpad-codeblock-action-btn"
             disabled={!canSwitchToPreview}
             onClick={handleSwitchToPreview}
             title={
               canSwitchToPreview
-                ? "Preview mermaid diagram"
-                : "Cannot switch while editor is read-only"
+                ? copy.previewMermaidTitle
+                : copy.cannotSwitchReadOnly
             }
             type="button"
           >
@@ -142,11 +154,11 @@ function CodeBlockNodeView({
           </button>
         )}
         <button
-          aria-label="Copy code"
+          aria-label={copy.copyCodeAria}
           className="mdpad-codeblock-action-btn"
           disabled={!canCopy}
           onClick={handleCopy}
-          title={canCopy ? "Copy code" : "Code is empty"}
+          title={canCopy ? copy.copyCodeTitle : copy.codeEmptyTitle}
           type="button"
         >
           {isCopied ? (
@@ -164,12 +176,24 @@ function CodeBlockNodeView({
   );
 }
 
-export const CodeBlockWithActions = CodeBlockLowlight.extend({
+export const CodeBlockWithActions = CodeBlockLowlight.extend<
+  CodeBlockLowlightOptions & {
+    copy: CodeBlockActionsCopy;
+  }
+>({
+  addOptions() {
+    return {
+      ...this.parent?.(),
+      copy: DEFAULT_COPY
+    };
+  },
+
   addNodeView() {
-    const { languageClassPrefix } = this.options;
+    const { languageClassPrefix, copy } = this.options;
     return ReactNodeViewRenderer((props) => (
       <CodeBlockNodeView
         {...props}
+        copy={copy}
         languageClassPrefix={languageClassPrefix}
       />
     ));

@@ -92,6 +92,7 @@ import {
   ResizableImage,
   VideoBlock,
   mediaDefaults,
+  setMediaCopy,
   setMediaSourceResolver
 } from "./extensions/mediaExtensions";
 import { CodeBlockWithActions } from "./extensions/codeBlockWithActions";
@@ -110,6 +111,11 @@ import type { SlashCommandItem } from "./extensions/slashCommandTypes";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
 import { resolveMediaSource } from "../../shared/utils/mediaSource";
 import { getFileBaseName } from "../../shared/utils/path";
+import type {
+  AppCopy,
+  AttachmentModalCopy,
+  EditorCopy
+} from "../../shared/i18n/appI18n";
 import {
   logOpenPerfDuration,
   logOpenPerfElapsed,
@@ -135,6 +141,9 @@ import {
 import AttachmentLibrarySetupModal from "../file/AttachmentLibrarySetupModal";
 
 interface MarkdownEditorProps {
+  copy: EditorCopy;
+  extensionCopy: AppCopy["extensions"];
+  attachmentModalCopy: AttachmentModalCopy;
   markdown: string;
   documentPath: string | null;
   openPerfStartMs?: number;
@@ -405,6 +414,9 @@ function buildEditorStats(editor: Editor): EditorStats {
 }
 
 export default function MarkdownEditor({
+  copy,
+  extensionCopy,
+  attachmentModalCopy,
   markdown,
   documentPath,
   openPerfStartMs,
@@ -527,13 +539,20 @@ export default function MarkdownEditor({
 
   const requestSourceInput = useCallback(
     async (kind: "image" | "video" | "audio"): Promise<string | null> => {
+      const label =
+        kind === "image"
+          ? copy.prompts.enterImageSource
+          : kind === "video"
+            ? copy.prompts.enterVideoSource
+            : copy.prompts.enterAudioSource;
+      const placeholder =
+        kind === "image"
+          ? copy.prompts.imageSourcePlaceholder
+          : copy.prompts.mediaSourcePlaceholder;
       const value = await requestEditorPrompt({
-        label: `Enter ${kind} URL or local path`,
-        placeholder:
-          kind === "image"
-            ? "https://example.com/image.png or ./image.png"
-            : "https://example.com/media.mp4",
-        confirmLabel: "Insert",
+        label,
+        placeholder,
+        confirmLabel: copy.prompts.insert,
         initialValue: kind === "image" ? "https://" : ""
       });
       if (value === null) {
@@ -542,17 +561,20 @@ export default function MarkdownEditor({
       const normalized = value.trim();
       return normalized === "" ? null : normalized;
     },
-    [requestEditorPrompt]
+    [copy.prompts, requestEditorPrompt]
   );
 
   const requestMathInput = useCallback(
     async (mode: MathEditMode, initialValue: string, confirmLabel: string): Promise<string | null> => {
       const value = await requestEditorPrompt({
-        label: mode === "inline" ? "Inline formula ($...$)" : "Block formula ($$...$$)",
+        label:
+          mode === "inline"
+            ? copy.prompts.mathInlineLabel
+            : copy.prompts.mathBlockLabel,
         placeholder:
           mode === "inline"
-            ? "Enter LaTeX content only. $...$ is added automatically."
-            : "Enter LaTeX content only. $$...$$ is added automatically.",
+            ? copy.prompts.mathInlinePlaceholder
+            : copy.prompts.mathBlockPlaceholder,
         confirmLabel,
         initialValue
       });
@@ -561,23 +583,27 @@ export default function MarkdownEditor({
       }
       return value.trim();
     },
-    [requestEditorPrompt]
+    [copy.prompts, requestEditorPrompt]
   );
 
   const handleMathEditRequest = useCallback(
     (request: MathEditRequest) => {
       void (async () => {
-        const nextLatex = await requestMathInput(request.mode, request.latex, "Apply");
+        const nextLatex = await requestMathInput(
+          request.mode,
+          request.latex,
+          copy.prompts.apply
+        );
         request.apply(nextLatex);
       })();
     },
-    [requestMathInput]
+    [copy.prompts.apply, requestMathInput]
   );
 
   const insertMathFromPrompt = useCallback(
     (activeEditor: Editor, mode: MathEditMode) => {
       void (async () => {
-        const latex = await requestMathInput(mode, "", "Insert");
+        const latex = await requestMathInput(mode, "", copy.prompts.insert);
         if (!latex) {
           return;
         }
@@ -591,7 +617,7 @@ export default function MarkdownEditor({
           .run();
       })();
     },
-    [requestMathInput]
+    [copy.prompts.insert, requestMathInput]
   );
 
   const requestAttachmentLibrarySetup = useCallback((): Promise<boolean> => {
@@ -676,6 +702,7 @@ export default function MarkdownEditor({
     return resolveMediaSource(src, documentPathRef.current);
   }, []);
   setMediaSourceResolver(resolveMediaSrc);
+  setMediaCopy(extensionCopy.media);
 
   const clearMarkdownSyncTimer = useCallback(() => {
     if (markdownSyncTimerRef.current !== null) {
@@ -742,7 +769,7 @@ export default function MarkdownEditor({
       {
         id: "paragraph",
         group: "Basic",
-        label: "Paragraph",
+        label: copy.slash.commands.paragraph,
         icon: Pilcrow,
         keywords: ["paragraph", "text"],
         run: (editor) => editor.chain().focus().setParagraph().run()
@@ -750,7 +777,7 @@ export default function MarkdownEditor({
       {
         id: "h1",
         group: "Basic",
-        label: "Heading 1",
+        label: copy.slash.commands.heading1,
         icon: Heading1,
         keywords: ["heading", "title", "h1"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 1 }).run()
@@ -758,7 +785,7 @@ export default function MarkdownEditor({
       {
         id: "h2",
         group: "Basic",
-        label: "Heading 2",
+        label: copy.slash.commands.heading2,
         icon: Heading2,
         keywords: ["heading", "h2"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 2 }).run()
@@ -766,7 +793,7 @@ export default function MarkdownEditor({
       {
         id: "h3",
         group: "Basic",
-        label: "Heading 3",
+        label: copy.slash.commands.heading3,
         icon: Heading3,
         keywords: ["heading", "h3"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run()
@@ -774,7 +801,7 @@ export default function MarkdownEditor({
       {
         id: "h4",
         group: "Basic",
-        label: "Heading 4",
+        label: copy.slash.commands.heading4,
         icon: Heading4,
         keywords: ["heading", "h4"],
         run: (editor) => editor.chain().focus().toggleHeading({ level: 4 }).run()
@@ -782,7 +809,7 @@ export default function MarkdownEditor({
       {
         id: "bullet",
         group: "Basic",
-        label: "Bullet List",
+        label: copy.slash.commands.bulletList,
         icon: List,
         keywords: ["list", "unordered"],
         run: (editor) => editor.chain().focus().toggleBulletList().run()
@@ -790,7 +817,7 @@ export default function MarkdownEditor({
       {
         id: "ordered",
         group: "Basic",
-        label: "Numbered List",
+        label: copy.slash.commands.numberedList,
         icon: ListOrdered,
         keywords: ["list", "ordered"],
         run: (editor) => editor.chain().focus().toggleOrderedList().run()
@@ -798,7 +825,7 @@ export default function MarkdownEditor({
       {
         id: "tasklist",
         group: "Basic",
-        label: "Todo List",
+        label: copy.slash.commands.todoList,
         icon: CheckSquare,
         keywords: ["task", "checklist", "todo"],
         run: (editor) => editor.chain().focus().toggleTaskList().run()
@@ -806,7 +833,7 @@ export default function MarkdownEditor({
       {
         id: "quote",
         group: "Insert",
-        label: "Quote",
+        label: copy.slash.commands.quote,
         icon: TextQuote,
         keywords: ["blockquote", "quote"],
         run: (editor) => editor.chain().focus().toggleBlockquote().run()
@@ -814,7 +841,7 @@ export default function MarkdownEditor({
       {
         id: "code",
         group: "Insert",
-        label: "Code Block",
+        label: copy.slash.commands.codeBlock,
         icon: Code2,
         keywords: ["fenced", "code"],
         run: (editor) => editor.chain().focus().toggleCodeBlock().run()
@@ -822,7 +849,7 @@ export default function MarkdownEditor({
       {
         id: "table",
         group: "Insert",
-        label: "Table",
+        label: copy.slash.commands.table,
         icon: Table2,
         keywords: ["table", "insert table"],
         run: (editor) =>
@@ -835,7 +862,7 @@ export default function MarkdownEditor({
       {
         id: "hr",
         group: "Insert",
-        label: "Divider",
+        label: copy.slash.commands.divider,
         icon: Minus,
         keywords: ["horizontal rule", "divider"],
         run: (editor) => editor.chain().focus().setHorizontalRule().run()
@@ -843,7 +870,7 @@ export default function MarkdownEditor({
       {
         id: "image",
         group: "Media",
-        label: "Image",
+        label: copy.slash.commands.image,
         icon: ImageIcon,
         keywords: ["image", "img"],
         run: (editor) => {
@@ -853,9 +880,9 @@ export default function MarkdownEditor({
               return;
             }
             const alt = (await requestEditorPrompt({
-              label: "Image alt text (optional)",
-              placeholder: "Describe the image",
-              confirmLabel: "Insert",
+              label: copy.prompts.imageAltLabel,
+              placeholder: copy.prompts.imageAltPlaceholder,
+              confirmLabel: copy.prompts.insert,
               initialValue: ""
             })) ?? "";
             editor
@@ -876,7 +903,7 @@ export default function MarkdownEditor({
       {
         id: "video",
         group: "Media",
-        label: "Video",
+        label: copy.slash.commands.video,
         icon: Video,
         keywords: ["video"],
         run: (editor) => {
@@ -903,7 +930,7 @@ export default function MarkdownEditor({
       {
         id: "audio",
         group: "Media",
-        label: "Audio",
+        label: copy.slash.commands.audio,
         icon: AudioLines,
         keywords: ["audio", "voice"],
         run: (editor) => {
@@ -929,7 +956,7 @@ export default function MarkdownEditor({
       {
         id: "inline-math",
         group: "Math",
-        label: "Inline Formula",
+        label: copy.slash.commands.inlineFormula,
         icon: Sigma,
         keywords: ["math", "latex", "$"],
         run: (editor) => insertMathFromPrompt(editor, "inline")
@@ -937,21 +964,22 @@ export default function MarkdownEditor({
       {
         id: "block-math",
         group: "Math",
-        label: "Math Block",
+        label: copy.slash.commands.mathBlock,
         icon: SquareSigma,
         keywords: ["math", "latex", "$$"],
         run: (editor) => insertMathFromPrompt(editor, "block")
       }
     ],
-    [insertMathFromPrompt, requestEditorPrompt, requestSourceInput]
+    [copy.prompts.imageAltLabel, copy.prompts.imageAltPlaceholder, copy.prompts.insert, copy.slash.commands, insertMathFromPrompt, requestEditorPrompt, requestSourceInput]
   );
 
   const slashCommandController = useMemo(
     () =>
       createSlashCommandController({
-        items: slashItems
+        items: slashItems,
+        copy: copy.slash
       }),
-    [slashItems]
+    [copy.slash, slashItems]
   );
 
   const editor = useEditor({
@@ -965,7 +993,8 @@ export default function MarkdownEditor({
       }),
       CalloutBlockquote,
       CodeBlockWithActions.configure({
-        lowlight
+        lowlight,
+        copy: extensionCopy.codeBlock
       }),
       HighlightWithFlexibleSyntax,
       SubscriptExtension,
@@ -975,7 +1004,7 @@ export default function MarkdownEditor({
         openOnClick: false
       }),
       Placeholder.configure({
-        placeholder: "Type \"/\" on empty line, or press Ctrl+/ anywhere to open slash menu..."
+        placeholder: copy.placeholder
       }),
       TaskList,
       TaskItem.configure({
@@ -991,7 +1020,9 @@ export default function MarkdownEditor({
       ResizableImage,
       VideoBlock,
       AudioBlock,
-      MermaidBlock,
+      MermaidBlock.configure({
+        copy: extensionCopy.mermaid
+      }),
       InlineMath.configure({
         onRequestEdit: handleMathEditRequest
       }),
@@ -1137,17 +1168,45 @@ export default function MarkdownEditor({
     emitStats(editor);
   }, [clearMarkdownSyncTimer, editor, emitStats, markdown, normalizedMarkdown]);
 
-  const currentTextStyle = useMemo(() => {
+  const textStyleOptions = useMemo<
+    Array<{
+      actionId: string;
+      value: TextStyleValue;
+      label: string;
+    }>
+  >(
+    () => [
+      {
+        actionId: "style_paragraph",
+        value: "paragraph",
+        label: copy.styleLabels.paragraph
+      },
+      { actionId: "style_h1", value: 1, label: copy.styleLabels.h1 },
+      { actionId: "style_h2", value: 2, label: copy.styleLabels.h2 },
+      { actionId: "style_h3", value: 3, label: copy.styleLabels.h3 },
+      { actionId: "style_h4", value: 4, label: copy.styleLabels.h4 }
+    ],
+    [copy.styleLabels]
+  );
+
+  const currentTextStyleValue = useMemo<TextStyleValue>(() => {
     if (!editor) {
-      return "Paragraph";
+      return "paragraph";
     }
     for (let level = 1; level <= 4; level += 1) {
       if (editor.isActive("heading", { level })) {
-        return `H${level}`;
+        return level as TextStyleValue;
       }
     }
-    return "Paragraph";
+    return "paragraph";
   }, [editor, markdown]);
+
+  const currentTextStyle = useMemo(() => {
+    const currentOption = textStyleOptions.find(
+      (option) => option.value === currentTextStyleValue
+    );
+    return currentOption?.label ?? copy.styleLabels.paragraph;
+  }, [copy.styleLabels.paragraph, currentTextStyleValue, textStyleOptions]);
 
   const updateStyleMenuPlacement = useCallback(() => {
     const trigger = styleMenuRef.current;
@@ -1356,9 +1415,9 @@ export default function MarkdownEditor({
     }
     const existing = editor.getAttributes("link").href as string | undefined;
     const raw = await requestEditorPrompt({
-      label: "Enter URL",
-      placeholder: "https://example.com",
-      confirmLabel: "Apply",
+      label: copy.prompts.linkLabel,
+      placeholder: copy.prompts.linkPlaceholder,
+      confirmLabel: copy.prompts.apply,
       initialValue: existing ?? "https://"
     });
     if (raw === null) {
@@ -1510,17 +1569,6 @@ export default function MarkdownEditor({
     };
   }, [bubbleShellNode, handleBubblePointerDown]);
 
-  const textStyleOptions: Array<{
-    actionId: string;
-    value: TextStyleValue;
-    label: string;
-  }> = [
-    { actionId: "style_paragraph", value: "paragraph", label: "Paragraph" },
-    { actionId: "style_h1", value: 1, label: "H1" },
-    { actionId: "style_h2", value: 2, label: "H2" },
-    { actionId: "style_h3", value: 3, label: "H3" },
-    { actionId: "style_h4", value: 4, label: "H4" }
-  ];
   const shouldShowBubbleMenu = useCallback(
     ({
       editor: activeEditor,
@@ -1657,8 +1705,8 @@ export default function MarkdownEditor({
                 <div className={`bubble-style-popover ${isStyleMenuDropUp ? "is-drop-up" : ""}`}>
                   {textStyleOptions.map((option) => (
                     <button
-                      className={`bubble-style-item ${currentTextStyle === option.label ? "is-active" : ""}`}
-                      key={option.label}
+                      className={`bubble-style-item ${currentTextStyleValue === option.value ? "is-active" : ""}`}
+                      key={option.actionId}
                       data-bubble-action={option.actionId}
                       type="button"
                     >
@@ -1671,7 +1719,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("bold") ? "is-active" : ""}`}
               data-bubble-action="bold"
-              title="Bold"
+              title={copy.bubble.bold}
               type="button"
             >
               <Bold className="bubble-icon" />
@@ -1679,7 +1727,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("italic") ? "is-active" : ""}`}
               data-bubble-action="italic"
-              title="Italic"
+              title={copy.bubble.italic}
               type="button"
             >
               <Italic className="bubble-icon" />
@@ -1687,7 +1735,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("strike") ? "is-active" : ""}`}
               data-bubble-action="strikethrough"
-              title="Strikethrough"
+              title={copy.bubble.strikethrough}
               type="button"
             >
               <Strikethrough className="bubble-icon" />
@@ -1695,7 +1743,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("superscript") ? "is-active" : ""}`}
               data-bubble-action="superscript"
-              title="Superscript"
+              title={copy.bubble.superscript}
               type="button"
             >
               <Superscript className="bubble-icon" />
@@ -1703,7 +1751,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("subscript") ? "is-active" : ""}`}
               data-bubble-action="subscript"
-              title="Subscript"
+              title={copy.bubble.subscript}
               type="button"
             >
               <Subscript className="bubble-icon" />
@@ -1711,7 +1759,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("blockquote") ? "is-active" : ""}`}
               data-bubble-action="blockquote"
-              title="Quote"
+              title={copy.bubble.quote}
               type="button"
             >
               <TextQuote className="bubble-icon" />
@@ -1719,7 +1767,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("code") ? "is-active" : ""}`}
               data-bubble-action="inline_code"
-              title="Inline Code"
+              title={copy.bubble.inlineCode}
               type="button"
             >
               <Code2 className="bubble-icon" />
@@ -1727,7 +1775,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("bulletList") ? "is-active" : ""}`}
               data-bubble-action="bullet_list"
-              title="Bullet List"
+              title={copy.bubble.bulletList}
               type="button"
             >
               <List className="bubble-icon" />
@@ -1735,7 +1783,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("orderedList") ? "is-active" : ""}`}
               data-bubble-action="ordered_list"
-              title="Numbered List"
+              title={copy.bubble.numberedList}
               type="button"
             >
               <ListOrdered className="bubble-icon" />
@@ -1743,7 +1791,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("taskList") ? "is-active" : ""}`}
               data-bubble-action="task_list"
-              title="Todo List"
+              title={copy.bubble.todoList}
               type="button"
             >
               <CheckSquare className="bubble-icon" />
@@ -1751,7 +1799,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("inlineMath") ? "is-active" : ""}`}
               data-bubble-action="inline_math"
-              title="Inline Formula"
+              title={copy.bubble.inlineFormula}
               type="button"
             >
               <Sigma className="bubble-icon" />
@@ -1759,7 +1807,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("blockMath") ? "is-active" : ""}`}
               data-bubble-action="block_math"
-              title="Math Block"
+              title={copy.bubble.mathBlock}
               type="button"
             >
               <SquareSigma className="bubble-icon" />
@@ -1767,7 +1815,7 @@ export default function MarkdownEditor({
             <button
               className={`bubble-btn ${editor.isActive("link") ? "is-active" : ""}`}
               data-bubble-action="link"
-              title="Link"
+              title={copy.bubble.link}
               type="button"
             >
               <Link2 className="bubble-icon" />
@@ -1822,7 +1870,7 @@ export default function MarkdownEditor({
                 onClick={handleEditorPromptCancel}
                 type="button"
               >
-                Cancel
+                {copy.prompts.cancel}
               </button>
               <button
                 className="editor-prompt-btn editor-prompt-btn-primary"
@@ -1836,6 +1884,7 @@ export default function MarkdownEditor({
       )}
 
       <AttachmentLibrarySetupModal
+        copy={attachmentModalCopy}
         isOpen={isAttachmentSetupOpen}
         onCancel={() => {
           resolveAttachmentLibrarySetup(false);

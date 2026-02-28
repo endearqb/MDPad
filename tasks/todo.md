@@ -1752,3 +1752,67 @@
   - `pnpm test`：通过（13 files / 91 tests passed）；
   - `pnpm build`：通过；
   - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：中英文国际化切换（状态栏入口 + 编辑器文案）（2026-02-28）
+- [x] 新增语言类型与偏好持久化工具（系统语言兜底 + 本地存储）
+- [x] 新增统一 i18n 文案字典（`zh/en`）与类型约束
+- [x] 状态栏新增语言切换按钮（放在 Markdown 样式选择前）并接入切换逻辑
+- [x] `TopBar` / `StatusBar` / `UnsavedChangesModal` / `AttachmentLibrarySetupModal` 接入文案
+- [x] `MarkdownEditor` 剩余硬编码文案接入（样式菜单、链接弹窗、Bubble tooltip、取消按钮）
+- [x] 扩展文案接入（`codeBlockWithActions` / `mermaidExtensions` / `mediaExtensions` / `slashCommand`）
+- [x] 补充与更新测试（locale 偏好与 i18n 结构一致性）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加回顾
+
+### 回顾（中英文国际化切换）
+- 语言能力：
+  - `src/shared/types/doc.ts` 新增 `AppLocale = "zh" | "en"`；
+  - 新增 `src/shared/utils/localePreferences.ts`，支持系统语言默认值、偏好读取/写入与守卫；
+  - `App.tsx` 接入 locale 状态与持久化，并在切换前 flush 编辑器内容避免切语言丢失未同步输入。
+- 文案中心化：
+  - 新增 `src/shared/i18n/appI18n.ts`（含 `App/TopBar/StatusBar/Editor/Unsaved/Attachment/Extensions` 文案）；
+  - 新增 `src/shared/i18n/appI18n.test.ts`，校验中英文键结构一致。
+- UI 接入：
+  - 状态栏增加语言切换按钮，位置在 Markdown 样式切换前；
+  - `TopBar.tsx`、`StatusBar.tsx`、`UnsavedChangesModal.tsx`、`AttachmentLibrarySetupModal.tsx` 统一使用 copy props；
+  - `MarkdownEditor.tsx` 完成样式菜单、链接提示、Bubble 按钮 title、Prompt 取消按钮的本地化，并将附件弹窗 copy 透传。
+- 扩展接入：
+  - `codeBlockWithActions`、`mermaidExtensions`、`mediaExtensions`、`slashCommand` 已接入可注入 copy。
+- 验证结果：
+  - `pnpm test`：通过（15 files / 97 tests passed）；
+  - `pnpm build`：通过；
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：取消打开文档时的 Loading 文案界面（2026-02-28）
+- [x] 保留启动就绪门禁（避免先闪空文档）并移除可见 loading 文案
+- [x] 将编辑器 `Suspense` 回退改为无界面（`fallback={null}`）
+- [x] 运行验证：`pnpm build`
+
+### 回顾（取消打开文档时的 Loading 文案界面）
+- `src/App.tsx`：
+  - `app-main` 渲染逻辑改为：未就绪时不渲染 loading 文案，待就绪后直接显示编辑器；
+  - `Suspense` 的 fallback 改为 `null`，不再显示“Loading document/editor...”文字界面。
+- 结果：打开 `.md` 时不再出现 loading 页面提示，体感更干净；同时保留了“文件先加载再展示编辑器”的策略，避免回退到先闪空文档再填充内容。
+- 验证结果：
+  - `pnpm build`：通过。
+
+## 新任务：新建窗口默认文件名按中英文显示（2026-02-28）
+- [x] 新增未命名文档文案键（中英）
+- [x] 新建窗口标题栏文件名按 locale 显示（中文 `未命名`，英文 `Untitled`）
+- [x] 窗口标题（document.title）按 locale 显示未命名文案
+- [x] 另存为默认文件名按 locale 生成（中文 `未命名.md`，英文 `Untitled.md`）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（新建窗口默认文件名按中英文显示）
+- `src/shared/i18n/appI18n.ts`：
+  - `AppUiCopy` 新增 `untitledBaseName` 与 `untitledFileName`；
+  - 英文：`Untitled` / `Untitled`；
+  - 中文：`未命名` / `未命名`（标题栏按“未命名”展示）。
+- `src/App.tsx`：
+  - 新增 `displayFileName` 与 `displayFileBaseName`，在无路径文档时使用 locale 文案；
+  - `document.title` 改为使用 `displayFileName`；
+  - `TopBar` 改为透传 locale 化后的 `fileName/fileBaseName`；
+  - `saveCurrentAs` 在无路径时使用 `${copy.app.untitledBaseName}.md` 作为系统另存为默认名。
+- 验证结果：
+  - `pnpm test`：通过（15 files / 97 tests passed）；
+  - `pnpm build`：通过。

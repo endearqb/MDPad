@@ -29,6 +29,7 @@ import {
 import TopBar from "./features/window/TopBar";
 import StatusBar from "./features/window/StatusBar";
 import type {
+  AppLocale,
   MarkdownTheme,
   OpenFilePayload,
   PendingAction,
@@ -36,7 +37,13 @@ import type {
   ThemeMode,
   UiTheme
 } from "./shared/types/doc";
+import { getAppCopy } from "./shared/i18n/appI18n";
 import { hasUnsavedMarkdownChanges } from "./shared/utils/documentDirty";
+import {
+  getSystemDefaultLocale,
+  readAppLocalePreference,
+  writeAppLocalePreference
+} from "./shared/utils/localePreferences";
 import {
   getFileBaseName,
   getDefaultSaveName,
@@ -83,14 +90,18 @@ function getInitialMarkdownTheme(): MarkdownTheme {
   return readMarkdownThemePreference("default");
 }
 
-function formatError(error: unknown): string {
+function getInitialLocale(): AppLocale {
+  return readAppLocalePreference(getSystemDefaultLocale());
+}
+
+function formatError(error: unknown, fallback: string): string {
   if (error instanceof Error) {
     return error.message;
   }
   if (typeof error === "string") {
     return error;
   }
-  return "Unknown error";
+  return fallback;
 }
 
 function extractDropPaths(event: unknown): string[] {
@@ -173,6 +184,7 @@ export default function App() {
   const [doc, dispatch] = useReducer(docReducer, undefined, createEmptyDocState);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(getInitialUiTheme);
+  const [locale, setLocale] = useState<AppLocale>(getInitialLocale);
   const [markdownTheme, setMarkdownTheme] = useState<MarkdownTheme>(
     getInitialMarkdownTheme
   );
@@ -188,6 +200,15 @@ export default function App() {
   const errorClearTimerRef = useRef<number | null>(null);
   const appBootStartRef = useRef(nowMs());
   const flushEditorMarkdownRef = useRef<(() => string | null) | null>(null);
+  const copy = useMemo(() => getAppCopy(locale), [locale]);
+  const displayFileName = useMemo(
+    () => (doc.currentPath ? getFileName(doc.currentPath) : copy.app.untitledFileName),
+    [copy.app.untitledFileName, doc.currentPath]
+  );
+  const displayFileBaseName = useMemo(
+    () => (doc.currentPath ? getFileBaseName(doc.currentPath) : copy.app.untitledBaseName),
+    [copy.app.untitledBaseName, doc.currentPath]
+  );
 
   useEffect(() => {
     docRef.current = doc;
@@ -203,8 +224,8 @@ export default function App() {
 
   useEffect(() => {
     const marker = doc.isDirty ? "*" : "";
-    document.title = `${marker}${getFileName(doc.currentPath)} - MDPad`;
-  }, [doc.currentPath, doc.isDirty]);
+    document.title = `${marker}${displayFileName} - MDPad`;
+  }, [displayFileName, doc.isDirty]);
 
   useEffect(() => {
     writeThemeModePreference(themeMode);
@@ -217,6 +238,10 @@ export default function App() {
   useEffect(() => {
     writeMarkdownThemePreference(markdownTheme);
   }, [markdownTheme]);
+
+  useEffect(() => {
+    writeAppLocalePreference(locale);
+  }, [locale]);
 
   useEffect(() => {
     const preloadStart = nowMs();
@@ -361,33 +386,36 @@ export default function App() {
       setErrorMessage(null);
       await task();
     } catch (error) {
-      notifyError(formatError(error));
+      notifyError(formatError(error, copy.app.errors.unknown));
     } finally {
       setIsBusy(false);
     }
-  }, [notifyError]);
+  }, [copy.app.errors.unknown, notifyError]);
 
   const openPathInCurrentWindow = useCallback(
     async (path: string) => {
       if (!isMarkdownPath(path)) {
-        throw new Error("Only .md and .markdown files are supported.");
+        throw new Error(copy.app.errors.onlyMarkdown);
       }
       await loadFileIntoEditor(path);
     },
-    [loadFileIntoEditor]
+    [copy.app.errors.onlyMarkdown, loadFileIntoEditor]
   );
 
   const openPathInNewWindow = useCallback(async (path: string) => {
     if (!isMarkdownPath(path)) {
-      throw new Error("Only .md and .markdown files are supported.");
+      throw new Error(copy.app.errors.onlyMarkdown);
     }
     await createDocumentWindow(path);
-  }, []);
+  }, [copy.app.errors.onlyMarkdown]);
 
   const saveCurrentAs = useCallback(async (content?: string): Promise<boolean> => {
     const current = docRef.current;
     const contentToSave = content ?? flushEditorMarkdown();
-    const targetPath = await saveFileAsDialog(getDefaultSaveName(current.currentPath));
+    const defaultSaveName = current.currentPath
+      ? getDefaultSaveName(current.currentPath)
+      : `${copy.app.untitledBaseName}.md`;
+    const targetPath = await saveFileAsDialog(defaultSaveName);
 
     if (!targetPath) {
       return false;
@@ -400,7 +428,7 @@ export default function App() {
       content: contentToSave
     });
     return true;
-  }, [flushEditorMarkdown]);
+  }, [copy.app.untitledBaseName, flushEditorMarkdown]);
 
   const saveCurrent = useCallback(async (content?: string): Promise<boolean> => {
     const current = docRef.current;
@@ -467,7 +495,7 @@ export default function App() {
 
         const normalizedBaseName = newBaseName.trim();
         if (!normalizedBaseName) {
-          throw new Error("File name cannot be empty.");
+          throw new Error(copy.app.errors.fileNameEmpty);
         }
 
         const latestContent = flushEditorMarkdown();
@@ -497,7 +525,7 @@ export default function App() {
       });
       return renamed;
     },
-    [flushEditorMarkdown, runBusyTask, saveCurrent]
+    [copy.app.errors.fileNameEmpty, flushEditorMarkdown, runBusyTask, saveCurrent]
   );
 
   const handleUnsavedSave = useCallback(async () => {
@@ -540,6 +568,18 @@ export default function App() {
 
   const handleToggleUiTheme = useCallback(() => {
     setUiTheme((current) => (current === "modern" ? "classic" : "modern"));
+  }, []);
+
+  const handleToggleLocale = useCallback(() => {
+    const flush = flushEditorMarkdownRef.current;
+    const flushedMarkdown = flush?.();
+    if (typeof flushedMarkdown === "string") {
+      dispatch({
+        type: "update_content",
+        content: flushedMarkdown
+      });
+    }
+    setLocale((current) => (current === "zh" ? "en" : "zh"));
   }, []);
 
   const handleToggleMarkdownTheme = useCallback(() => {
@@ -604,7 +644,7 @@ export default function App() {
         try {
           initialPath = await getInitialFile();
         } catch (error) {
-          notifyError(formatError(error));
+          notifyError(formatError(error, copy.app.errors.unknown));
         }
 
         if (initialPath) {
@@ -697,6 +737,7 @@ export default function App() {
       }
     };
   }, [
+    copy.app.errors.unknown,
     notifyError,
     openPathInCurrentWindow,
     openPathInNewWindow,
@@ -716,8 +757,9 @@ export default function App() {
         <div className="workspace-shell">
           <TopBar
             canRename={Boolean(doc.currentPath)}
-            fileName={getFileName(doc.currentPath)}
-            fileBaseName={getFileBaseName(doc.currentPath)}
+            copy={copy.topBar}
+            fileName={displayFileName}
+            fileBaseName={displayFileBaseName}
             isBusy={isBusy}
             isDirty={doc.isDirty}
             onNewWindow={handleNewWindow}
@@ -732,12 +774,14 @@ export default function App() {
           />
 
           <main className="app-main">
-            {!isStartupReady ? (
-              <div className="editor-loading">Loading document...</div>
-            ) : (
-              <Suspense fallback={<div className="editor-loading">Loading editor...</div>}>
+            {isStartupReady ? (
+              <Suspense fallback={null}>
                 <MarkdownEditor
+                  key={locale}
+                  copy={copy.editor}
                   documentPath={doc.currentPath}
+                  extensionCopy={copy.extensions}
+                  attachmentModalCopy={copy.attachmentModal}
                   markdown={doc.content}
                   openPerfStartMs={appBootStartRef.current}
                   onEditorError={handleEditorError}
@@ -746,13 +790,16 @@ export default function App() {
                   onStatsChange={handleStatsChange}
                 />
               </Suspense>
-            )}
+            ) : null}
           </main>
 
           <StatusBar
+            copy={copy.statusBar}
             saveState={saveState}
             charCount={charCount}
+            locale={locale}
             markdownTheme={markdownTheme}
+            onToggleLocale={handleToggleLocale}
             onToggleMarkdownTheme={handleToggleMarkdownTheme}
             onSelectMarkdownTheme={handleSelectMarkdownTheme}
             onToggleUiTheme={handleToggleUiTheme}
@@ -762,6 +809,7 @@ export default function App() {
 
         <Suspense fallback={null}>
           <UnsavedChangesModal
+            copy={copy.unsavedModal}
             isBusy={isBusy}
             isOpen={showUnsavedModal}
             onCancel={handleUnsavedCancel}

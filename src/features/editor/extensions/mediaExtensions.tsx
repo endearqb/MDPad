@@ -14,6 +14,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
+import type { MediaCopy } from "../../../shared/i18n/appI18n";
 
 const DEFAULT_MEDIA_WIDTH = 72;
 const MIN_MEDIA_WIDTH = 20;
@@ -23,9 +24,21 @@ const markdownLinkedImageRegex =
 type ResolveMediaSrc = (src: string) => string;
 
 let mediaSourceResolver: ResolveMediaSrc = (src) => src;
+const DEFAULT_MEDIA_COPY: MediaCopy = {
+  resizeLeftAria: "Resize media from left edge",
+  resizeRightAria: "Resize media from right edge",
+  markdownFallback: "![alt](path/to/image.png)",
+  copyButton: "Copy",
+  imagePreviewAria: "Image preview"
+};
+let mediaCopy: MediaCopy = DEFAULT_MEDIA_COPY;
 
 export function setMediaSourceResolver(resolver: ResolveMediaSrc): void {
   mediaSourceResolver = resolver;
+}
+
+export function setMediaCopy(nextCopy: MediaCopy): void {
+  mediaCopy = nextCopy;
 }
 
 function resolveMediaSrc(src: string): string {
@@ -380,14 +393,14 @@ function ResizableMediaNodeView({
         {editor.isEditable && (
           <>
             <button
-              aria-label="Resize media from left edge"
+              aria-label={mediaCopy.resizeLeftAria}
               className="media-resize-handle left"
               contentEditable={false}
               onPointerDown={(event) => beginResize(event, "left")}
               type="button"
             />
             <button
-              aria-label="Resize media from right edge"
+              aria-label={mediaCopy.resizeRightAria}
               className="media-resize-handle right"
               contentEditable={false}
               onPointerDown={(event) => beginResize(event, "right")}
@@ -401,7 +414,9 @@ function ResizableMediaNodeView({
           className="media-markdown-bar"
           contentEditable={false}
         >
-          <code className="media-markdown-code">{markdownSource || "![alt](path/to/image.png)"}</code>
+          <code className="media-markdown-code">
+            {markdownSource || mediaCopy.markdownFallback}
+          </code>
           <button
             className="media-markdown-copy"
             onClick={() => {
@@ -411,13 +426,13 @@ function ResizableMediaNodeView({
             }}
             type="button"
           >
-            Copy
+            {mediaCopy.copyButton}
           </button>
         </div>
       )}
       {!isVideo && isPreviewOpen && (
         <div
-          aria-label="Image preview"
+          aria-label={mediaCopy.imagePreviewAria}
           aria-modal="true"
           className="media-lightbox"
           contentEditable={false}
