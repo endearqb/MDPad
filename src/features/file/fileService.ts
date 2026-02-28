@@ -16,16 +16,6 @@ export async function saveFileAsDialog(
   });
 }
 
-export async function savePngAsDialog(
-  defaultName: string,
-  bytes: number[]
-): Promise<string | null> {
-  return invoke<string | null>("save_png_as_dialog", {
-    defaultName,
-    bytes
-  });
-}
-
 export async function readTextFile(path: string): Promise<string> {
   return invoke<string>("read_text_file", { path });
 }
@@ -77,11 +67,4 @@ export async function saveAttachmentBytesToLibrary(
     fileName,
     bytes
   });
-}
-
-export async function saveImageBytesToLibrary(
-  fileName: string,
-  bytes: number[]
-): Promise<string> {
-  return saveAttachmentBytesToLibrary(fileName, bytes);
 }

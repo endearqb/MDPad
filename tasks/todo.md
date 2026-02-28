@@ -1379,3 +1379,252 @@
 - 验证结果：
   - `pnpm test`：通过（10 files / 80 tests passed）。
   - `pnpm build`：通过。
+
+## 新任务：划词菜单交互稳定性 + Mermaid 下载链路清理（2026-02-28）
+- [x] 写入实施计划并确认边界（桌面端优先、最小改动）
+- [x] 修复划词菜单“正文/H1-H4”下拉不显示与按钮点击无效问题（交互时序 + 选区恢复）
+- [x] 检查并清理 Mermaid 预览下载相关前后端死代码（保持 `save_png_as_dialog` 主链路）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`（`src-tauri`）
+- [x] 在本文件追加回顾与验证结果
+
+### 回顾（划词菜单交互稳定性 + Mermaid 下载链路清理）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - BubbleMenu 交互统一切换到 `onPointerDown`，降低桌面端选区抖动导致的点击失效概率；
+  - 新增 `lastTextSelectionRangeRef` 与 `restoreBubbleSelectionIfNeeded`，在命令执行前恢复最近一次有效文本选区，避免 `focus` 后命令落在空选区；
+  - 菜单交互保护窗口从“单帧”扩展到短时窗（`BUBBLE_INTERACTION_GUARD_MS`），并让 `blur` 关闭逻辑尊重该保护，避免点击瞬间被抢先关闭；
+  - BubbleMenu 的 Tippy 显式启用 `interactive: true` 并设置 `hideOnClick: false`，保证菜单内部交互稳定。
+- `src/features/file/fileService.ts` / `src/features/file/fileService.test.ts`：
+  - 删除未使用的兼容别名 `saveImageBytesToLibrary`；
+  - 同步移除对应兼容测试，保留 `save_png_as_dialog` 与附件主链路断言。
+- `src-tauri/src/lib.rs`：
+  - 删除未使用命令 `save_image_bytes_to_library` 及其 `generate_handler!` 注册项；
+  - 保留 `save_png_as_dialog` 与 `save_attachment_bytes_to_library` 作为下载/附件写入主链路。
+- 验证结果：
+  - `pnpm test`：通过（10 files / 79 tests passed）。
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告，无新增错误）。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：划词菜单失效回退 + Mermaid PNG 下载链路移除（2026-02-28）
+- [x] 回退 BubbleMenu 交互到稳定 `onMouseDown` 执行链，移除 `pointerdown + 选区恢复` 复杂逻辑
+- [x] 为 TipTap `useEditor` 增加 `immediatelyRender: false`，降低开发态 `flushSync` 生命周期警告触发概率
+- [x] 删除 Mermaid 预览 `Download PNG` 前端按钮及其导出辅助函数
+- [x] 清理 PNG 导出前后端接口：移除 `savePngAsDialog`（前端）与 `save_png_as_dialog`（Tauri）及相关测试
+- [x] 清理 Mermaid 下载提示残留样式（`mermaid-action-note`）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`（`src-tauri`）
+- [x] 在本文件追加回顾
+
+### 回顾（划词菜单失效回退 + Mermaid PNG 下载链路移除）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 移除 `lastTextSelectionRangeRef` 与 `restoreBubbleSelectionIfNeeded`，避免在 BubbleMenu 点击链路里额外改写选区；
+  - BubbleMenu 按钮与正文样式下拉统一使用 `onMouseDown` 触发命令；
+  - 移除 `hideOnClick: false` 覆写；
+  - `useEditor` 新增 `immediatelyRender: false`。
+- `src/features/editor/extensions/mermaidExtensions.tsx`：
+  - 移除下载按钮、下载状态提示与全部 PNG 导出辅助代码；
+  - Mermaid 预览工具栏仅保留“切回代码”按钮。
+- `src/features/file/fileService.ts` / `src/features/file/fileService.test.ts`：
+  - 删除 `savePngAsDialog` 及对应单测。
+- `src-tauri/src/lib.rs`：
+  - 删除 `save_png_as_dialog` 命令及 `generate_handler!` 注册。
+- `src/styles.css`：
+  - 删除 `mermaid-action-note` 样式与主题变量残留。
+- 验证结果：
+  - `pnpm test`：通过（10 files / 78 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：划词菜单点击无效根因修复（2026-02-28）
+- [x] BubbleMenu 交互改为 `mousedown` 防丢焦 + `click` 执行命令的双阶段链路
+- [x] 增加最近文本选区恢复（仅在当前为空文本选区时恢复）
+- [x] 显式设置 BubbleMenu `pluginKey` 与 `updateDelay=0`
+- [x] 清理 BubbleMenu 扩展重复接入（移除 `BubbleMenuExtension`）
+- [x] 统一表格浮层与 Bubble 浮层层级（Bubble 高于表格菜单）
+- [x] 增加 Bubble 选择恢复/显示判定纯函数与单测
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（划词菜单点击无效根因修复）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - Bubble 按钮改为 `onMouseDown` 仅做交互保护，`onClick` 执行命令；
+  - 新增 `lastTextSelectionRangeRef` + `ensureBubbleSelection`，在命令执行前恢复最近有效文本选区；
+  - `BubbleMenu` 显式配置 `pluginKey="mdpad-bubble-menu"` 与 `updateDelay={0}`；
+  - 通过 `bubbleMenuSelection` 纯函数统一 `shouldShow` 判定，保留“表格 `CellSelection` 隐藏、表格内 `TextSelection` 可显示”。
+- `src/features/editor/extensions/tableKit/floatMenuView.ts`：
+  - 表格浮层 tippy 增加 `zIndex: 5100`。
+- `src/styles.css`：
+  - `mdpad-bubble` 明确 `pointer-events: auto` 与更高层级；
+  - `ProseMirror` 浮层样式明确较低层级，避免覆盖 Bubble 点击。
+- 新增：
+  - `src/features/editor/bubbleMenuSelection.ts`
+  - `src/features/editor/bubbleMenuSelection.test.ts`
+- 验证结果：
+  - `pnpm test`：通过（11 files / 83 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：划词菜单点击无效（二次修正，2026-02-28）
+- [x] 复盘“按钮可见但命令不生效”的事件时序（点击阶段被菜单重绘/隐藏抢占）
+- [x] 将 BubbleMenu 所有动作改为 `onMouseDown` 当帧执行命令
+- [x] 将正文样式下拉触发器与下拉项统一改为 `onMouseDown`
+- [x] 保留并复用已有交互保护与选区恢复逻辑，避免回归
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（划词菜单点击无效，二次修正）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增 `runBubbleActionFromMouseDown` 统一处理 `preventDefault + stopPropagation + runBubbleAction`；
+  - Bubble 所有格式按钮由 `onClick` 改为 `onMouseDown` 执行，保证命令在菜单重绘前落地；
+  - 正文样式下拉触发器与 `Paragraph/H1-H4` 选项由 `onClick` 改为 `onMouseDown`；
+  - Bubble Tippy 增加 `hideOnClick: false`，减少点击阶段菜单提前收起带来的竞态。
+- 验证结果：
+  - `pnpm test`：通过（11 files / 83 tests passed）。
+  - `pnpm build`：通过。
+
+## 新任务：划词菜单格式命令稳定性收敛（2026-02-28）
+- [x] 回到最小稳定命令链路：移除“最近选区恢复”补偿，避免误恢复导致格式命令落在旧选区
+- [x] 抽离 Bubble 命令执行器并统一接入（支持返回值判定与异步失败观测）
+- [x] 将 Bubble 按钮与样式下拉触发改为捕获阶段 `onMouseDownCapture`，进一步压缩点击竞态窗口
+- [x] 增加命令执行 telemetry（`VITE_DEBUG_BUBBLE=1` 时输出 action/selection 快照）
+- [x] 补充命令执行器单测
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（划词菜单格式命令稳定性收敛）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 移除 `lastTextSelectionRangeRef` 与 `ensureBubbleSelection`，不再在命令前隐式改写选区；
+  - 新增 `BUBBLE_DEBUG_ENABLED` 与 `logBubbleTelemetry`，在调试开关开启时输出命令执行状态与当前选区快照；
+  - `runBubbleAction` 改为统一调用 `runBubbleCommandAction`；
+  - Bubble 样式按钮与下拉项改为 `onMouseDownCapture` 触发，并透传 `actionId`；
+  - 各格式命令回调改为显式 `return ...run()`，可判定命令是否真正执行成功。
+- `src/features/editor/bubbleCommandRunner.ts`（新增）：
+  - 新增可复用的 Bubble 命令执行器，统一处理同步/异步命令成功与失败 telemetry。
+- `src/features/editor/bubbleCommandRunner.test.ts`（新增）：
+  - 覆盖同步成功、显式失败、抛错、异步 reject 四类场景。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：划词菜单“命令返回成功但无实际变更”修正（2026-02-28）
+- [x] 复盘并确认高风险点：格式命令在选区丢失时可能返回 `true` 但仅写入 stored marks，文档未实际变化
+- [x] 为 Bubble 格式命令增加“文档是否真实变更”判定，避免把无变更当作成功
+- [x] 增加短时“最近有效文本选区”缓存（TTL）并在无变更时恢复选区后重试一次
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`（`src-tauri`）
+- [x] 在本文件追加本次回顾
+
+### 回顾（划词菜单“命令返回成功但无实际变更”修正）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增 `recentTextSelectionRef`（短时缓存最近有效文本选区）与 `BUBBLE_SELECTION_SNAPSHOT_TTL_MS`；
+  - `captureCurrentTextSelection` 改为“优先当前非空选区，缺失时回退最近短时选区”；
+  - `runBubbleActionWithSelectionRetry` 改为先记录 `beforeDoc`，执行后若文档无变化则恢复选区并重试，避免“命令返回 true 但文本没变化”的假成功路径。
+- 根因假设（本轮）：
+  - 部分格式命令在失焦/空选区情况下可返回 `true`（例如仅更新 stored marks），但不会修改当前已选文本，用户感知为“点击无效”。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）。
+  - `pnpm build`：通过。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：划词菜单点击链路单入口重构 + 可观测性增强（2026-02-28）
+- [x] 将 Bubble 按钮与样式下拉改为 `data-bubble-action` 声明式标记，移除逐按钮 `onMouseDownCapture` 执行链
+- [x] 在 Bubble 根节点接入单入口事件委托：`pointerdown` 负责防失焦与选区快照，`click` 负责命令分发执行
+- [x] 增加 Bubble trace 诊断（`pointerdown/click/dispatch/result/telemetry`），支持 `VITE_DEBUG_BUBBLE=1` 或 `localStorage.mdpad.debug.bubble=1`
+- [x] 增加调试环形缓冲（120 条）并挂载到 `window.__MDPAD_BUBBLE_TRACE__`
+- [x] 对“应改文档但未改”的动作增加节流提示（`onEditorError`，包含 actionId）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加本次回顾
+
+### 回顾（划词菜单点击链路单入口重构 + 可观测性增强）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - Bubble 工具栏根节点改为统一 `onPointerDownCapture + onClickCapture`；
+  - 所有按钮改为 `data-bubble-action`，由 `executeBubbleActionById` 单点分发到对应命令；
+  - 新增 `pushBubbleTrace`，记录 `pointerdown/click/dispatch/result/telemetry` 五段日志，并附带选区快照与文档是否变化；
+  - 新增 `bubbleTraceBufferRef` 环形缓存（最多 120 条）并同步到 `window.__MDPAD_BUBBLE_TRACE__`；
+  - 新增 `notifyBubbleActionNotApplied`：当格式动作返回失败或文档无变化时，触发节流错误提示，便于 dev/exe 双端定位。
+- 设计说明：
+  - 保留原有 `runBubbleActionWithSelectionRetry`，把“选区恢复重试”与“事件分发”解耦；
+  - 通过 action 级判定（`BUBBLE_MUTATING_ACTION_IDS`）只对“必须改文档”的命令做失败提示，避免公式/链接弹窗类动作误报。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）。
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告，无新增错误）。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：划词菜单委托链路修正（pointerdown 即时执行 + trace 常驻）（2026-02-28）
+- [x] 修正委托执行时序：从 `click` 执行改为 `pointerdown` 当帧执行，避免 WebView/浏览器在 `preventDefault(pointerdown)` 后吞掉 click
+- [x] 让 `window.__MDPAD_BUBBLE_TRACE__` 常驻可见（即使未开 debug 也可查看最近 trace）
+- [x] 保留 debug 开关语义：仅在开关开启时输出控制台日志；trace 缓冲始终维护
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加回顾
+
+### 回顾（划词菜单委托链路修正：pointerdown 即时执行 + trace 常驻）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 移除 `onClickCapture` 分发，统一在 `handleBubblePointerDownCapture` 内完成 `dispatch/result`；
+  - 保留 `preventDefault + stopPropagation` 防失焦，但命令已在同帧落地，不再依赖后续 click 事件；
+  - 新增 `getBubbleTraceHost`，组件挂载时初始化 `window.__MDPAD_BUBBLE_TRACE__ = []`；
+  - `pushBubbleTrace` 改为始终写入内存与 `window.__MDPAD_BUBBLE_TRACE__`，仅控制台输出受 debug 开关控制。
+- 结果说明：
+  - 用户可在任意时刻直接读取 `window.__MDPAD_BUBBLE_TRACE__` 判断事件是否命中，不再出现 `undefined` 难排查状态。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）。
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告）。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：Bubble 浮层原生事件监听修复（2026-02-28）
+- [x] 修复“按钮存在但 trace 为空”的问题：将 Bubble 交互从 React 合成事件改为原生 DOM capture 监听
+- [x] 在 Bubble shell 节点挂载 `mousedown` capture 监听并执行 action 分发
+- [x] 保留 `data-bubble-action` 映射链路与 trace 记录机制不变
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加回顾
+
+### 回顾（Bubble 浮层原生事件监听修复）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 移除 Bubble shell 上的 React `onPointerDownCapture`，改为 `ref` 挂载真实节点；
+  - 新增 `bubbleShellNode` 状态与 `useEffect`，在节点上注册原生 `mousedown` capture 监听；
+  - 通过原生监听调用统一分发函数，绕过 `appendTo: document.body` 场景下 React 合成事件可能失效的问题。
+- 结果说明：
+  - 当 `document.querySelectorAll('[data-bubble-action]').length > 0` 但 trace 仍空时，现已可通过原生监听保证事件进入命令链。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）。
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告）。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：关闭 Bubble 调试日志并清理诊断代码（2026-02-28）
+- [x] 移除 Bubble 调试开关（`VITE_DEBUG_BUBBLE` / `localStorage`）相关逻辑
+- [x] 移除 `window.__MDPAD_BUBBLE_TRACE__` 暴露与 trace 缓冲写入
+- [x] 移除 `console.debug/warn` 的 Bubble 诊断输出
+- [x] 移除“命令未应用”调试提示分支，保留正常命令执行链路
+- [x] 保留已验证生效的原生 `mousedown capture` 分发修复
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加回顾
+
+### 回顾（关闭 Bubble 调试日志并清理诊断代码）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 删除 `BubbleTrace` 类型、debug 常量与本地存储读取逻辑；
+  - 删除 `pushBubbleTrace` / `logBubbleTelemetry` / `notifyBubbleActionNotApplied` 及其调用；
+  - 删除 `window.__MDPAD_BUBBLE_TRACE__` 初始化与写入；
+  - 保留单入口 `data-bubble-action` + 原生 `mousedown` capture 分发执行。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）。
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告）。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：Git 推送 + 版本单源 + 行内代码定位 + 打开速度评审（2026-02-28）
+- [x] 新增版本单源管理脚本（以 `package.json` 为唯一源），支持 `sync` 与 `bump patch`
+- [x] 调整构建命令：`tauri:build` 在构建前自动 `+0.0.1`，并保留 `tauri:build:no-bump`
+- [x] 更新文档说明（README）并同步任务记录
+- [x] 明确行内代码 `` 显示来源（是否 CSS/是否与高亮机制相关）
+- [x] 完成“文档打开速率”代码评审结论文档（本轮不改业务代码）
+- [x] 完整验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 单提交并推送 `origin/main`
+
+### 回顾（Git 推送 + 版本单源 + 行内代码定位 + 打开速度评审）
+- 版本治理：
+  - 新增 `scripts/version-manager.mjs`，以 `package.json.version` 为唯一源；
+  - 支持 `sync`（同步到 `src-tauri/tauri.conf.json` 与 `src-tauri/Cargo.toml`）与 `bump patch`（`+0.0.1` 后再同步）。
+- 构建命令：
+  - `package.json` 新增 `version:sync`、`version:bump:patch`、`tauri:build:no-bump`；
+  - `tauri:build` 调整为“先 `version:bump:patch` 再 `tauri build`”。
+- 文档与结论：
+  - `README.md` 补充 Windows 构建命令语义（自动 bump 与 no-bump 用法）；
+  - 行内代码 `` 来源确认：来自 Tailwind Typography 的 `.prose code::before/after` 默认注入，不是业务 CSS 回归，也不属于高亮机制；
+  - 新增评审文档 `docs/qa/open-performance-review-2026-02-28.md`，记录“打开速率”瓶颈与优化优先级（本轮未改代码）。
+- 验证结果：
+  - `pnpm version:sync`：通过（当前版本一致，无变更）；
+  - `pnpm test`：通过（12 files / 87 tests passed）；
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告）；
+  - `cargo check`（`src-tauri`）：通过。

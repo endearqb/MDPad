@@ -244,6 +244,7 @@ export class FloatMenuView implements PluginView {
       trigger: "manual",
       placement: "top",
       maxWidth: "none",
+      zIndex: 5100,
       ...this.options.tippy,
       onMount: (instance) => {
         this.options.tippy?.onMount?.(instance);

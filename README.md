@@ -20,6 +20,19 @@ pnpm test
 pnpm build
 ```
 
+## Windows Build
+```bash
+pnpm tauri:build
+```
+- `pnpm tauri:build` will auto bump patch version (`+0.0.1`) before building.
+- Version source of truth is `package.json`, then synced to:
+  - `src-tauri/tauri.conf.json`
+  - `src-tauri/Cargo.toml`
+- If you need to build without auto bump:
+```bash
+pnpm tauri:build:no-bump
+```
+
 ## Current Scope
 - Open / Save / Save As for `.md` / `.markdown`
 - Dirty-state prompts on file switch and window close

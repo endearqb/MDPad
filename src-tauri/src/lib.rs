@@ -91,43 +91,6 @@ fn save_file_as_dialog(default_name: Option<String>) -> Result<Option<String>, S
     Ok(file.map(|path| path.to_string_lossy().into_owned()))
 }
 
-#[tauri::command]
-fn save_png_as_dialog(
-    default_name: Option<String>,
-    bytes: Vec<u8>
-) -> Result<Option<String>, String> {
-    if bytes.is_empty() {
-        return Err("PNG data is empty.".to_string());
-    }
-
-    let suggested_name_raw = default_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("diagram.png");
-
-    let suggested_name = if suggested_name_raw
-        .to_ascii_lowercase()
-        .ends_with(".png")
-    {
-        suggested_name_raw.to_string()
-    } else {
-        format!("{suggested_name_raw}.png")
-    };
-
-    let file = rfd::FileDialog::new()
-        .set_file_name(&suggested_name)
-        .add_filter("PNG", &["png"])
-        .save_file();
-
-    let Some(path) = file else {
-        return Ok(None);
-    };
-
-    fs::write(&path, bytes).map_err(|error| format!("Failed to save PNG file: {error}"))?;
-    Ok(Some(normalize_path(path)))
-}
-
 fn sanitize_attachment_file_name(file_name: &str) -> Result<String, String> {
     let trimmed = file_name.trim();
     if trimmed.is_empty() {
@@ -303,15 +266,6 @@ fn save_attachment_bytes_to_library(
 }
 
 #[tauri::command]
-fn save_image_bytes_to_library(
-    file_name: String,
-    bytes: Vec<u8>,
-    state: tauri::State<'_, AttachmentLibraryState>
-) -> Result<String, String> {
-    save_attachment_bytes_to_library_impl(file_name, bytes, &state)
-}
-
-#[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
     fs::read_to_string(path).map_err(|error| format!("Failed to read file: {error}"))
 }
@@ -467,7 +421,6 @@ pub fn run() {
             get_initial_file,
             open_file_dialog,
             save_file_as_dialog,
-            save_png_as_dialog,
             read_text_file,
             write_text_file,
             rename_file,
@@ -475,8 +428,7 @@ pub fn run() {
             pick_attachment_library_dir,
             get_attachment_library_dir,
             set_attachment_library_dir,
-            save_attachment_bytes_to_library,
-            save_image_bytes_to_library
+            save_attachment_bytes_to_library
         ])
         .run(tauri::generate_context!())
         .expect("error while running MDPad");

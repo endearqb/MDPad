@@ -236,7 +236,6 @@ body {
   --mermaid-code-padding-y: 0.85rem;
   --mermaid-code-padding-x: 1rem;
   --mermaid-preview-padding: 0.7rem;
-  --mermaid-action-note-margin-top: 8px;
 }
 
 .app-root {
@@ -662,7 +661,6 @@ body {
   --mermaid-code-padding-y: 0.85rem;
   --mermaid-code-padding-x: 1rem;
   --mermaid-preview-padding: 0.7rem;
-  --mermaid-action-note-margin-top: 8px;
 }
 
 .mdpad-editor > *:first-child {
@@ -1262,6 +1260,7 @@ body {
   border-radius: 10px;
   background: var(--slash-menu-bg);
   box-shadow: var(--slash-menu-shadow);
+  z-index: 5100;
 }
 
 .ProseMirror-fm-button {
@@ -1308,6 +1307,8 @@ body {
 .tippy-box[data-theme~="ProseMirror"] {
   background: transparent;
   box-shadow: none;
+  pointer-events: auto;
+  z-index: 5100;
 }
 
 .tippy-box[data-theme~="ProseMirror"] > .tippy-content {
@@ -1463,13 +1464,6 @@ body {
   font-size: 12px;
   line-height: 1.45;
   color: #ef4444;
-}
-
-.mermaid-action-note {
-  margin-top: var(--mermaid-action-note-margin-top);
-  font-size: 11px;
-  line-height: 1.3;
-  color: var(--text-secondary);
 }
 
 .media-node {
@@ -1715,7 +1709,6 @@ body {
   --mermaid-code-padding-y: 0.85rem;
   --mermaid-code-padding-x: 1rem;
   --mermaid-preview-padding: 0.7rem;
-  --mermaid-action-note-margin-top: 8px;
   --mermaid-code-bg: #f7f7f5;
   --mermaid-code-fg: #27272a;
   --mermaid-code-border: rgba(113, 113, 122, 0.14);
@@ -1912,7 +1905,6 @@ body {
   --mermaid-code-padding-y: 0.85rem;
   --mermaid-code-padding-x: 1rem;
   --mermaid-preview-padding: 0.7rem;
-  --mermaid-action-note-margin-top: 8px;
   --mermaid-code-bg: #f6f8fa;
   --mermaid-code-fg: #24292f;
   --mermaid-code-border: #d0d7de;
@@ -2101,7 +2093,6 @@ body {
   --mermaid-code-padding-y: 0.85rem;
   --mermaid-code-padding-x: 1rem;
   --mermaid-preview-padding: 0.7rem;
-  --mermaid-action-note-margin-top: 8px;
   --mermaid-code-bg: #f8f7f4;
   --mermaid-code-fg: #2c3a50;
   --mermaid-code-border: #d8d5ce;
@@ -2397,11 +2388,14 @@ body {
 .tippy-box[data-theme~="mdpad-bubble"] {
   background: transparent;
   overflow: visible;
+  pointer-events: auto;
+  z-index: 6200;
 }
 
 .tippy-box[data-theme~="mdpad-bubble"] > .tippy-content {
   padding: 0;
   overflow: visible;
+  pointer-events: auto;
 }
 
 .tippy-box[data-theme~="mdpad-bubble"] > .tippy-arrow {
@@ -2940,3 +2934,4 @@ body {
     border-radius: 8px;
   }
 }
+

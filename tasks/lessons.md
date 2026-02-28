@@ -177,3 +177,53 @@
 - 当用户反馈“划词菜单点击没效果”，优先排查事件时序：若按钮 `onMouseDown` 只做 `preventDefault` 而命令放在 `onClick`，在选区更新/菜单重绘时容易丢失点击执行。
 - 对 TipTap `BubbleMenu` 的格式化按钮，默认使用 `onMouseDown` 直接执行命令，并统一 `preventDefault + stopPropagation + editor.chain().focus()`。
 - `selectionUpdate` 自动关闭逻辑需要考虑菜单内部交互帧，避免在点击瞬间关闭菜单而打断命令。
+
+## 2026-02-28 BubbleMenu 回退与 Mermaid 下载链路清理
+- 当用户反馈“菜单仍然无效”时，优先回退到已验证稳定的最小交互链路（`onMouseDown` + 轻量交互保护），不要继续叠加选区恢复等复杂补偿逻辑。
+- 针对 TipTap 开发态 `flushSync` 警告，除入口层 StrictMode 调整外，可在 `useEditor` 明确设置 `immediatelyRender: false` 作为组件侧缓解手段。
+- 功能下线（例如 Mermaid PNG 下载）必须做链路级清理：前端按钮、服务层 API、后端 command、测试与样式残留要一次性同步移除。
+
+## 2026-02-28 BubbleMenu 点击无效根因修复
+- TipTap Bubble 按钮要稳定生效，推荐采用“双阶段事件链”：`onMouseDown` 只负责防止选区失焦，`onClick` 执行命令；不要把命令直接塞在 `onMouseDown`。
+- 选区类菜单在复杂节点（尤其表格）中，执行前应有“最近有效文本选区恢复”兜底，且只在当前为空文本选区时触发，避免误改真实选区。
+- 表格浮层与 Bubble 浮层必须明确层级关系；若同时存在多个 tippy 体系，优先在组件层和样式层双保险设置 `zIndex`，并显式声明 `pointer-events`。
+
+## 2026-02-28 BubbleMenu 点击竞态复盘（二次）
+- 在当前项目栈（TipTap BubbleMenu + 选区更新 + 菜单重绘）下，`onClick` 仍可能在菜单先隐藏/卸载后丢失，不应默认依赖 click 阶段执行命令。
+- 对关键格式化动作，优先在 `onMouseDown` 同帧执行命令，并统一 `preventDefault + stopPropagation + editor.chain().focus()`。
+- 若未来要回到 `onClick` 执行，必须先通过端到端回归证明“菜单不会在 click 前销毁”，否则会再次出现“按钮有 UI 反馈但命令不生效”。
+
+## 2026-02-28 BubbleMenu 全按钮无效时的优先排查策略
+- 当用户反馈“快捷键可用，但 Bubble 按钮全部无效且按钮激活态不变化”时，优先排查点击事件是否进入命令链路，而不是先怀疑 markdown 编解码或 stored marks。
+- 对这类问题，先改为“单入口事件委托 + action 映射”比逐按钮散落事件更易定位，也更能避免后续回归。
+- 诊断必须支持 UI 外部可见（如 `onEditorError`）与内存缓冲（如 `window.__MDPAD_BUBBLE_TRACE__`），否则安装版问题难以复盘。
+
+## 2026-02-28 BubbleMenu 委托执行时序陷阱
+- 如果在 `pointerdown` 阶段调用了 `preventDefault`，不要再把实际命令执行依赖到后续 `click`；某些环境下 click 可能被吞掉，表现为“按钮全无效”。
+- 对 TipTap Bubble 这种强依赖选区稳定的场景，优先在 `pointerdown` 同帧执行命令，再用 trace 验证 `dispatch/result` 是否到达。
+- 调试全局对象（如 `window.__MDPAD_BUBBLE_TRACE__`）建议始终初始化为数组，避免用户看到 `undefined` 无法判断“未执行”还是“未开启调试”。
+
+## 2026-02-28 Bubble 浮层事件监听兼容性
+- 在 `BubbleMenu` 使用 `appendTo: document.body` 时，优先准备原生 DOM 监听兜底（`addEventListener(..., capture=true)`），不要只依赖 React 合成事件。
+- 当出现“按钮 DOM 存在（`data-bubble-action` 可查询）但 trace 一直为空”时，优先判断为事件监听未命中，而不是命令执行失败。
+- 对此类问题，最小可靠路径是：真实节点 ref + 原生 `mousedown` capture + 统一 action 分发。
+
+## 2026-02-28 BubbleMenu “返回 true 但无实际变更”判定
+- 对 TipTap 格式命令，不能把 `command.run()` 的布尔返回值直接等同为“格式已成功应用到选中文本”；在空选区时它可能只更新 stored marks 并返回 `true`。
+- 对“必须改写当前选区”的动作（Bold/Italic/Heading/List 等），要增加“文档是否实际变更（`beforeDoc.eq(afterDoc)`）”判定，避免假成功掩盖失效。
+- 当出现“按钮有响应但文本不变”，优先做短时最近有效选区缓存并在“无文档变更”时恢复选区后重试一次，而不是继续叠加更复杂的事件补丁。
+
+## 2026-02-28 Bubble 调试代码收口规范
+- 排障结束后要及时下线临时调试能力（`window` 全局 trace、localStorage 开关、console 诊断输出），避免污染线上与安装版行为。
+- 事件链路修复（如原生 `mousedown capture`）和诊断能力要解耦：保留稳定修复，移除仅用于定位的问题辅助代码。
+- 清理调试代码后要再次跑最小回归（`pnpm test`、`pnpm build`、`cargo check`）并在 `tasks/todo.md` 留存结果，防止“清理引入回归”。
+
+## 2026-02-28 行内代码反引号来源辨识
+- 当编辑器节点使用 `prose` 类时，优先检查 Tailwind Typography 默认规则；其 `code::before/after` 会注入反引号，容易被误判为 Markdown 渲染回归。
+- 行内代码反引号显示与高亮 `mark` 是两套机制：前者来自排版样式，后者来自编辑器 mark 规则，不应混为一谈。
+- 若产品希望“显示纯内容不带反引号”，优先做局部样式覆盖，不要直接改 markdown 编解码逻辑。
+
+## 2026-02-28 版本号单源维护实践
+- 对 Tauri 项目应避免多处手改版本（`package.json`、`tauri.conf.json`、`Cargo.toml`）；统一单源后用脚本同步最稳妥。
+- 构建前自动 `patch +1` 要明确失败策略（保留或回滚）并写入命令语义，避免团队协作时版本漂移。
+- 版本脚本应提供 `sync` 与 `bump` 两种能力：`sync` 用于纠偏，`bump` 用于发布前标准化流程。

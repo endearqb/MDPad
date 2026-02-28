@@ -9,7 +9,6 @@ import {
   type MouseEvent as ReactMouseEvent
 } from "react";
 import { isTextSelection } from "@tiptap/core";
-import BubbleMenuExtension from "@tiptap/extension-bubble-menu";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import SubscriptExtension from "@tiptap/extension-subscript";
@@ -96,6 +95,13 @@ import { normalizeMarkdown } from "../../shared/utils/markdown";
 import { resolveMediaSource } from "../../shared/utils/mediaSource";
 import { getFileBaseName } from "../../shared/utils/path";
 import {
+  clampTextSelectionRange,
+  shouldDisplayBubbleMenu
+} from "./bubbleMenuSelection";
+import {
+  runBubbleCommandAction
+} from "./bubbleCommandRunner";
+import {
   getAttachmentLibraryDir,
   pickAttachmentLibraryDir,
   saveAttachmentBytesToLibrary,
@@ -124,6 +130,16 @@ interface EditorPromptState {
   label: string;
   placeholder?: string;
   confirmLabel: string;
+}
+
+interface TextSelectionSnapshot {
+  from: number;
+  to: number;
+}
+
+interface CachedTextSelectionSnapshot {
+  range: TextSelectionSnapshot;
+  timestamp: number;
 }
 
 type TextStyleValue = "paragraph" | 1 | 2 | 3 | 4;
@@ -187,6 +203,20 @@ const VIDEO_FILE_EXTENSION_SET = new Set<string>([
   "avi"
 ]);
 const STYLE_MENU_MIN_HEIGHT = 172;
+const BUBBLE_INTERACTION_GUARD_MS = 160;
+const BUBBLE_SELECTION_SNAPSHOT_TTL_MS = 1200;
+
+function isElementTarget(target: EventTarget | null): target is Element {
+  return typeof Element !== "undefined" && target instanceof Element;
+}
+
+function getBubbleActionIdFromTarget(target: EventTarget | null): string | null {
+  if (!isElementTarget(target)) {
+    return null;
+  }
+  const actionElement = target.closest<HTMLElement>("[data-bubble-action]");
+  return actionElement?.dataset.bubbleAction ?? null;
+}
 
 function pad2(value: number): string {
   return value.toString().padStart(2, "0");
@@ -323,6 +353,7 @@ export default function MarkdownEditor({
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
   const bubbleInteractionResetTimerRef = useRef<number | null>(null);
   const isBubbleInteractingRef = useRef(false);
+  const recentTextSelectionRef = useRef<CachedTextSelectionSnapshot | null>(null);
   const documentPathRef = useRef<string | null>(documentPath);
   const onEditorErrorRef = useRef(onEditorError);
   const editorRef = useRef<Editor | null>(null);
@@ -337,6 +368,7 @@ export default function MarkdownEditor({
   const [isAttachmentSetupOpen, setIsAttachmentSetupOpen] = useState(false);
   const [editorPrompt, setEditorPrompt] = useState<EditorPromptState | null>(null);
   const [editorPromptValue, setEditorPromptValue] = useState("");
+  const [bubbleShellNode, setBubbleShellNode] = useState<HTMLDivElement | null>(null);
 
   const emitStats = useCallback(
     (activeEditor: Editor) => {
@@ -363,6 +395,7 @@ export default function MarkdownEditor({
         bubbleInteractionResetTimerRef.current = null;
       }
       isBubbleInteractingRef.current = false;
+      recentTextSelectionRef.current = null;
       if (firstPasteSetupResolverRef.current) {
         firstPasteSetupResolverRef.current(false);
         firstPasteSetupResolverRef.current = null;
@@ -796,7 +829,6 @@ export default function MarkdownEditor({
       HighlightWithFlexibleSyntax,
       SubscriptExtension,
       SuperscriptExtension,
-      BubbleMenuExtension,
       slashCommandController.extension,
       Link.configure({
         openOnClick: false
@@ -827,6 +859,7 @@ export default function MarkdownEditor({
       })
     ],
     content: markdownToHtml(markdown),
+    immediatelyRender: false,
     editorProps: {
       attributes: {
         class:
@@ -854,6 +887,33 @@ export default function MarkdownEditor({
     editorRef.current = editor;
     return () => {
       editorRef.current = null;
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const cacheSelection = () => {
+      const { selection } = editor.state;
+      if (!isTextSelection(selection) || selection.empty) {
+        return;
+      }
+
+      recentTextSelectionRef.current = {
+        range: {
+          from: selection.from,
+          to: selection.to
+        },
+        timestamp: Date.now()
+      };
+    };
+
+    cacheSelection();
+    editor.on("selectionUpdate", cacheSelection);
+    return () => {
+      editor.off("selectionUpdate", cacheSelection);
     };
   }, [editor]);
 
@@ -910,8 +970,80 @@ export default function MarkdownEditor({
     bubbleInteractionResetTimerRef.current = window.setTimeout(() => {
       isBubbleInteractingRef.current = false;
       bubbleInteractionResetTimerRef.current = null;
-    }, 0);
+    }, BUBBLE_INTERACTION_GUARD_MS);
   }, []);
+
+  const captureCurrentTextSelection = useCallback((): TextSelectionSnapshot | null => {
+    if (!editor) {
+      return null;
+    }
+    const { selection } = editor.state;
+    if (isTextSelection(selection) && !selection.empty) {
+      const snapshot = {
+        from: selection.from,
+        to: selection.to
+      };
+      recentTextSelectionRef.current = {
+        range: snapshot,
+        timestamp: Date.now()
+      };
+      return snapshot;
+    }
+
+    const cached = recentTextSelectionRef.current;
+    if (!cached) {
+      return null;
+    }
+    if (Date.now() - cached.timestamp > BUBBLE_SELECTION_SNAPSHOT_TTL_MS) {
+      recentTextSelectionRef.current = null;
+      return null;
+    }
+    return cached.range;
+  }, [editor]);
+
+  const runBubbleActionWithSelectionRetry = useCallback(
+    (action: () => boolean): boolean => {
+      if (!editor) {
+        return false;
+      }
+      const selectionSnapshot = captureCurrentTextSelection();
+      const beforeDoc = editor.state.doc;
+      const immediate = action();
+      if (!selectionSnapshot) {
+        return immediate;
+      }
+      const immediateDocChanged = !beforeDoc.eq(editor.state.doc);
+      if (immediateDocChanged) {
+        return immediate;
+      }
+
+      const restoredSelection = clampTextSelectionRange(
+        selectionSnapshot,
+        editor.state.doc.content.size
+      );
+      if (!restoredSelection) {
+        return false;
+      }
+
+      const restored = editor
+        .chain()
+        .setTextSelection(restoredSelection)
+        .focus()
+        .run();
+      if (!restored) {
+        return immediate;
+      }
+
+      const beforeRetryDoc = editor.state.doc;
+      const retried = action();
+      const retryDocChanged = !beforeRetryDoc.eq(editor.state.doc);
+      if (retryDocChanged) {
+        return true;
+      }
+      return retried || immediate;
+    },
+    [captureCurrentTextSelection, editor]
+  );
 
   useEffect(() => {
     if (!editor) {
@@ -919,6 +1051,9 @@ export default function MarkdownEditor({
     }
 
     const handleBlur = () => {
+      if (isBubbleInteractingRef.current) {
+        return;
+      }
       setIsStyleMenuOpen(false);
       setIsStyleMenuDropUp(false);
     };
@@ -997,57 +1132,19 @@ export default function MarkdownEditor({
   }, [isStyleMenuOpen, updateStyleMenuPlacement]);
 
   const applyTextStyle = useCallback(
-    (style: TextStyleValue) => {
+    (style: TextStyleValue): boolean => {
       if (!editor) {
-        return;
+        return false;
       }
-      if (style === "paragraph") {
-        editor.chain().focus().setParagraph().run();
-      } else {
-        editor.chain().focus().setHeading({ level: style }).run();
-      }
+      const ok =
+        style === "paragraph"
+          ? editor.chain().focus().setParagraph().run()
+          : editor.chain().focus().setHeading({ level: style }).run();
       setIsStyleMenuOpen(false);
       setIsStyleMenuDropUp(false);
+      return ok;
     },
     [editor]
-  );
-
-  const runBubbleAction = useCallback(
-    (
-      event: ReactMouseEvent<HTMLButtonElement>,
-      action: () => void,
-      options?: { closeStyleMenu?: boolean }
-    ) => {
-      event.preventDefault();
-      event.stopPropagation();
-      markBubbleInteraction();
-      if (options?.closeStyleMenu !== false) {
-        setIsStyleMenuOpen(false);
-        setIsStyleMenuDropUp(false);
-      }
-      action();
-    },
-    [markBubbleInteraction]
-  );
-
-  const handleStyleMenuTriggerMouseDown = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      markBubbleInteraction();
-      setIsStyleMenuOpen((current) => !current);
-    },
-    [markBubbleInteraction]
-  );
-
-  const handleStyleOptionMouseDown = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>, style: TextStyleValue) => {
-      event.preventDefault();
-      event.stopPropagation();
-      markBubbleInteraction();
-      applyTextStyle(style);
-    },
-    [applyTextStyle, markBubbleInteraction]
   );
 
   const setLink = useCallback(async () => {
@@ -1072,12 +1169,154 @@ export default function MarkdownEditor({
     editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
   }, [editor, requestEditorPrompt]);
 
-  const textStyleOptions: Array<{ value: TextStyleValue; label: string }> = [
-    { value: "paragraph", label: "Paragraph" },
-    { value: 1, label: "H1" },
-    { value: 2, label: "H2" },
-    { value: 3, label: "H3" },
-    { value: 4, label: "H4" }
+  const runBubbleAction = useCallback(
+    (
+      actionId: string,
+      action: () => boolean | void | Promise<unknown>,
+      options?: { closeStyleMenu?: boolean }
+    ) => {
+      markBubbleInteraction();
+      if (options?.closeStyleMenu !== false) {
+        setIsStyleMenuOpen(false);
+        setIsStyleMenuDropUp(false);
+      }
+
+      return runBubbleCommandAction({
+        actionId,
+        action
+      });
+    },
+    [markBubbleInteraction]
+  );
+
+  const executeBubbleActionById = useCallback(
+    (actionId: string): boolean | void | Promise<unknown> => {
+      if (!editor) {
+        return false;
+      }
+
+      switch (actionId) {
+        case "style_menu_toggle":
+          setIsStyleMenuOpen((current) => !current);
+          return true;
+        case "style_paragraph":
+          return runBubbleActionWithSelectionRetry(() => applyTextStyle("paragraph"));
+        case "style_h1":
+          return runBubbleActionWithSelectionRetry(() => applyTextStyle(1));
+        case "style_h2":
+          return runBubbleActionWithSelectionRetry(() => applyTextStyle(2));
+        case "style_h3":
+          return runBubbleActionWithSelectionRetry(() => applyTextStyle(3));
+        case "style_h4":
+          return runBubbleActionWithSelectionRetry(() => applyTextStyle(4));
+        case "bold":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleBold().run()
+          );
+        case "italic":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleItalic().run()
+          );
+        case "strikethrough":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleStrike().run()
+          );
+        case "superscript":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleSuperscript().run()
+          );
+        case "subscript":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleSubscript().run()
+          );
+        case "blockquote":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleBlockquote().run()
+          );
+        case "inline_code":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleCode().run()
+          );
+        case "bullet_list":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleBulletList().run()
+          );
+        case "ordered_list":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleOrderedList().run()
+          );
+        case "task_list":
+          return runBubbleActionWithSelectionRetry(() =>
+            editor.chain().focus().toggleTaskList().run()
+          );
+        case "inline_math":
+          insertMathFromPrompt(editor, "inline");
+          return true;
+        case "block_math":
+          insertMathFromPrompt(editor, "block");
+          return true;
+        case "link":
+          return setLink();
+        default:
+          return false;
+      }
+    },
+    [applyTextStyle, editor, insertMathFromPrompt, runBubbleActionWithSelectionRetry, setLink]
+  );
+
+  const handleBubblePointerDown = useCallback(
+    (event: MouseEvent) => {
+      const actionId = getBubbleActionIdFromTarget(event.target);
+      if (!actionId || !editor) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      markBubbleInteraction();
+      captureCurrentTextSelection();
+      const keepStyleMenuOpen =
+        actionId === "style_menu_toggle" || actionId.startsWith("style_");
+      runBubbleAction(
+        actionId,
+        () => executeBubbleActionById(actionId),
+        keepStyleMenuOpen ? { closeStyleMenu: false } : undefined
+      );
+    },
+    [
+      captureCurrentTextSelection,
+      editor,
+      executeBubbleActionById,
+      markBubbleInteraction,
+      runBubbleAction
+    ]
+  );
+
+  useEffect(() => {
+    if (!bubbleShellNode) {
+      return;
+    }
+
+    const listener = (event: MouseEvent) => {
+      handleBubblePointerDown(event);
+    };
+
+    bubbleShellNode.addEventListener("mousedown", listener, true);
+    return () => {
+      bubbleShellNode.removeEventListener("mousedown", listener, true);
+    };
+  }, [bubbleShellNode, handleBubblePointerDown]);
+
+  const textStyleOptions: Array<{
+    actionId: string;
+    value: TextStyleValue;
+    label: string;
+  }> = [
+    { actionId: "style_paragraph", value: "paragraph", label: "Paragraph" },
+    { actionId: "style_h1", value: 1, label: "H1" },
+    { actionId: "style_h2", value: 2, label: "H2" },
+    { actionId: "style_h3", value: 3, label: "H3" },
+    { actionId: "style_h4", value: 4, label: "H4" }
   ];
   const shouldShowBubbleMenu = useCallback(
     ({
@@ -1100,13 +1339,7 @@ export default function MarkdownEditor({
         activeEditor.isActive("videoBlock") ||
         activeEditor.isActive("audioBlock") ||
         activeEditor.isActive("mermaidBlock");
-      if (isMediaSelection) {
-        return false;
-      }
-
-      if (isCellSelection(state.selection)) {
-        return false;
-      }
+      const isTableCellSelection = isCellSelection(state.selection);
 
       const { doc, selection } = state;
       const { empty } = selection;
@@ -1115,11 +1348,14 @@ export default function MarkdownEditor({
       const isChildOfMenu = element.contains(document.activeElement);
       const hasEditorFocus = view.hasFocus() || isChildOfMenu;
 
-      if (!hasEditorFocus || empty || isEmptyTextBlock || !activeEditor.isEditable) {
-        return false;
-      }
-
-      return true;
+      return shouldDisplayBubbleMenu({
+        hasEditorFocus,
+        isCellSelection: isTableCellSelection,
+        isEditable: activeEditor.isEditable,
+        isEmptyTextBlock,
+        isMediaSelection,
+        selectionEmpty: empty
+      });
     },
     []
   );
@@ -1165,10 +1401,14 @@ export default function MarkdownEditor({
       {editor && (
         <BubbleMenu
           editor={editor}
+          pluginKey="mdpad-bubble-menu"
           shouldShow={shouldShowBubbleMenu}
+          updateDelay={0}
           tippyOptions={{
             appendTo: () => document.body,
             duration: 140,
+            hideOnClick: false,
+            interactive: true,
             offset: [0, 10],
             placement: "top",
             popperOptions: {
@@ -1190,35 +1430,33 @@ export default function MarkdownEditor({
                 }
               ]
             },
-            zIndex: 5200,
+            zIndex: 6200,
             theme: "mdpad-bubble"
           }}
         >
-          <div className="bubble-menu-shell">
+          <div
+            className="bubble-menu-shell"
+            ref={setBubbleShellNode}
+          >
             <div
               className="bubble-style-wrap"
               ref={styleMenuRef}
             >
               <button
                 className={`bubble-btn bubble-style-btn ${isStyleMenuOpen ? "is-active" : ""}`}
-                onMouseDown={handleStyleMenuTriggerMouseDown}
+                data-bubble-action="style_menu_toggle"
                 type="button"
               >
                 <span className="bubble-style-label">{currentTextStyle}</span>
                 <ChevronDown className="bubble-style-chevron" />
               </button>
               {isStyleMenuOpen && (
-                <div
-                  className={`bubble-style-popover ${isStyleMenuDropUp ? "is-drop-up" : ""}`}
-                  onMouseDown={(event) => event.preventDefault()}
-                >
+                <div className={`bubble-style-popover ${isStyleMenuDropUp ? "is-drop-up" : ""}`}>
                   {textStyleOptions.map((option) => (
                     <button
                       className={`bubble-style-item ${currentTextStyle === option.label ? "is-active" : ""}`}
                       key={option.label}
-                      onMouseDown={(event) =>
-                        handleStyleOptionMouseDown(event, option.value)
-                      }
+                      data-bubble-action={option.actionId}
                       type="button"
                     >
                       {option.label}
@@ -1229,11 +1467,7 @@ export default function MarkdownEditor({
             </div>
             <button
               className={`bubble-btn ${editor.isActive("bold") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleBold().run();
-                })
-              }
+              data-bubble-action="bold"
               title="Bold"
               type="button"
             >
@@ -1241,11 +1475,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("italic") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleItalic().run();
-                })
-              }
+              data-bubble-action="italic"
               title="Italic"
               type="button"
             >
@@ -1253,11 +1483,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("strike") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleStrike().run();
-                })
-              }
+              data-bubble-action="strikethrough"
               title="Strikethrough"
               type="button"
             >
@@ -1265,11 +1491,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("superscript") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleSuperscript().run();
-                })
-              }
+              data-bubble-action="superscript"
               title="Superscript"
               type="button"
             >
@@ -1277,11 +1499,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("subscript") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleSubscript().run();
-                })
-              }
+              data-bubble-action="subscript"
               title="Subscript"
               type="button"
             >
@@ -1289,11 +1507,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("blockquote") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleBlockquote().run();
-                })
-              }
+              data-bubble-action="blockquote"
               title="Quote"
               type="button"
             >
@@ -1301,11 +1515,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("code") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleCode().run();
-                })
-              }
+              data-bubble-action="inline_code"
               title="Inline Code"
               type="button"
             >
@@ -1313,11 +1523,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("bulletList") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleBulletList().run();
-                })
-              }
+              data-bubble-action="bullet_list"
               title="Bullet List"
               type="button"
             >
@@ -1325,11 +1531,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("orderedList") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleOrderedList().run();
-                })
-              }
+              data-bubble-action="ordered_list"
               title="Numbered List"
               type="button"
             >
@@ -1337,11 +1539,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("taskList") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  editor.chain().focus().toggleTaskList().run();
-                })
-              }
+              data-bubble-action="task_list"
               title="Todo List"
               type="button"
             >
@@ -1349,11 +1547,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("inlineMath") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  insertMathFromPrompt(editor, "inline");
-                })
-              }
+              data-bubble-action="inline_math"
               title="Inline Formula"
               type="button"
             >
@@ -1361,11 +1555,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("blockMath") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  insertMathFromPrompt(editor, "block");
-                })
-              }
+              data-bubble-action="block_math"
               title="Math Block"
               type="button"
             >
@@ -1373,11 +1563,7 @@ export default function MarkdownEditor({
             </button>
             <button
               className={`bubble-btn ${editor.isActive("link") ? "is-active" : ""}`}
-              onMouseDown={(event) =>
-                runBubbleAction(event, () => {
-                  void setLink();
-                })
-              }
+              data-bubble-action="link"
               title="Link"
               type="button"
             >
@@ -1458,8 +1644,5 @@ export default function MarkdownEditor({
     </div>
   );
 }
-
-
-
 
 

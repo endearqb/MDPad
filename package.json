@@ -11,7 +11,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "version:sync": "node scripts/version-manager.mjs sync",
+    "version:bump:patch": "node scripts/version-manager.mjs bump patch",
+    "tauri:build:no-bump": "pnpm version:sync && tauri build",
+    "tauri:build": "pnpm version:bump:patch && tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "2.10.1",
