@@ -22,7 +22,23 @@ import {
   type Editor
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { common, createLowlight } from "lowlight";
+import { createLowlight } from "lowlight";
+import bash from "highlight.js/lib/languages/bash";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import csharp from "highlight.js/lib/languages/csharp";
+import css from "highlight.js/lib/languages/css";
+import go from "highlight.js/lib/languages/go";
+import java from "highlight.js/lib/languages/java";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdownLang from "highlight.js/lib/languages/markdown";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
 import {
   AudioLines,
   Bold,
@@ -95,6 +111,11 @@ import { normalizeMarkdown } from "../../shared/utils/markdown";
 import { resolveMediaSource } from "../../shared/utils/mediaSource";
 import { getFileBaseName } from "../../shared/utils/path";
 import {
+  logOpenPerfDuration,
+  logOpenPerfElapsed,
+  nowMs
+} from "../../shared/utils/openPerformance";
+import {
   clampTextSelectionRange,
   shouldDisplayBubbleMenu
 } from "./bubbleMenuSelection";
@@ -116,7 +137,9 @@ import AttachmentLibrarySetupModal from "../file/AttachmentLibrarySetupModal";
 interface MarkdownEditorProps {
   markdown: string;
   documentPath: string | null;
+  openPerfStartMs?: number;
   onMarkdownChange: (markdown: string) => void;
+  onRegisterFlushMarkdown?: (flush: (() => string | null) | null) => void;
   onEditorError?: (message: string) => void;
   onStatsChange?: (stats: EditorStats) => void;
 }
@@ -144,7 +167,45 @@ interface CachedTextSelectionSnapshot {
 
 type TextStyleValue = "paragraph" | 1 | 2 | 3 | 4;
 type ClipboardMediaKind = "image" | "audio" | "video";
-const lowlight = createLowlight(common);
+type MarkdownSyncReason =
+  | "debounced"
+  | "blur"
+  | "visibility_hidden"
+  | "unmount"
+  | "external_request";
+const lowlight = createLowlight();
+lowlight.register({
+  bash,
+  sh: bash,
+  shell: bash,
+  c,
+  h: c,
+  cpp,
+  "c++": cpp,
+  csharp,
+  cs: csharp,
+  css,
+  go,
+  java,
+  javascript,
+  js: javascript,
+  jsx: javascript,
+  json,
+  markdown: markdownLang,
+  md: markdownLang,
+  python,
+  py: python,
+  rust,
+  rs: rust,
+  sql,
+  typescript,
+  ts: typescript,
+  xml,
+  html: xml,
+  xhtml: xml,
+  yaml,
+  yml: yaml
+});
 const IMAGE_MIME_EXTENSION_MAP: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -205,6 +266,7 @@ const VIDEO_FILE_EXTENSION_SET = new Set<string>([
 const STYLE_MENU_MIN_HEIGHT = 172;
 const BUBBLE_INTERACTION_GUARD_MS = 160;
 const BUBBLE_SELECTION_SNAPSHOT_TTL_MS = 1200;
+const MARKDOWN_SYNC_DEBOUNCE_MS = 180;
 
 function isElementTarget(target: EventTarget | null): target is Element {
   return typeof Element !== "undefined" && target instanceof Element;
@@ -345,7 +407,9 @@ function buildEditorStats(editor: Editor): EditorStats {
 export default function MarkdownEditor({
   markdown,
   documentPath,
+  openPerfStartMs,
   onMarkdownChange,
+  onRegisterFlushMarkdown,
   onEditorError,
   onStatsChange
 }: MarkdownEditorProps) {
@@ -354,9 +418,15 @@ export default function MarkdownEditor({
   const bubbleInteractionResetTimerRef = useRef<number | null>(null);
   const isBubbleInteractingRef = useRef(false);
   const recentTextSelectionRef = useRef<CachedTextSelectionSnapshot | null>(null);
+  const lastSyncedMarkdownRef = useRef<string>(normalizeMarkdown(markdown));
   const documentPathRef = useRef<string | null>(documentPath);
   const onEditorErrorRef = useRef(onEditorError);
   const editorRef = useRef<Editor | null>(null);
+  const markdownSyncTimerRef = useRef<number | null>(null);
+  const hasLocalDocChangesRef = useRef(false);
+  const flushSerializeRef = useRef<((reason: Exclude<MarkdownSyncReason, "debounced">) => string | null) | null>(
+    null
+  );
   const firstPasteSetupResolverRef = useRef<((confirmed: boolean) => void) | null>(
     null
   );
@@ -369,6 +439,7 @@ export default function MarkdownEditor({
   const [editorPrompt, setEditorPrompt] = useState<EditorPromptState | null>(null);
   const [editorPromptValue, setEditorPromptValue] = useState("");
   const [bubbleShellNode, setBubbleShellNode] = useState<HTMLDivElement | null>(null);
+  const firstEditableLoggedRef = useRef(false);
 
   const emitStats = useCallback(
     (activeEditor: Editor) => {
@@ -379,6 +450,15 @@ export default function MarkdownEditor({
     [onStatsChange]
   );
   const normalizedMarkdown = useMemo(() => normalizeMarkdown(markdown), [markdown]);
+  const initialContentHtmlRef = useRef<string | null>(null);
+  if (initialContentHtmlRef.current === null) {
+    const parseStart = nowMs();
+    initialContentHtmlRef.current = markdownToHtml(markdown);
+    logOpenPerfElapsed("open.markdown_to_html_ms", parseStart, {
+      phase: "initial"
+    });
+    lastSyncedMarkdownRef.current = normalizeMarkdown(markdown);
+  }
 
   useEffect(() => {
     documentPathRef.current = documentPath;
@@ -596,6 +676,67 @@ export default function MarkdownEditor({
     return resolveMediaSource(src, documentPathRef.current);
   }, []);
   setMediaSourceResolver(resolveMediaSrc);
+
+  const clearMarkdownSyncTimer = useCallback(() => {
+    if (markdownSyncTimerRef.current !== null) {
+      window.clearTimeout(markdownSyncTimerRef.current);
+      markdownSyncTimerRef.current = null;
+    }
+  }, []);
+
+  const serializeMarkdownNow = useCallback(
+    (reason: MarkdownSyncReason, activeEditor?: Editor): string | null => {
+      const targetEditor = activeEditor ?? editorRef.current;
+      if (!targetEditor) {
+        return null;
+      }
+      const hasPendingTimer = markdownSyncTimerRef.current !== null;
+      if (
+        reason !== "debounced" &&
+        !hasLocalDocChangesRef.current &&
+        !hasPendingTimer
+      ) {
+        return null;
+      }
+      const serializeStart = nowMs();
+      const nextMarkdown = htmlToMarkdown(targetEditor.getHTML());
+      logOpenPerfElapsed("open.html_to_markdown_ms", serializeStart, {
+        reason
+      });
+      const normalizedNextMarkdown = normalizeMarkdown(nextMarkdown);
+      if (normalizedNextMarkdown === lastSyncedMarkdownRef.current) {
+        hasLocalDocChangesRef.current = false;
+        return null;
+      }
+      lastSyncedMarkdownRef.current = normalizedNextMarkdown;
+      onMarkdownChange(nextMarkdown);
+      hasLocalDocChangesRef.current = false;
+      return nextMarkdown;
+    },
+    [onMarkdownChange]
+  );
+
+  const flushMarkdownSync = useCallback(
+    (reason: Exclude<MarkdownSyncReason, "debounced">): string | null => {
+      clearMarkdownSyncTimer();
+      return serializeMarkdownNow(reason);
+    },
+    [clearMarkdownSyncTimer, serializeMarkdownNow]
+  );
+
+  const scheduleMarkdownSync = useCallback(
+    (activeEditor: Editor): void => {
+      clearMarkdownSyncTimer();
+      markdownSyncTimerRef.current = window.setTimeout(() => {
+        markdownSyncTimerRef.current = null;
+        serializeMarkdownNow("debounced", activeEditor);
+      }, MARKDOWN_SYNC_DEBOUNCE_MS);
+    },
+    [clearMarkdownSyncTimer, serializeMarkdownNow]
+  );
+
+  flushSerializeRef.current = flushMarkdownSync;
+
   const slashItems = useMemo<SlashCommandItem[]>(
     () => [
       {
@@ -858,7 +999,7 @@ export default function MarkdownEditor({
         onRequestEdit: handleMathEditRequest
       })
     ],
-    content: markdownToHtml(markdown),
+    content: initialContentHtmlRef.current,
     immediatelyRender: false,
     editorProps: {
       attributes: {
@@ -873,13 +1014,34 @@ export default function MarkdownEditor({
         return clipboardPipeline.handle(event, activeEditor);
       }
     },
-    onUpdate({ editor: activeEditor }) {
+    onCreate({ editor: activeEditor }) {
+      if (firstEditableLoggedRef.current) {
+        return;
+      }
+      firstEditableLoggedRef.current = true;
+      emitStats(activeEditor);
+      if (typeof openPerfStartMs === "number") {
+        logOpenPerfDuration(
+          "open.first_editable_ms",
+          nowMs() - openPerfStartMs
+        );
+      }
+    },
+    onBlur() {
+      flushMarkdownSync("blur");
+    },
+    onUpdate({ editor: activeEditor, transaction }) {
       emitStats(activeEditor);
       if (skipNextUpdate.current) {
         skipNextUpdate.current = false;
+        hasLocalDocChangesRef.current = false;
         return;
       }
-      onMarkdownChange(htmlToMarkdown(activeEditor.getHTML()));
+      if (!transaction.docChanged) {
+        return;
+      }
+      hasLocalDocChangesRef.current = true;
+      scheduleMarkdownSync(activeEditor);
     }
   });
 
@@ -889,6 +1051,37 @@ export default function MarkdownEditor({
       editorRef.current = null;
     };
   }, [editor]);
+
+  useEffect(() => {
+    if (!onRegisterFlushMarkdown) {
+      return;
+    }
+    onRegisterFlushMarkdown(() => flushMarkdownSync("external_request"));
+    return () => {
+      onRegisterFlushMarkdown(null);
+    };
+  }, [flushMarkdownSync, onRegisterFlushMarkdown]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushMarkdownSync("visibility_hidden");
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [flushMarkdownSync]);
+
+  useEffect(() => {
+    return () => {
+      if (flushSerializeRef.current) {
+        flushSerializeRef.current("unmount");
+      }
+      clearMarkdownSyncTimer();
+    };
+  }, [clearMarkdownSyncTimer]);
 
   useEffect(() => {
     if (!editor) {
@@ -924,15 +1117,25 @@ export default function MarkdownEditor({
 
     emitStats(editor);
 
-    const current = normalizeMarkdown(htmlToMarkdown(editor.getHTML()));
-    if (current === normalizedMarkdown) {
+    if (normalizedMarkdown === lastSyncedMarkdownRef.current) {
       return;
     }
 
+    clearMarkdownSyncTimer();
+    hasLocalDocChangesRef.current = false;
+    const parseStart = nowMs();
+    const nextHtml = markdownToHtml(markdown);
+    logOpenPerfElapsed("open.markdown_to_html_ms", parseStart, {
+      phase: "sync"
+    });
+
     skipNextUpdate.current = true;
-    editor.commands.setContent(markdownToHtml(markdown), false);
+    const setContentStart = nowMs();
+    editor.commands.setContent(nextHtml, false);
+    logOpenPerfElapsed("open.editor_set_content_ms", setContentStart);
+    lastSyncedMarkdownRef.current = normalizedMarkdown;
     emitStats(editor);
-  }, [editor, emitStats, markdown, normalizedMarkdown]);
+  }, [clearMarkdownSyncTimer, editor, emitStats, markdown, normalizedMarkdown]);
 
   const currentTextStyle = useMemo(() => {
     if (!editor) {

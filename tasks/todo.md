@@ -1628,3 +1628,127 @@
   - `pnpm test`：通过（12 files / 87 tests passed）；
   - `pnpm build`：通过（仍有 Vite 大 chunk 警告）；
   - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：另存为对话框风格适配（classic / modern 紧凑化）（2026-02-28）
+- [x] 将另存为流程从系统风格对话框切换为应用内对话框
+- [x] 提供目录选择 + 文件名输入，并复用现有写文件链路
+- [x] 新增紧凑样式：`ui-modern` 与 `ui-classic` 分别适配
+- [x] 保持原有快捷键与保存链路行为不回退
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加回顾
+
+### 回顾（另存为对话框风格适配：classic / modern 紧凑化）
+- `src/App.tsx`：
+  - 新增应用内 Save As 流程：通过 `SaveAsModal` 收集目录与文件名，再复用 `writeTextFile` 保存并 `mark_saved`；
+  - 新增文件名校验（空值、路径分隔符、Windows 非法字符、尾随空格/点）与自动 `.md` 扩展补全；
+  - 新增目录浏览按钮（调用目录选择对话），保存成功后缓存最近目录用于下次默认值。
+- `src/features/file/SaveAsModal.tsx`（新增）：
+  - 新增紧凑 Save As 对话框，支持 `Folder + File Name` 输入、`Browse`、`Enter` 快捷确认与 `Escape` 取消。
+- `src/styles.css`：
+  - 新增 `save-as-modal-*` 样式族；
+  - `ui-modern` 使用圆角 + 轻模糊表面，`ui-classic` 使用更小圆角、无模糊、紧凑控件尺寸，保持窗口风格一致。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）；
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告）；
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：Save As 回归系统命名 + Unsaved 弹窗灰色紧凑化（2026-02-28）
+- [x] 按产品要求移除应用内 Save As 重命名弹窗，回归 Windows 原生 `Save As` 命名流程
+- [x] 合并交互路径：仅保留 Unsaved changes 确认弹窗 + 系统保存位置/命名窗口
+- [x] 将选中态与确认按钮收敛为灰色视觉
+- [x] 为 classic / modern 统一紧凑化 Unsaved 弹窗样式
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加回顾
+
+### 回顾（Save As 回归系统命名 + Unsaved 弹窗灰色紧凑化）
+- `src/App.tsx`：
+  - `saveCurrentAs` 回归 `saveFileAsDialog(...)` 原生系统保存对话框；
+  - 不再使用应用内 Save As 重命名流程，命名完全由 Windows 系统窗口处理。
+- `src/features/file/UnsavedChangesModal.tsx`：
+  - 将 BaseUI modal 改为应用内紧凑弹窗结构（更可控且风格统一）；
+  - 按钮交互保留 `Cancel / Don't Save / Save`，并支持 `Esc/Enter` 键盘行为。
+- `src/styles.css`：
+  - 新增 `app-modal-*` 样式族；
+  - 统一确认按钮、选中态焦点环为灰色；
+  - 在 `ui-classic` 下提供更紧凑圆角/字号/间距覆盖。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）；
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告）；
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：打开速度优化实施（基于 `open-performance-review`，P0+P1 同轮）（2026-02-28）
+- [x] 落地 P0：收敛编辑器同步链路中的全量编解码次数
+- [x] 落地 P1：Mermaid/KaTeX 按需加载 + 高亮核心语言集 + Vite 定向拆包
+- [x] 增加打开链路性能埋点（本地开关可控）
+- [x] 输出构建对比并更新评审文档
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加回顾
+
+### 回顾（打开速度优化实施：P0+P1）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - `onUpdate` 改为仅在 `transaction.docChanged` 时执行 `htmlToMarkdown`；
+  - 新增 `lastSyncedMarkdownRef`，外部同步不再先 `htmlToMarkdown(editor.getHTML())` 做反向比对；
+  - 初始 `markdownToHtml` 改为首帧缓存，避免重复解析；
+  - 高亮语言从 `lowlight/common` 改为核心语言注册，降低首开依赖体积。
+- `src/features/editor/extensions/mermaidExtensions.tsx`：
+  - Mermaid 改为动态加载（首次 Mermaid 节点渲染时加载）。
+- `src/features/editor/extensions/mathExtensions.tsx`：
+  - KaTeX 改为动态加载（首次数学节点渲染时加载）。
+- `src/App.tsx`：
+  - 新增编辑器模块预加载，与启动流程并行；
+  - 新增文件读取与应用启动阶段埋点；
+  - 将 `openPerfStartMs` 透传给编辑器用于首可编辑耗时统计。
+- `src/shared/utils/openPerformance.ts`（新增）：
+  - 新增统一性能埋点工具与开关（`localStorage["mdpad.perf.open"] === "1"`）。
+- `vite.config.ts`：
+  - 增加定向 `manualChunks`（`vendor-tiptap` / `vendor-katex` / `vendor-highlight` / `vendor-icons`）。
+- 构建体积对比（本地）：
+  - 优化前：`MarkdownEditor-*.js` 约 `1.5MB`（gzip 约 `458KB`）；
+  - 优化后：`MarkdownEditor-*.js` `186.83kB`（gzip `55.52kB`），`index-*.js` `183.57kB`（gzip `49.54kB`），Mermaid 核心拆为按需 chunk（`mermaid.core-*.js` `498.37kB`）。
+- 验证结果：
+  - `pnpm test`：通过（12 files / 87 tests passed）；
+  - `pnpm build`：通过（仍有大 chunk 警告，主要是 `vendor-tiptap`）；
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：打开速度优化第二轮（仅第一项：序列化节流 + 强制 Flush）（2026-02-28）
+- [x] 在 `MarkdownEditor` 中实现 `htmlToMarkdown` 的 180ms 节流调度，替代每次 `docChanged` 立即全量序列化
+- [x] 在保存/关闭/重命名等关键链路前接入强制 Flush，确保最后一次输入不丢失
+- [x] 在编辑器失焦、页面隐藏、组件卸载时补齐 Flush 兜底
+- [x] 增加父子组件 Flush 注册通道（`MarkdownEditor` -> `App`）
+- [x] 补充或更新测试，覆盖节流与 Flush 的核心行为
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件与评审文档追加回顾
+
+### 回顾（打开速度优化第二轮：仅第一项）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增 `MARKDOWN_SYNC_DEBOUNCE_MS = 180` 与序列化调度器，`onUpdate` 改为节流执行；
+  - 新增 `flushMarkdownSync`，并在 `blur`、`visibilitychange(hidden)`、`unmount` 触发强制同步；
+  - 新增父子注册通道 `onRegisterFlushMarkdown`，供外层在关键动作前主动 flush；
+  - 序列化埋点 `open.html_to_markdown_ms` 增加 `reason` 维度（`debounced/blur/visibility_hidden/unmount/external_request`）。
+- `src/App.tsx`：
+  - 新增 `flushEditorMarkdownRef`，接收编辑器侧 flush 函数；
+  - 保存/另存为/重命名前先强制 flush，并使用 flush 返回内容作为本次写盘内容；
+  - 关闭请求前先 flush，并基于 flush 后内容与 `lastSavedContent` 做同步脏状态判定，避免时序误判。
+- 测试更新：
+  - 新增 `src/shared/utils/documentDirty.ts` 与 `src/shared/utils/documentDirty.test.ts`，固化“归一化后脏状态判定”规则（含尾随换行与 CRLF 场景）。
+- 验证结果：
+  - `pnpm test`：通过（13 files / 91 tests passed）；
+  - `pnpm build`：通过（仍有 Vite 大 chunk 警告，主要为 `vendor-tiptap`）；
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：修复“打开未修改也提示 Unsaved changes”（2026-02-28）
+- [x] 定位误报根因：关闭前强制 flush 未加“本地变更门禁”，触发编解码规范化差异误判
+- [x] 在编辑器 flush 链路增加门禁：仅当有本地 `docChanged` 或存在待执行节流任务时才序列化
+- [x] 保持关闭路径判定策略：flush 结果优先，未返回结果时回退 `isDirty`
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（修复“打开未修改也提示 Unsaved changes”）
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增 `hasLocalDocChangesRef`；
+  - `onUpdate` 命中 `transaction.docChanged` 时置位本地改动标记；
+  - 强制 flush 前新增门禁：若无本地改动且无 pending timer，直接返回 `null`（不触发序列化）。
+- 结果：打开文档未编辑直接关闭，不再误弹 Unsaved；编辑后关闭仍能稳定提示。
+- 验证结果：
+  - `pnpm test`：通过（13 files / 91 tests passed）；
+  - `pnpm build`：通过；
+  - `cargo check`（`src-tauri`）：通过。

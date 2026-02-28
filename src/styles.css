@@ -635,6 +635,131 @@ body {
   background: color-mix(in srgb, #505050 82%, var(--editor-bg));
 }
 
+.app-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  background: color-mix(in srgb, #111827 22%, transparent);
+}
+
+.app-modal-card {
+  width: min(420px, calc(100vw - 24px));
+  border: 1px solid color-mix(in srgb, var(--editor-border) 86%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--editor-bg) 96%, var(--hover-soft) 4%);
+  box-shadow: var(--shadow-surface);
+  backdrop-filter: blur(14px);
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+  margin-top: 0;
+}
+
+.app-modal-card.is-compact {
+  width: min(390px, calc(100vw - 24px));
+}
+
+.app-modal-header {
+  display: grid;
+  gap: 2px;
+}
+
+.app-modal-title {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.app-modal-subtitle {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.app-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.app-modal-btn {
+  border: 1px solid color-mix(in srgb, var(--editor-border) 84%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--hover-soft) 68%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.app-modal-btn:hover {
+  background: color-mix(in srgb, var(--hover-soft) 82%, transparent);
+}
+
+.app-modal-btn:active {
+  background: color-mix(in srgb, var(--hover-strong) 70%, transparent);
+}
+
+.app-modal-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #9ca3af 42%, transparent);
+}
+
+.app-modal-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.app-modal-btn.is-ghost {
+  color: var(--text-secondary);
+}
+
+.app-modal-btn.is-confirm {
+  border-color: color-mix(in srgb, #9ca3af 55%, var(--editor-border));
+  background: color-mix(in srgb, #9ca3af 18%, var(--editor-bg));
+  color: color-mix(in srgb, #4b5563 68%, var(--text-primary));
+}
+
+.app-root.ui-classic .app-modal-backdrop {
+  background: color-mix(in srgb, #000000 16%, transparent);
+}
+
+.app-root.ui-classic .app-modal-card {
+  border-radius: 6px;
+  border-color: var(--chrome-border);
+  background: var(--editor-bg);
+  backdrop-filter: none;
+  box-shadow: var(--shadow-surface);
+  padding: 8px;
+  gap: 7px;
+}
+
+.app-root.ui-classic .app-modal-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.app-root.ui-classic .app-modal-subtitle {
+  font-size: 10px;
+}
+
+.app-root.ui-classic .app-modal-btn {
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 5px 8px;
+}
+
 .mdpad-editor {
   max-width: 780px;
   margin: 0 auto;

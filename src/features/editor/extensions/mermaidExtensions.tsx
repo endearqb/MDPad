@@ -5,23 +5,39 @@ import {
   type NodeViewProps
 } from "@tiptap/react";
 import { Code2 } from "lucide-react";
-import mermaid from "mermaid";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 let isMermaidInitialized = false;
 let mermaidRenderCounter = 0;
+let mermaidLoader: Promise<typeof import("mermaid")["default"]> | null = null;
+let mermaidRuntime: typeof import("mermaid")["default"] | null = null;
 
-function ensureMermaidInitialized(): void {
-  if (isMermaidInitialized) {
-    return;
+async function getMermaidRuntime(): Promise<typeof import("mermaid")["default"]> {
+  if (mermaidRuntime) {
+    return mermaidRuntime;
   }
-  mermaid.initialize({
+
+  if (!mermaidLoader) {
+    mermaidLoader = import("mermaid").then((module) => module.default);
+  }
+
+  mermaidRuntime = await mermaidLoader;
+  return mermaidRuntime;
+}
+
+async function ensureMermaidInitialized(): Promise<typeof import("mermaid")["default"]> {
+  const runtime = await getMermaidRuntime();
+  if (isMermaidInitialized) {
+    return runtime;
+  }
+  runtime.initialize({
     startOnLoad: false,
     securityLevel: "strict",
     suppressErrorRendering: true,
     theme: "neutral"
   });
   isMermaidInitialized = true;
+  return runtime;
 }
 
 function formatMermaidError(error: unknown): string {
@@ -55,9 +71,9 @@ function MermaidNodeView({ editor, getPos, node, selected }: NodeViewProps) {
     let isActive = true;
     const run = async () => {
       try {
-        ensureMermaidInitialized();
+        const runtime = await ensureMermaidInitialized();
         const renderId = `${renderBaseId}-${Date.now()}`;
-        const { bindFunctions, svg: nextSvg } = await mermaid.render(
+        const { bindFunctions, svg: nextSvg } = await runtime.render(
           renderId,
           normalizedCode
         );

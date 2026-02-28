@@ -4,8 +4,12 @@ import {
   ReactNodeViewRenderer,
   type NodeViewProps
 } from "@tiptap/react";
-import katex from "katex";
-import { useCallback, useMemo, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type MouseEvent as ReactMouseEvent
+} from "react";
 
 const inlineMathInputRegex = /(^|[\s([{])(?<!\$)\$([^$\n]+)\$(?!\$)$/u;
 const inlineMathPasteRegex = /(?<!\$)\$([^$\n]+)\$(?!\$)/gu;
@@ -24,6 +28,9 @@ interface MathExtensionOptions {
   onRequestEdit: ((request: MathEditRequest) => void) | null;
 }
 
+let katexLoader: Promise<typeof import("katex")["default"]> | null = null;
+let katexRuntime: typeof import("katex")["default"] | null = null;
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -33,9 +40,13 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function renderLatex(latex: string, displayMode: boolean): string {
+function renderLatex(
+  runtime: typeof import("katex")["default"],
+  latex: string,
+  displayMode: boolean
+): string {
   try {
-    return katex.renderToString(latex, {
+    return runtime.renderToString(latex, {
       displayMode,
       throwOnError: false,
       strict: "ignore"
@@ -43,6 +54,23 @@ function renderLatex(latex: string, displayMode: boolean): string {
   } catch {
     return `<span class="math-error">${escapeHtml(latex)}</span>`;
   }
+}
+
+function renderFallbackLatex(latex: string): string {
+  return `<span class="math-error">${escapeHtml(latex)}</span>`;
+}
+
+async function getKatexRuntime(): Promise<typeof import("katex")["default"]> {
+  if (katexRuntime) {
+    return katexRuntime;
+  }
+
+  if (!katexLoader) {
+    katexLoader = import("katex").then((module) => module.default);
+  }
+
+  katexRuntime = await katexLoader;
+  return katexRuntime;
 }
 
 function MathNodeView({
@@ -56,7 +84,30 @@ function MathNodeView({
   const displayMode = node.type.name === "blockMath";
   const mode: MathEditMode = displayMode ? "block" : "inline";
   const latex = typeof node.attrs.latex === "string" ? node.attrs.latex : "";
-  const rendered = useMemo(() => renderLatex(latex, displayMode), [displayMode, latex]);
+  const [rendered, setRendered] = useState(() => renderFallbackLatex(latex));
+
+  useEffect(() => {
+    let isActive = true;
+    const run = async () => {
+      try {
+        const runtime = await getKatexRuntime();
+        if (!isActive) {
+          return;
+        }
+        setRendered(renderLatex(runtime, latex, displayMode));
+      } catch {
+        if (!isActive) {
+          return;
+        }
+        setRendered(renderFallbackLatex(latex));
+      }
+    };
+
+    void run();
+    return () => {
+      isActive = false;
+    };
+  }, [displayMode, latex]);
 
   const editFormula = useCallback(() => {
     if (!editor.isEditable) {

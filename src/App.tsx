@@ -36,6 +36,7 @@ import type {
   ThemeMode,
   UiTheme
 } from "./shared/types/doc";
+import { hasUnsavedMarkdownChanges } from "./shared/utils/documentDirty";
 import {
   getFileBaseName,
   getDefaultSaveName,
@@ -50,8 +51,13 @@ import {
   writeThemeModePreference,
   writeUiThemePreference
 } from "./shared/utils/themePreferences";
+import {
+  logOpenPerfElapsed,
+  nowMs
+} from "./shared/utils/openPerformance";
 
-const MarkdownEditor = lazy(() => import("./features/editor/MarkdownEditor"));
+const loadMarkdownEditor = () => import("./features/editor/MarkdownEditor");
+const MarkdownEditor = lazy(loadMarkdownEditor);
 const UnsavedChangesModal = lazy(
   () => import("./features/file/UnsavedChangesModal")
 );
@@ -180,6 +186,8 @@ export default function App() {
   const docRef = useRef(doc);
   const allowCloseRef = useRef(false);
   const errorClearTimerRef = useRef<number | null>(null);
+  const appBootStartRef = useRef(nowMs());
+  const flushEditorMarkdownRef = useRef<(() => string | null) | null>(null);
 
   useEffect(() => {
     docRef.current = doc;
@@ -209,6 +217,17 @@ export default function App() {
   useEffect(() => {
     writeMarkdownThemePreference(markdownTheme);
   }, [markdownTheme]);
+
+  useEffect(() => {
+    const preloadStart = nowMs();
+    void loadMarkdownEditor()
+      .then(() => {
+        logOpenPerfElapsed("open.editor_module_preload_ms", preloadStart);
+      })
+      .catch(() => {
+        // Ignore preload failures and rely on lazy import fallback.
+      });
+  }, []);
 
   useEffect(() => {
     try {
@@ -283,12 +302,43 @@ export default function App() {
   }, [doc.isDirty, errorMessage, isBusy]);
 
   const loadFileIntoEditor = useCallback(async (path: string) => {
+    const readStart = nowMs();
     const content = await readTextFile(path);
+    logOpenPerfElapsed("open.file_read_ms", readStart, {
+      bytes: content.length
+    });
     dispatch({
       type: "load_document",
       path,
       content
     });
+  }, []);
+
+  const handleMarkdownChange = useCallback((content: string) => {
+    dispatch({ type: "update_content", content });
+  }, []);
+
+  const handleRegisterFlushMarkdown = useCallback(
+    (flush: (() => string | null) | null) => {
+      flushEditorMarkdownRef.current = flush;
+    },
+    []
+  );
+
+  const flushEditorMarkdown = useCallback((): string => {
+    const flush = flushEditorMarkdownRef.current;
+    if (!flush) {
+      return docRef.current.content;
+    }
+    const flushedMarkdown = flush();
+    if (typeof flushedMarkdown === "string") {
+      dispatch({
+        type: "update_content",
+        content: flushedMarkdown
+      });
+      return flushedMarkdown;
+    }
+    return docRef.current.content;
   }, []);
 
   const notifyError = useCallback((message: string) => {
@@ -334,36 +384,38 @@ export default function App() {
     await createDocumentWindow(path);
   }, []);
 
-  const saveCurrentAs = useCallback(async (): Promise<boolean> => {
+  const saveCurrentAs = useCallback(async (content?: string): Promise<boolean> => {
     const current = docRef.current;
+    const contentToSave = content ?? flushEditorMarkdown();
     const targetPath = await saveFileAsDialog(getDefaultSaveName(current.currentPath));
 
     if (!targetPath) {
       return false;
     }
 
-    await writeTextFile(targetPath, current.content);
+    await writeTextFile(targetPath, contentToSave);
     dispatch({
       type: "mark_saved",
       path: targetPath,
-      content: current.content
+      content: contentToSave
     });
     return true;
-  }, []);
+  }, [flushEditorMarkdown]);
 
-  const saveCurrent = useCallback(async (): Promise<boolean> => {
+  const saveCurrent = useCallback(async (content?: string): Promise<boolean> => {
     const current = docRef.current;
+    const contentToSave = content ?? flushEditorMarkdown();
     if (!current.currentPath) {
-      return saveCurrentAs();
+      return saveCurrentAs(contentToSave);
     }
-    await writeTextFile(current.currentPath, current.content);
+    await writeTextFile(current.currentPath, contentToSave);
     dispatch({
       type: "mark_saved",
       path: current.currentPath,
-      content: current.content
+      content: contentToSave
     });
     return true;
-  }, [saveCurrentAs]);
+  }, [flushEditorMarkdown, saveCurrentAs]);
 
   const executePendingAction = useCallback(
     async (action: PendingAction) => {
@@ -418,14 +470,25 @@ export default function App() {
           throw new Error("File name cannot be empty.");
         }
 
-        if (current.isDirty) {
-          const saved = await saveCurrent();
+        const latestContent = flushEditorMarkdown();
+        const hasUnsavedChanges = hasUnsavedMarkdownChanges(
+          latestContent,
+          docRef.current.lastSavedContent
+        );
+
+        if (hasUnsavedChanges) {
+          const saved = await saveCurrent(latestContent);
           if (!saved) {
             return;
           }
         }
 
-        const nextPath = await renameFile(current.currentPath, normalizedBaseName);
+        const pathAfterSave = docRef.current.currentPath;
+        if (!pathAfterSave) {
+          return;
+        }
+
+        const nextPath = await renameFile(pathAfterSave, normalizedBaseName);
         dispatch({
           type: "rename_path",
           path: nextPath
@@ -434,7 +497,7 @@ export default function App() {
       });
       return renamed;
     },
-    [runBusyTask, saveCurrent]
+    [flushEditorMarkdown, runBusyTask, saveCurrent]
   );
 
   const handleUnsavedSave = useCallback(async () => {
@@ -567,9 +630,31 @@ export default function App() {
 
         const appWindow = getCurrentWindow();
         unlistenCloseRequest = await appWindow.onCloseRequested((event) => {
-          if (allowCloseRef.current || !docRef.current.isDirty) {
+          if (allowCloseRef.current) {
             return;
           }
+
+          const flushedMarkdown = flushEditorMarkdownRef.current?.();
+          if (typeof flushedMarkdown === "string") {
+            dispatch({
+              type: "update_content",
+              content: flushedMarkdown
+            });
+          }
+
+          const currentDoc = docRef.current;
+          const hasUnsavedChanges =
+            typeof flushedMarkdown === "string"
+              ? hasUnsavedMarkdownChanges(
+                  flushedMarkdown,
+                  currentDoc.lastSavedContent
+                )
+              : currentDoc.isDirty;
+
+          if (!hasUnsavedChanges) {
+            return;
+          }
+
           event.preventDefault();
           setPendingAction({ kind: "close" });
           setShowUnsavedModal(true);
@@ -594,6 +679,7 @@ export default function App() {
       } finally {
         if (!isDisposed) {
           setIsStartupReady(true);
+          logOpenPerfElapsed("open.app_boot_ms", appBootStartRef.current);
         }
       }
     })();
@@ -610,7 +696,12 @@ export default function App() {
         unlistenDropEvent();
       }
     };
-  }, [notifyError, openPathInCurrentWindow, openPathInNewWindow, runBusyTask]);
+  }, [
+    notifyError,
+    openPathInCurrentWindow,
+    openPathInNewWindow,
+    runBusyTask
+  ]);
 
   return (
     <BaseProvider theme={themeMode === "dark" ? DarkTheme : LightTheme}>
@@ -648,10 +739,10 @@ export default function App() {
                 <MarkdownEditor
                   documentPath={doc.currentPath}
                   markdown={doc.content}
+                  openPerfStartMs={appBootStartRef.current}
                   onEditorError={handleEditorError}
-                  onMarkdownChange={(content) =>
-                    dispatch({ type: "update_content", content })
-                  }
+                  onMarkdownChange={handleMarkdownChange}
+                  onRegisterFlushMarkdown={handleRegisterFlushMarkdown}
                   onStatsChange={handleStatsChange}
                 />
               </Suspense>
