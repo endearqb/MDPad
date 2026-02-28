@@ -13,6 +13,11 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import SubscriptExtension from "@tiptap/extension-subscript";
 import SuperscriptExtension from "@tiptap/extension-superscript";
+import {
+  TableOfContents,
+  getHierarchicalIndexes,
+  type TableOfContentDataItem
+} from "@tiptap/extension-table-of-contents";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import {
@@ -139,6 +144,7 @@ import {
   writeAttachmentLibraryDirPreference
 } from "../../shared/utils/attachmentPreferences";
 import AttachmentLibrarySetupModal from "../file/AttachmentLibrarySetupModal";
+import TableOfContentsDock from "./components/TableOfContentsDock";
 
 interface MarkdownEditorProps {
   copy: EditorCopy;
@@ -276,6 +282,7 @@ const STYLE_MENU_MIN_HEIGHT = 172;
 const BUBBLE_INTERACTION_GUARD_MS = 160;
 const BUBBLE_SELECTION_SNAPSHOT_TTL_MS = 1200;
 const MARKDOWN_SYNC_DEBOUNCE_MS = 180;
+const TOC_ANCHOR_TYPES = ["heading"] as const;
 
 function isElementTarget(target: EventTarget | null): target is Element {
   return typeof Element !== "undefined" && target instanceof Element;
@@ -427,6 +434,7 @@ export default function MarkdownEditor({
 }: MarkdownEditorProps) {
   const skipNextUpdate = useRef(false);
   const styleMenuRef = useRef<HTMLDivElement | null>(null);
+  const editorSurfaceRef = useRef<HTMLDivElement | null>(null);
   const bubbleInteractionResetTimerRef = useRef<number | null>(null);
   const isBubbleInteractingRef = useRef(false);
   const recentTextSelectionRef = useRef<CachedTextSelectionSnapshot | null>(null);
@@ -451,6 +459,7 @@ export default function MarkdownEditor({
   const [editorPrompt, setEditorPrompt] = useState<EditorPromptState | null>(null);
   const [editorPromptValue, setEditorPromptValue] = useState("");
   const [bubbleShellNode, setBubbleShellNode] = useState<HTMLDivElement | null>(null);
+  const [tableOfContentsItems, setTableOfContentsItems] = useState<TableOfContentDataItem[]>([]);
   const firstEditableLoggedRef = useRef(false);
 
   const emitStats = useCallback(
@@ -991,6 +1000,14 @@ export default function MarkdownEditor({
         blockquote: false,
         codeBlock: false
       }),
+      TableOfContents.configure({
+        anchorTypes: [...TOC_ANCHOR_TYPES],
+        getIndex: getHierarchicalIndexes,
+        onUpdate(content) {
+          setTableOfContentsItems(content);
+        },
+        scrollParent: () => editorSurfaceRef.current ?? window
+      }),
       CalloutBlockquote,
       CodeBlockWithActions.configure({
         lowlight,
@@ -1078,6 +1095,9 @@ export default function MarkdownEditor({
 
   useEffect(() => {
     editorRef.current = editor;
+    if (!editor) {
+      setTableOfContentsItems([]);
+    }
     return () => {
       editorRef.current = null;
     };
@@ -1824,9 +1844,20 @@ export default function MarkdownEditor({
         </BubbleMenu>
       )}
 
-      <div className="editor-surface">
+      <div
+        className="editor-surface"
+        ref={editorSurfaceRef}
+      >
         <EditorContent editor={editor} />
       </div>
+      {editor && (
+        <TableOfContentsDock
+          copy={copy.toc}
+          editor={editor}
+          items={tableOfContentsItems}
+          scrollContainerRef={editorSurfaceRef}
+        />
+      )}
 
       {editorPrompt && (
         <div

@@ -91,6 +91,11 @@ export interface AttachmentModalCopy {
 
 export interface EditorCopy {
   placeholder: string;
+  toc: {
+    dockAriaLabel: string;
+    panelTitle: string;
+    empty: string;
+  };
   styleLabels: {
     paragraph: string;
     h1: string;
@@ -252,6 +257,11 @@ const enCopy: AppCopy = {
   editor: {
     placeholder:
       "Type \"/\" on empty line, or press Ctrl+/ anywhere to open slash menu...",
+    toc: {
+      dockAriaLabel: "Document outline",
+      panelTitle: "Outline",
+      empty: "No headings yet"
+    },
     styleLabels: {
       paragraph: "Paragraph",
       h1: "H1",
@@ -422,6 +432,11 @@ const zhCopy: AppCopy = {
   },
   editor: {
     placeholder: "在空行输入“/”，或在任意位置按 Ctrl+/ 打开斜杠菜单...",
+    toc: {
+      dockAriaLabel: "文档目录",
+      panelTitle: "目录",
+      empty: "暂无标题"
+    },
     styleLabels: {
       paragraph: "正文",
       h1: "H1",

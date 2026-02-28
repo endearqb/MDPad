@@ -1,5 +1,4 @@
-import { Button, KIND } from "baseui/button";
-import { Modal, ModalBody, ModalFooter, ModalHeader } from "baseui/modal";
+import { useEffect } from "react";
 import type { AttachmentModalCopy } from "../../shared/i18n/appI18n";
 
 interface AttachmentLibrarySetupModalProps {
@@ -15,29 +14,86 @@ export default function AttachmentLibrarySetupModal({
   onCancel,
   onSelectFolder
 }: AttachmentLibrarySetupModalProps) {
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        onSelectFolder();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [isOpen, onCancel, onSelectFolder]);
+
+  if (!isOpen) {
+    return null;
+  }
+
   return (
-    <Modal
-      closeable
-      isOpen={isOpen}
-      onClose={onCancel}
+    <div
+      className="app-modal-backdrop"
+      onMouseDown={() => onCancel()}
+      role="presentation"
     >
-      <ModalHeader>{copy.title}</ModalHeader>
-      <ModalBody>
-        {copy.bodyLine1}
-        <br />
-        {copy.bodyLine2}
-      </ModalBody>
-      <ModalFooter>
-        <Button
-          kind={KIND.tertiary}
-          onClick={onCancel}
-        >
-          {copy.cancel}
-        </Button>
-        <Button onClick={onSelectFolder}>
-          {copy.chooseFolder}
-        </Button>
-      </ModalFooter>
-    </Modal>
+      <section
+        aria-labelledby="attachment-library-setup-title"
+        aria-modal="true"
+        className="app-modal-card is-compact"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+            return;
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onSelectFolder();
+          }
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+        tabIndex={-1}
+      >
+        <header className="app-modal-header">
+          <h2
+            className="app-modal-title"
+            id="attachment-library-setup-title"
+          >
+            {copy.title}
+          </h2>
+          <p className="app-modal-subtitle">{copy.bodyLine1}</p>
+          <p className="app-modal-subtitle">{copy.bodyLine2}</p>
+        </header>
+        <footer className="app-modal-actions">
+          <button
+            className="app-modal-btn is-ghost"
+            onClick={onCancel}
+            type="button"
+          >
+            {copy.cancel}
+          </button>
+          <button
+            className="app-modal-btn is-confirm"
+            onClick={onSelectFolder}
+            type="button"
+          >
+            {copy.chooseFolder}
+          </button>
+        </footer>
+      </section>
+    </div>
   );
 }

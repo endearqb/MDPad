@@ -544,6 +544,135 @@ body {
   -webkit-appearance: none;
 }
 
+.toc-dock {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.toc-rail {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.toc-rail-button {
+  position: relative;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, #9ca3af 52%, transparent);
+  opacity: 0.68;
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 120ms ease, background-color 120ms ease,
+    filter 120ms ease;
+}
+
+.toc-rail-button.level-1 {
+  width: 14px;
+  height: 4px;
+}
+
+.toc-rail-button.level-2 {
+  width: 12px;
+  height: 4px;
+}
+
+.toc-rail-button.level-3 {
+  width: 10px;
+  height: 4px;
+}
+
+.toc-rail-button:hover {
+  opacity: 0.84;
+  filter: saturate(0.88);
+}
+
+.toc-rail-button.is-active {
+  opacity: 1;
+  background: #3f3f46;
+  transform: scaleX(1.06);
+}
+
+.theme-dark .toc-rail-button {
+  background: color-mix(in srgb, #1f2937 80%, transparent);
+  opacity: 0.78;
+}
+
+.theme-dark .toc-rail-button:hover {
+  opacity: 0.92;
+  filter: saturate(0.84);
+}
+
+.theme-dark .toc-rail-button.is-active {
+  background: #d4d4d8;
+  opacity: 1;
+}
+
+.toc-rail-label {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  max-width: min(340px, 52vw);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #4b5563 30%, transparent);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+  box-shadow: var(--shadow-surface);
+}
+
+.toc-rail-button:hover .toc-rail-label,
+.toc-rail-button:focus-visible .toc-rail-label {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.toc-rail-button:focus-visible {
+  outline: none;
+}
+
+.theme-dark .toc-rail-label {
+  background: color-mix(in srgb, #4b5563 46%, transparent);
+  color: #e5e7eb;
+}
+
+@media (max-width: 1100px) {
+  .toc-dock {
+    right: 6px;
+  }
+}
+
+@media (max-width: 860px) {
+  .toc-dock {
+    right: 4px;
+  }
+
+  .toc-rail-label {
+    max-width: min(240px, 68vw);
+  }
+}
+
 .editor-prompt-backdrop {
   position: absolute;
   top: 4px;

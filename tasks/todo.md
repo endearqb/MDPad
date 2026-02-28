@@ -1835,3 +1835,80 @@
   - Tag：`v0.1.6`
   - Release：`https://github.com/endearqb/MDPad/releases/tag/v0.1.6`
   - SHA256：`812420693b7c37569f25d64242bb4d1d642b403e3b944c66903825e4a2fd224d`
+
+## 新任务：Notion 风目录插件（官方 TOC 扩展接入）（2026-02-28）
+- [x] 调研并确认采用官方社区成熟方案：`@tiptap/extension-table-of-contents`（v2.27.2）
+- [x] 接入编辑器 TOC 扩展并绑定滚动容器（`editor-surface`）
+- [x] 新增右侧悬浮目录组件（导读条 + 展开面板），默认展示 H1-H3
+- [x] 新增目录纯逻辑模块与单元测试（层级过滤、激活项选择、导读条采样）
+- [x] 接入中英文文案（`editor.toc`）
+- [x] 新增目录样式并适配 modern/classic，移动端自动降级隐藏
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（Notion 风目录插件）
+- 新增依赖：
+  - `@tiptap/extension-table-of-contents@^2.27.2`
+- 编辑器接入：
+  - `src/features/editor/MarkdownEditor.tsx`
+  - 注册 `TableOfContents.configure(...)`，使用 `getHierarchicalIndexes`；
+  - `scrollParent` 绑定为 `editorSurfaceRef`；
+  - 维护 `tableOfContentsItems` 状态并渲染目录组件。
+- 新增文件：
+  - `src/features/editor/components/TableOfContentsDock.tsx`
+  - `src/features/editor/tocLogic.ts`
+  - `src/features/editor/tocLogic.test.ts`
+- 文案与样式：
+  - `src/shared/i18n/appI18n.ts` 新增 `editor.toc` 中英文文案；
+  - `src/styles.css` 新增 `toc-*` 样式族，支持 hover 展开和激活态高亮。
+- 验证结果：
+  - `pnpm test`：通过（16 files / 102 tests passed）；
+  - `pnpm build`：通过；
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：目录样式与移动端显示 + 首次粘贴图片弹窗统一（2026-02-28）
+- [x] 去掉目录背景与边框（面板与导读键轨）
+- [x] 提升目录可视高度与导读键宽度（明显增幅）
+- [x] 当前位置导读键由蓝色改为深灰
+- [x] 手机端显示目录，采用“键轨 + 可展开目录面板”
+- [x] 首次粘贴图片弹窗切换为应用统一紧凑弹窗样式
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（目录样式与移动端显示 + 首次粘贴图片弹窗统一）
+- `src/features/editor/components/TableOfContentsDock.tsx`：
+  - 新增移动端目录状态管理（`<=1100px`）；
+  - 新增键轨切换按钮（展开/收起目录面板）；
+  - 新增外部点击与 `Esc` 收起；
+  - 在移动端点击目录项后自动收起面板。
+- `src/styles.css`：
+  - `toc-panel` 与 `toc-rail` 移除背景/边框/阴影；
+  - 目录区域上下边距缩小，提升总可视高度；
+  - 导读键尺寸提升（`level-1/2/3` 从 `10/8/6` 增至 `14/12/10`）；
+  - 激活键颜色改为深灰（亮色 `#3f3f46`，暗色 `#52525b`）；
+  - 移除移动端完全隐藏目录规则，改为手机端保留键轨并支持展开面板。
+- `src/features/file/AttachmentLibrarySetupModal.tsx`：
+  - 移除 BaseUI `Modal` 依赖，改为统一 `app-modal-*` 结构；
+  - 保留遮罩点击取消、`Esc` 取消、`Enter` 确认目录选择。
+- 验证结果：
+  - `pnpm test`：通过（16 files / 102 tests passed）。
+  - `pnpm build`：通过（存在既有大 chunk 警告，未新增失败）。
+
+## 新任务：目录键轨交互收敛与视觉微调（2026-02-28）
+- [x] 目录位置下移到窗口中间高度（右侧垂直居中）
+- [x] 取消桌面端展开面板与窄宽度目录开关，统一为单一键轨 UI/UX
+- [x] 调整深浅色目录键配色（浅色非当前更浅、深色非当前更深；深色当前浅灰）
+- [x] 缩小并统一键高，单键间距保持一致
+- [x] 窄宽度场景 hover 键后在左侧显示完整标题（风格对齐原展开模式选中态）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（目录键轨交互收敛与视觉微调）
+- `src/features/editor/components/TableOfContentsDock.tsx`：
+  - 移除窄宽度状态机（`isCompactViewport/isPanelOpen`）与展开面板、目录开关按钮；
+  - TOC 收敛为单一 `toc-rail` 导航；
+  - 每个键内新增 `toc-rail-label`，用于 hover/focus 时左侧展示完整标题。
+- `src/styles.css`：
+  - `toc-dock` 改为 `top: 50% + translateY(-50%)`，右侧垂直居中；
+  - 删除 `toc-panel` / `toc-item` / `toc-rail-toggle` / `is-panel-open` 相关样式；
+  - 统一键高为 `4px`，保持固定间距；
+  - 浅色模式：非当前位置键改更浅灰，当前位置键为深灰；
+  - 深色模式：非当前位置键改更深灰，当前位置键为浅灰；
+  - 新增左侧标题浮层样式（hover/focus 可见），风格与原展开模式选中态一致。
