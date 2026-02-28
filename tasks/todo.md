@@ -1816,3 +1816,22 @@
 - 验证结果：
   - `pnpm test`：通过（15 files / 97 tests passed）；
   - `pnpm build`：通过。
+
+## 新任务：推送 Git + 版本递增 + 构建发布 v0.1.6（2026-02-28）
+- [x] 版本号 `+0.0.1`（`0.1.5 -> 0.1.6`）并同步到 Tauri 配置
+- [x] 构建 Windows 安装包（`pnpm tauri:build:no-bump`）
+- [x] 提交并推送 `main`
+- [x] 创建并推送标签 `v0.1.6`
+- [x] 创建 GitHub Release 并上传安装包资产
+
+### 回顾（v0.1.6 发布）
+- 版本同步：
+  - `package.json`：`0.1.6`
+  - `src-tauri/Cargo.toml`：`0.1.6`
+  - `src-tauri/tauri.conf.json`：`0.1.6`
+- 构建产物：
+  - `src-tauri/target/release/bundle/nsis/MDPad_0.1.6_x64-setup.exe`
+- 发布信息：
+  - Tag：`v0.1.6`
+  - Release：`https://github.com/endearqb/MDPad/releases/tag/v0.1.6`
+  - SHA256：`812420693b7c37569f25d64242bb4d1d642b403e3b944c66903825e4a2fd224d`
