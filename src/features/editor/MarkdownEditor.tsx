@@ -455,6 +455,7 @@ export default function MarkdownEditor({
   );
   const [isStyleMenuOpen, setIsStyleMenuOpen] = useState(false);
   const [isStyleMenuDropUp, setIsStyleMenuDropUp] = useState(false);
+  const [styleStateVersion, setStyleStateVersion] = useState(0);
   const [isAttachmentSetupOpen, setIsAttachmentSetupOpen] = useState(false);
   const [editorPrompt, setEditorPrompt] = useState<EditorPromptState | null>(null);
   const [editorPromptValue, setEditorPromptValue] = useState("");
@@ -1029,11 +1030,18 @@ export default function MarkdownEditor({
       }),
       TableKit.configure({
         resizable: true,
-        cellMinWidth: 25
+        cellMinWidth: 25,
+        dictionary: copy.tableMenu.table
       }),
-      TableRowKit,
-      TableHeaderKit,
-      TableCellKit,
+      TableRowKit.configure({
+        dictionary: copy.tableMenu.row
+      }),
+      TableHeaderKit.configure({
+        dictionary: copy.tableMenu.column
+      }),
+      TableCellKit.configure({
+        dictionary: copy.tableMenu.cell
+      }),
       ResizableImage,
       VideoBlock,
       AudioBlock,
@@ -1100,6 +1108,23 @@ export default function MarkdownEditor({
     }
     return () => {
       editorRef.current = null;
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const refreshStyleState = () => {
+      setStyleStateVersion((current) => current + 1);
+    };
+
+    editor.on("selectionUpdate", refreshStyleState);
+    editor.on("transaction", refreshStyleState);
+    return () => {
+      editor.off("selectionUpdate", refreshStyleState);
+      editor.off("transaction", refreshStyleState);
     };
   }, [editor]);
 
@@ -1219,7 +1244,7 @@ export default function MarkdownEditor({
       }
     }
     return "paragraph";
-  }, [editor, markdown]);
+  }, [editor, styleStateVersion]);
 
   const currentTextStyle = useMemo(() => {
     const currentOption = textStyleOptions.find(

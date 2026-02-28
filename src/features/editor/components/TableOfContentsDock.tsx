@@ -1,6 +1,8 @@
 import {
   useCallback,
   useMemo,
+  useState,
+  type FocusEvent as ReactFocusEvent,
   type MouseEvent as ReactMouseEvent,
   type RefObject
 } from "react";
@@ -10,12 +12,24 @@ import type { EditorCopy } from "../../../shared/i18n/appI18n";
 import {
   filterTocByHeadingLevel,
   resolveActiveTocId,
-  sampleTocItemsForRail
+  selectCollapsedTocItems,
+  selectExpandedTocItems
 } from "../tocLogic";
 
 const TOC_MAX_HEADING_LEVEL = 3;
-const TOC_MAX_RAIL_ITEMS = 28;
+const TOC_EXPANDED_RAIL_ITEMS = 20;
+const TOC_COLLAPSED_RAIL_ITEMS = 5;
+const TOC_ANCHOR_QUOTA = 2;
+const TOC_NEIGHBOR_QUOTA = 7;
+const TOC_STRUCTURE_QUOTA = 11;
 const TOC_SCROLL_OFFSET_PX = 12;
+
+const TOC_EXPANDED_SELECTION_CONFIG = {
+  maxItems: TOC_EXPANDED_RAIL_ITEMS,
+  anchorQuota: TOC_ANCHOR_QUOTA,
+  neighborQuota: TOC_NEIGHBOR_QUOTA,
+  structureQuota: TOC_STRUCTURE_QUOTA
+} as const;
 
 interface TableOfContentsDockProps {
   editor: Editor;
@@ -34,15 +48,21 @@ export default function TableOfContentsDock({
   scrollContainerRef,
   copy
 }: TableOfContentsDockProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const visibleItems = useMemo(
     () => filterTocByHeadingLevel(items, TOC_MAX_HEADING_LEVEL),
     [items]
   );
   const activeId = useMemo(() => resolveActiveTocId(visibleItems), [visibleItems]);
-  const railItems = useMemo(
-    () => sampleTocItemsForRail(visibleItems, TOC_MAX_RAIL_ITEMS),
-    [visibleItems]
+  const expandedItems = useMemo(
+    () => selectExpandedTocItems(visibleItems, activeId, TOC_EXPANDED_SELECTION_CONFIG),
+    [activeId, visibleItems]
   );
+  const compactItems = useMemo(
+    () => selectCollapsedTocItems(expandedItems, activeId, TOC_COLLAPSED_RAIL_ITEMS),
+    [activeId, expandedItems]
+  );
+  const railItems = isExpanded ? expandedItems : compactItems;
 
   const jumpToItem = useCallback((event: ReactMouseEvent, item: TableOfContentDataItem): void => {
     event.preventDefault();
@@ -83,6 +103,13 @@ export default function TableOfContentsDock({
     return null;
   }
 
+  const handleBlurCapture = (event: ReactFocusEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
+      setIsExpanded(false);
+    }
+  };
+
   return (
     <aside
       aria-label={copy.dockAriaLabel}
@@ -90,7 +117,11 @@ export default function TableOfContentsDock({
     >
       <div
         aria-label={copy.dockAriaLabel}
-        className="toc-rail"
+        className={`toc-rail ${isExpanded ? "is-expanded" : "is-collapsed"}`}
+        onBlurCapture={handleBlurCapture}
+        onFocusCapture={() => setIsExpanded(true)}
+        onMouseEnter={() => setIsExpanded(true)}
+        onMouseLeave={() => setIsExpanded(false)}
         role="navigation"
       >
         {railItems.map((item) => {

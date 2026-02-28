@@ -103,6 +103,40 @@ export interface EditorCopy {
     h3: string;
     h4: string;
   };
+  tableMenu: {
+    table: {
+      name: string;
+      alignLeft: string;
+      alignCenter: string;
+      alignRight: string;
+      toggleHeaderRow: string;
+      toggleHeaderCol: string;
+      deleteTable: string;
+    };
+    row: {
+      insertTop: string;
+      insertBottom: string;
+      alignLeft: string;
+      alignCenter: string;
+      alignRight: string;
+      deleteRow: string;
+    };
+    column: {
+      insertLeft: string;
+      insertRight: string;
+      alignLeft: string;
+      alignCenter: string;
+      alignRight: string;
+      deleteCol: string;
+    };
+    cell: {
+      mergeCells: string;
+      splitCells: string;
+      alignLeft: string;
+      alignCenter: string;
+      alignRight: string;
+    };
+  };
   slash: {
     queryPlaceholder: string;
     empty: string;
@@ -268,6 +302,40 @@ const enCopy: AppCopy = {
       h2: "H2",
       h3: "H3",
       h4: "H4"
+    },
+    tableMenu: {
+      table: {
+        name: "Table",
+        alignLeft: "Left alignment",
+        alignCenter: "Center alignment",
+        alignRight: "Right alignment",
+        toggleHeaderRow: "Toggle header row",
+        toggleHeaderCol: "Toggle header column",
+        deleteTable: "Delete table"
+      },
+      row: {
+        insertTop: "Insert row above",
+        insertBottom: "Insert row below",
+        alignLeft: "Left alignment",
+        alignCenter: "Center alignment",
+        alignRight: "Right alignment",
+        deleteRow: "Delete row"
+      },
+      column: {
+        insertLeft: "Insert column left",
+        insertRight: "Insert column right",
+        alignLeft: "Left alignment",
+        alignCenter: "Center alignment",
+        alignRight: "Right alignment",
+        deleteCol: "Delete column"
+      },
+      cell: {
+        mergeCells: "Merge cells",
+        splitCells: "Split cells",
+        alignLeft: "Left alignment",
+        alignCenter: "Center alignment",
+        alignRight: "Right alignment"
+      }
     },
     slash: {
       queryPlaceholder: "type to filter",
@@ -443,6 +511,40 @@ const zhCopy: AppCopy = {
       h2: "H2",
       h3: "H3",
       h4: "H4"
+    },
+    tableMenu: {
+      table: {
+        name: "表格",
+        alignLeft: "左对齐",
+        alignCenter: "居中对齐",
+        alignRight: "右对齐",
+        toggleHeaderRow: "切换表头行",
+        toggleHeaderCol: "切换表头列",
+        deleteTable: "删除表格"
+      },
+      row: {
+        insertTop: "在上方插入行",
+        insertBottom: "在下方插入行",
+        alignLeft: "左对齐",
+        alignCenter: "居中对齐",
+        alignRight: "右对齐",
+        deleteRow: "删除行"
+      },
+      column: {
+        insertLeft: "在左侧插入列",
+        insertRight: "在右侧插入列",
+        alignLeft: "左对齐",
+        alignCenter: "居中对齐",
+        alignRight: "右对齐",
+        deleteCol: "删除列"
+      },
+      cell: {
+        mergeCells: "合并单元格",
+        splitCells: "拆分单元格",
+        alignLeft: "左对齐",
+        alignCenter: "居中对齐",
+        alignRight: "右对齐"
+      }
     },
     slash: {
       queryPlaceholder: "输入关键字筛选",

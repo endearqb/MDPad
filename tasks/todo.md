@@ -1912,3 +1912,108 @@
   - 浅色模式：非当前位置键改更浅灰，当前位置键为深灰；
   - 深色模式：非当前位置键改更深灰，当前位置键为浅灰；
   - 新增左侧标题浮层样式（hover/focus 可见），风格与原展开模式选中态一致。
+
+## 新任务：目录/Bubble/表格 i18n/Slate UI 修复（2026-02-28）
+- [x] 目录 rail 默认仅显示 5 键，hover/focus 到目录区域后显示全部键
+- [x] 修复目录显示不全问题，确保 H1-H3 在展开态完整显示
+- [x] 修复划词菜单样式标签状态（正文/H1-H4）在仅选区变化时不刷新的问题
+- [x] 修复表格菜单提示国际化（覆盖表/行/列/单元格菜单）
+- [x] 将 App UI 的灰黑配色替换为 Tailwind Slate 系列（不改 Markdown 内容主题色）
+- [x] 更新/补充测试并运行验证：`pnpm test`、`pnpm build`（必要时 `cargo check`）
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（目录/Bubble/表格 i18n/Slate UI 修复）
+- `src/features/editor/components/TableOfContentsDock.tsx`：
+  - 新增目录交互状态 `isExpanded`，默认展示 5 个目录键；
+  - 鼠标 hover 到目录 rail 或键盘 focus 进入目录区域时，切换为展示全部可见目录键；
+  - 目录项来源改为完整 `visibleItems`（H1-H3），不再使用抽样导致遗漏。
+- `src/features/editor/tocLogic.ts` 与 `src/features/editor/tocLogic.test.ts`：
+  - 新增 `compactTocItemsAroundActive`，按当前 active 项居中裁剪 5 项，含首尾边界与缺失 active 回退；
+  - 目录逻辑测试从 5 项扩展到 8 项，覆盖折叠窗口策略。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增 `styleStateVersion`，监听 `selectionUpdate` + `transaction` 触发样式标签刷新；
+  - 修复仅移动选区时 Bubble 样式标签不更新的问题；
+  - `TableKit/TableRowKit/TableHeaderKit/TableCellKit` 统一接入 i18n 字典配置。
+- `src/shared/i18n/appI18n.ts`：
+  - `EditorCopy` 新增 `tableMenu` 类型定义；
+  - 补充英文与中文表格菜单文案（表/行/列/单元格全覆盖）。
+- `src/styles.css`：
+  - 增加 Tailwind Slate 色阶变量（50-950）；
+  - 将 App UI 主题变量（light/dark/classic）、slash/bubble/toc 等灰黑色系切换到 Slate 体系；
+  - 保持 Markdown 内容主题（`md-theme-*`）不做配色迁移。
+- 验证结果：
+  - `pnpm test`：通过（16 files / 105 tests passed）；
+  - `pnpm build`：通过（存在既有大 chunk 警告，未新增失败）；
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：目录键显示策略收敛（20 键上限，折叠树策略，2026-02-28）
+- [x] 将展开态目录键数量上限固定为 20，收起态保持 5
+- [x] 在 TOC 逻辑层实现配额策略：2 锚点 + 7 邻近 + 11 结构
+- [x] 实现 H1 过载场景策略：活动 H1 优先，同时强制保留首/尾锚点
+- [x] 将目录组件切换到新选择器并保持 hover/focus 展开行为
+- [x] 补充单元测试覆盖（20 上限、锚点保留、H1 过载、无 H1 回退、5 键收起）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（目录键显示策略收敛）
+- `src/features/editor/tocLogic.ts`：
+  - 新增 `selectExpandedTocItems` 与 `selectCollapsedTocItems`；
+  - 展开态选择算法按 `maxItems/anchorQuota/neighborQuota/structureQuota` 配置执行；
+  - 新增层级结构候选构建（活动路径 + H1/H2/H3 邻域 + 距离回填）。
+- `src/features/editor/components/TableOfContentsDock.tsx`：
+  - 固化目录常量：展开 20、收起 5、配额 2/7/11；
+  - 展开态改为使用 `selectExpandedTocItems`，收起态改为基于展开态的 `selectCollapsedTocItems`。
+- `src/features/editor/tocLogic.test.ts`：
+  - 新增 5 个策略测试：20 上限、首尾 H1 锚点、H1>20 活动优先、无 H1 回退、收起 5 键窗口。
+- `src/styles.css`：
+  - 为 `toc-rail` 增加 `max-height` 保护，避免异常情况下目录轨道视觉失控，同时保留左侧 hover 标题可见性。
+
+## 新任务：Classic 最外层边框移除（2026-02-28）
+- [x] 将 `ui-classic` 最外层 `app-root` 边框改为不可见（透明/移除）
+- [x] 运行验证：`pnpm build`
+
+### 回顾（Classic 最外层边框移除）
+- `src/styles.css`：
+  - `.app-root.ui-classic` 从 `border-width: 0.5px` 调整为 `border-width: 0`；
+  - `.app-root.ui-classic` 边框色改为 `transparent`，视觉上完全去除最外层灰边。
+
+## 新任务：暗色粗体可见性 + 列表后代码块渲染修复（2026-02-28）
+- [x] 修复暗色模式下正文粗体对比度不足问题（避免接近黑色不可见）
+- [x] 增强 Markdown 预处理：仅规范化行首 Unicode 空白（NBSP/全角空格等）
+- [x] 修复列表后 fenced code 在异常前导空白场景下的解析退化
+- [x] 补充单测覆盖（NBSP + 围栏代码、全角空格 + 围栏代码）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（暗色粗体可见性 + 列表后代码块渲染修复）
+- `src/styles.css`：
+  - 为 `.mdpad-editor` 增加粗体专用变量 `--md-strong-color`，并同步覆盖 `--tw-prose-bold`；
+  - 新增 `.mdpad-editor strong, .mdpad-editor b` 显式颜色与字重规则；
+  - 在 `.theme-dark .mdpad-editor` 下将粗体颜色提升一档，确保暗色正文中的粗体可辨识。
+- `src/features/editor/markdownCodec.ts`：
+  - 新增 `normalizeLeadingWhitespace`，仅归一化行首 Unicode 空白为普通空格；
+  - 在 `preprocessMarkdownCore` 中对每行先做行首归一化，再进行 fence/callout/list/blockquote 判定；
+  - fence/mermaid/block-math 内容行也应用行首归一化，避免列表嵌套代码块场景被 `marked` 误判。
+- `src/features/editor/markdownCodec.test.ts`：
+  - 新增并通过 2 个回归用例：
+    - 列表后 NBSP 前导 fence 可正确解析为代码块；
+    - 全角空格前导 fence 可正确解析为代码块。
+- 验证结果：
+  - `pnpm test`：通过（16 files / 110 tests passed）；
+  - `pnpm build`：通过（仍存在既有大 chunk 警告，未新增失败）。
+
+## 新任务：上下文补充后二次渲染修复（2026-02-28）
+- [x] 修复“普通多行笔记被挤成一行”显示问题（单换行可见化）
+- [x] 修复“列表项后紧跟 fenced code 无空行时”解析不稳定问题
+- [x] 补充回归测试覆盖上述两类真实样例
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（上下文补充后二次渲染修复）
+- `src/features/editor/markdownCodec.ts`：
+  - `marked.setOptions` 中将 `breaks` 调整为 `true`，保留笔记型输入的单换行显示；
+  - 新增列表项识别与最近非空行查找；
+  - 在围栏代码分支新增兼容逻辑：当检测到“列表行后紧跟顶层 fence 且无空行”时，自动插入空行分隔，避免退化为行内代码渲染。
+- `src/features/editor/markdownCodec.test.ts`：
+  - 新增“列表后无空行 fenced code”回归用例；
+  - 新增“单换行笔记行显示为 `<br>`”回归用例。
+- 验证结果：
+  - `pnpm test`：通过（16 files / 112 tests passed）；
+  - `pnpm build`：通过（仍存在既有大 chunk 警告，未新增失败）。

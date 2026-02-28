@@ -12,7 +12,8 @@ import {
 marked.setOptions({
   async: false,
   gfm: true,
-  breaks: false
+  // Preserve single-line breaks from note-style markdown input.
+  breaks: true
 });
 
 const supportedCalloutTypes = [
@@ -404,6 +405,46 @@ function isFenceDelimiter(line: string): boolean {
   return /^\s*(```|~~~)/u.test(line);
 }
 
+function isMarkdownListItemLine(line: string): boolean {
+  return /^\s{0,3}(?:[-+*]|\d+[.)])\s+\S/u.test(line);
+}
+
+function getLastNonEmptyOutputLine(output: string[]): string | null {
+  for (let index = output.length - 1; index >= 0; index -= 1) {
+    if (output[index].trim() !== "") {
+      return output[index];
+    }
+  }
+  return null;
+}
+
+// Normalize non-standard leading Unicode whitespace so Markdown block syntax
+// (lists/fences/blockquote/callout) remains parseable in copied content.
+const LEADING_UNICODE_SPACE_PATTERN = /^[\t \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]+/u;
+
+function normalizeLeadingWhitespace(line: string): string {
+  const leadingMatched = line.match(LEADING_UNICODE_SPACE_PATTERN);
+  if (!leadingMatched) {
+    return line;
+  }
+
+  const leading = leadingMatched[0];
+  let hasNonStandardWhitespace = false;
+  const normalizedLeading = Array.from(leading, (character) => {
+    if (character === " " || character === "\t") {
+      return character;
+    }
+    hasNonStandardWhitespace = true;
+    return " ";
+  }).join("");
+
+  if (!hasNonStandardWhitespace) {
+    return line;
+  }
+
+  return normalizedLeading + line.slice(leading.length);
+}
+
 function preprocessMarkdownCore(markdown: string): string {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const output: string[] = [];
@@ -441,7 +482,9 @@ function preprocessMarkdownCore(markdown: string): string {
     pendingBlockquote = [];
   };
 
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    const line = normalizeLeadingWhitespace(rawLine);
+
     if (pendingMermaid) {
       if (line.trim() === pendingMermaid.delimiter) {
         output.push(toMermaidTag(pendingMermaid.lines.join("\n").trimEnd()));
@@ -495,6 +538,21 @@ function preprocessMarkdownCore(markdown: string): string {
         output.push(...pendingBlockMath);
         pendingBlockMath = null;
       }
+
+      // Be tolerant with "- item" followed immediately by fenced code.
+      // Without an empty separator line, some inputs degrade into inline code rendering.
+      const leadingWhitespace = line.match(/^[ \t]*/u)?.[0] ?? "";
+      if (leadingWhitespace.length === 0) {
+        const lastNonEmptyOutputLine = getLastNonEmptyOutputLine(output);
+        if (
+          lastNonEmptyOutputLine !== null &&
+          isMarkdownListItemLine(lastNonEmptyOutputLine) &&
+          output[output.length - 1] !== ""
+        ) {
+          output.push("");
+        }
+      }
+
       inFence = !inFence;
       output.push(line);
       continue;

@@ -82,6 +82,75 @@ describe("markdownCodec", () => {
     expect(html).not.toContain("<pre><code>");
   });
 
+  it("parses fenced code after list when fence line starts with NBSP", () => {
+    const nbsp = "\u00A0";
+    const markdown = [
+      "- ask ai to write an agent",
+      "",
+      `${nbsp}${nbsp}${nbsp}\`\`\`python`,
+      `${nbsp}${nbsp}${nbsp}def generate_ai_insight() -> str:`,
+      `${nbsp}${nbsp}${nbsp}    return "ok"`,
+      `${nbsp}${nbsp}${nbsp}\`\`\``,
+      "",
+      "deepseek was used early"
+    ].join("\n");
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<ul>");
+    expect(html).toContain("ask ai to write an agent");
+    expect(html).toContain('<pre><code class="language-python">');
+    expect(html).toContain("def generate_ai_insight() -&gt; str:");
+    expect(html).toContain("return &quot;ok&quot;");
+    expect(html).toContain("<p>deepseek was used early</p>");
+    expect(html).not.toContain("<li>ask ai to write an agent <code>python");
+  });
+
+  it("parses fenced code when fence line starts with ideographic spaces", () => {
+    const ideographicSpace = "\u3000";
+    const markdown = [
+      `${ideographicSpace}${ideographicSpace}\`\`\`python`,
+      "print('ok')",
+      `${ideographicSpace}${ideographicSpace}\`\`\``
+    ].join("\n");
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain('<pre><code class="language-python">');
+    expect(html).toContain("print(&#39;ok&#39;)");
+  });
+
+  it("renders fenced code after list item without requiring an empty separator line", () => {
+    const markdown = [
+      "- 让AI帮我写AI Agent",
+      "```python",
+      "def generate_ai_insight(df, analysis_result):",
+      "    return 'ok'",
+      "```",
+      "原来那个时候我就用上了DeepSeek。"
+    ].join("\n");
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<li>让AI帮我写AI Agent</li>");
+    expect(html).toContain('<pre><code class="language-python">');
+    expect(html).toContain("def generate_ai_insight(df, analysis_result):");
+    expect(html).toContain("<p>原来那个时候我就用上了DeepSeek。</p>");
+    expect(html).not.toContain("<li>让AI帮我写AI Agent <code>python");
+  });
+
+  it("preserves single-line breaks for note-style plain lines", () => {
+    const markdown = [
+      "### 1. 写总结",
+      "",
+      " 记录工作日志",
+      " 编辑总结格式",
+      " 和AI的提示词：附件是我的工作内容，请按以下总结格式帮我撰写年度/月度/周工作总结"
+    ].join("\n");
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<h3>1. 写总结</h3>");
+    expect(html).toContain("记录工作日志<br>");
+    expect(html).toContain("编辑总结格式<br>");
+  });
+
   it("keeps mermaid fenced block parsing stable when followed by blockquote and table", () => {
     const markdown = [
       "## ️ 全局知识地图回顾",
