@@ -3,6 +3,7 @@ export type UiTheme = "modern" | "classic";
 export type AppLocale = "zh" | "en";
 export type MarkdownTheme = "default" | "notionish" | "github" | "academic";
 export type SaveState = "saved" | "saving" | "unsaved" | "error";
+export type EditorMode = "editable" | "readonly";
 
 export type PendingAction =
   | { kind: "close" }

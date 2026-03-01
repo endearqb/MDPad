@@ -380,6 +380,24 @@ body {
   stroke-width: 1.7;
 }
 
+@keyframes titlebar-readonly-icon-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  25%,
+  75% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.titlebar-icon-readonly-blink {
+  animation: titlebar-readonly-icon-blink 310ms ease-in-out 2;
+}
+
 .titlebar-center {
   position: absolute;
   left: 50%;
@@ -699,25 +717,25 @@ body {
 }
 
 .editor-prompt-dialog {
-  width: min(560px, calc(100% - 12px));
+  width: min(620px, calc(100% - 12px));
   border: 1px solid color-mix(in srgb, var(--editor-border) 88%, transparent);
   border-radius: 12px;
   background: color-mix(in srgb, var(--editor-bg) 95%, var(--hover-soft) 5%);
   box-shadow: var(--shadow-surface);
   display: grid;
   gap: 8px;
-  padding: 10px;
+  padding: 12px;
 }
 
 .editor-prompt-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .editor-prompt-input {
   width: 100%;
-  min-width: 220px;
+  min-width: 240px;
   min-height: 94px;
   max-height: 52vh;
   resize: both;
@@ -743,16 +761,16 @@ body {
 }
 
 .editor-prompt-btn {
-  min-width: 64px;
+  min-width: 72px;
   border: 1px solid color-mix(in srgb, var(--editor-border) 85%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--hover-soft) 55%, transparent);
   color: var(--text-primary);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
-  padding: 6px 8px;
+  padding: 7px 10px;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
@@ -788,20 +806,20 @@ body {
 }
 
 .app-modal-card {
-  width: min(420px, calc(100vw - 24px));
+  width: min(460px, calc(100vw - 24px));
   border: 1px solid color-mix(in srgb, var(--editor-border) 86%, transparent);
   border-radius: 11px;
   background: color-mix(in srgb, var(--editor-bg) 96%, var(--hover-soft) 4%);
   box-shadow: var(--shadow-surface);
   backdrop-filter: blur(14px);
   display: grid;
-  gap: 8px;
-  padding: 9px 10px;
+  gap: 10px;
+  padding: 11px 12px;
   margin-top: 0;
 }
 
 .app-modal-card.is-compact {
-  width: min(390px, calc(100vw - 24px));
+  width: min(425px, calc(100vw - 24px));
 }
 
 .app-modal-header {
@@ -811,7 +829,7 @@ body {
 
 .app-modal-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.2;
   font-weight: 700;
   color: var(--text-primary);
@@ -819,7 +837,7 @@ body {
 
 .app-modal-subtitle {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.35;
   color: var(--text-secondary);
 }
@@ -836,10 +854,10 @@ body {
   background: color-mix(in srgb, var(--hover-soft) 68%, transparent);
   color: var(--text-primary);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
-  padding: 6px 10px;
+  padding: 7px 12px;
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
@@ -882,23 +900,23 @@ body {
   background: var(--editor-bg);
   backdrop-filter: none;
   box-shadow: var(--shadow-surface);
-  padding: 8px;
-  gap: 7px;
+  padding: 10px;
+  gap: 8px;
 }
 
 .app-root.ui-classic .app-modal-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .app-root.ui-classic .app-modal-subtitle {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .app-root.ui-classic .app-modal-btn {
   border-radius: 4px;
-  font-size: 10px;
-  padding: 5px 8px;
+  font-size: 11px;
+  padding: 6px 10px;
 }
 
 .mdpad-editor {
@@ -2656,6 +2674,20 @@ body {
   color: var(--accent);
 }
 
+.bubble-menu-shell.is-readonly .bubble-btn[data-bubble-action]:not([data-bubble-action="style_menu_toggle"]),
+.bubble-menu-shell.is-readonly .bubble-style-item {
+  opacity: 0.48;
+  color: var(--slash-menu-text-secondary);
+  cursor: not-allowed;
+}
+
+.bubble-menu-shell.is-readonly .bubble-btn[data-bubble-action]:not([data-bubble-action="style_menu_toggle"]):hover,
+.bubble-menu-shell.is-readonly .bubble-style-item:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--slash-menu-text-secondary);
+}
+
 .bubble-icon {
   width: 15px;
   height: 15px;
@@ -2879,6 +2911,19 @@ body {
 
 .statusbar-theme-switch:active {
   opacity: 0.78;
+}
+
+.statusbar-help-btn {
+  width: 16px;
+  height: 16px;
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 40%, transparent);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .statusbar-theme-group {

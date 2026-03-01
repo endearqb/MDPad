@@ -11,8 +11,9 @@ import {
 import { BaseProvider, DarkTheme, LightTheme } from "baseui";
 import { PLACEMENT, ToasterContainer, toaster } from "baseui/toast";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { PhysicalSize } from "@tauri-apps/api/dpi";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { resolveResource } from "@tauri-apps/api/path";
 import {
   createEmptyDocState,
   docReducer
@@ -30,6 +31,7 @@ import TopBar from "./features/window/TopBar";
 import StatusBar from "./features/window/StatusBar";
 import type {
   AppLocale,
+  EditorMode,
   MarkdownTheme,
   OpenFilePayload,
   PendingAction,
@@ -59,9 +61,19 @@ import {
   writeUiThemePreference
 } from "./shared/utils/themePreferences";
 import {
+  readEditorModePreference,
+  writeEditorModePreference
+} from "./shared/utils/editorModePreferences";
+import {
   logOpenPerfElapsed,
   nowMs
 } from "./shared/utils/openPerformance";
+import {
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  computePseudoMaximizeBounds
+} from "./shared/utils/windowPreset";
+import { getSampleDocResourcePath } from "./shared/utils/sampleDocs";
 
 const loadMarkdownEditor = () => import("./features/editor/MarkdownEditor");
 const MarkdownEditor = lazy(loadMarkdownEditor);
@@ -92,6 +104,10 @@ function getInitialMarkdownTheme(): MarkdownTheme {
 
 function getInitialLocale(): AppLocale {
   return readAppLocalePreference(getSystemDefaultLocale());
+}
+
+function getInitialEditorMode(windowLabel: string): EditorMode {
+  return readEditorModePreference(windowLabel, "editable");
 }
 
 function formatError(error: unknown, fallback: string): string {
@@ -128,8 +144,6 @@ function extractDropPaths(event: unknown): string[] {
 }
 
 const WINDOW_SIZE_STORAGE_KEY = "mdpad.window-size.v1";
-const MIN_WINDOW_WIDTH = 420;
-const MIN_WINDOW_HEIGHT = 320;
 const TOAST_AUTO_HIDE_MS = 3200;
 const MARKDOWN_THEME_ORDER: MarkdownTheme[] = [
   "default",
@@ -181,10 +195,20 @@ function writePersistedWindowSize(size: PersistedWindowSize): void {
 }
 
 export default function App() {
+  const windowLabel = useMemo(() => {
+    try {
+      return getCurrentWindow().label;
+    } catch {
+      return "main";
+    }
+  }, []);
   const [doc, dispatch] = useReducer(docReducer, undefined, createEmptyDocState);
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(getInitialUiTheme);
   const [locale, setLocale] = useState<AppLocale>(getInitialLocale);
+  const [editorMode, setEditorMode] = useState<EditorMode>(() =>
+    getInitialEditorMode(windowLabel)
+  );
   const [markdownTheme, setMarkdownTheme] = useState<MarkdownTheme>(
     getInitialMarkdownTheme
   );
@@ -194,6 +218,7 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [charCount, setCharCount] = useState(0);
+  const [readOnlyIconBlinkTick, setReadOnlyIconBlinkTick] = useState(0);
 
   const docRef = useRef(doc);
   const allowCloseRef = useRef(false);
@@ -244,6 +269,10 @@ export default function App() {
   }, [locale]);
 
   useEffect(() => {
+    writeEditorModePreference(windowLabel, editorMode);
+  }, [editorMode, windowLabel]);
+
+  useEffect(() => {
     const preloadStart = nowMs();
     void loadMarkdownEditor()
       .then(() => {
@@ -290,6 +319,25 @@ export default function App() {
       if (persisted) {
         try {
           await appWindow.setSize(new PhysicalSize(persisted.width, persisted.height));
+        } catch {
+          // Ignore and keep default window size from config.
+        }
+      } else {
+        try {
+          const monitor = await currentMonitor();
+          if (monitor) {
+            const targetBounds = computePseudoMaximizeBounds(monitor.workArea);
+            await appWindow.setSize(
+              new PhysicalSize(targetBounds.width, targetBounds.height)
+            );
+            await appWindow.setPosition(
+              new PhysicalPosition(targetBounds.x, targetBounds.y)
+            );
+            writePersistedWindowSize({
+              width: targetBounds.width,
+              height: targetBounds.height
+            });
+          }
         } catch {
           // Ignore and keep default window size from config.
         }
@@ -466,6 +514,14 @@ export default function App() {
     });
   }, [openPathInNewWindow, runBusyTask]);
 
+  const handleOpenSamples = useCallback(async () => {
+    await runBusyTask(async () => {
+      const sampleResourcePath = getSampleDocResourcePath(locale);
+      const samplePath = await resolveResource(sampleResourcePath);
+      await openPathInNewWindow(samplePath);
+    });
+  }, [locale, openPathInNewWindow, runBusyTask]);
+
   const handleNewWindow = useCallback(async () => {
     await runBusyTask(async () => {
       await createDocumentWindow(null);
@@ -595,6 +651,17 @@ export default function App() {
   const handleSelectMarkdownTheme = useCallback((theme: MarkdownTheme) => {
     setMarkdownTheme(theme);
   }, []);
+
+  const handleToggleEditorMode = useCallback(() => {
+    setEditorMode((current) => (current === "editable" ? "readonly" : "editable"));
+  }, []);
+
+  const handleReadOnlyInteraction = useCallback(() => {
+    if (editorMode !== "readonly") {
+      return;
+    }
+    setReadOnlyIconBlinkTick((current) => current + 1);
+  }, [editorMode]);
 
   useEffect(() => {
     const handleShortcuts = (event: KeyboardEvent) => {
@@ -762,11 +829,14 @@ export default function App() {
             fileBaseName={displayFileBaseName}
             isBusy={isBusy}
             isDirty={doc.isDirty}
+            editorMode={editorMode}
+            readOnlyIconBlinkTick={readOnlyIconBlinkTick}
             onNewWindow={handleNewWindow}
             onOpen={handleOpenFileDialog}
             onRename={handleRename}
             onSave={handleSave}
             onSaveAs={handleSaveAs}
+            onToggleEditorMode={handleToggleEditorMode}
             onToggleTheme={() =>
               setThemeMode((current) => (current === "light" ? "dark" : "light"))
             }
@@ -781,6 +851,8 @@ export default function App() {
                   copy={copy.editor}
                   documentPath={doc.currentPath}
                   extensionCopy={copy.extensions}
+                  isEditable={editorMode === "editable"}
+                  onReadOnlyInteraction={handleReadOnlyInteraction}
                   attachmentModalCopy={copy.attachmentModal}
                   markdown={doc.content}
                   openPerfStartMs={appBootStartRef.current}
@@ -799,6 +871,7 @@ export default function App() {
             charCount={charCount}
             locale={locale}
             markdownTheme={markdownTheme}
+            onOpenSamples={handleOpenSamples}
             onToggleLocale={handleToggleLocale}
             onToggleMarkdownTheme={handleToggleMarkdownTheme}
             onSelectMarkdownTheme={handleSelectMarkdownTheme}

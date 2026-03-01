@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 export async function getInitialFile(): Promise<string | null> {
   return invoke<string | null>("get_initial_file");
@@ -67,4 +68,8 @@ export async function saveAttachmentBytesToLibrary(
     fileName,
     bytes
   });
+}
+
+export async function openExternalUrl(url: string): Promise<void> {
+  await openUrl(url);
 }

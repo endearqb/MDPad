@@ -66,4 +66,17 @@ describe("bubbleMenuSelection", () => {
       })
     ).toBe(true);
   });
+
+  it("still shows bubble menu in read-only mode", () => {
+    expect(
+      shouldDisplayBubbleMenu({
+        hasEditorFocus: true,
+        isCellSelection: false,
+        isEditable: false,
+        isEmptyTextBlock: false,
+        isMediaSelection: false,
+        selectionEmpty: false
+      })
+    ).toBe(true);
+  });
 });

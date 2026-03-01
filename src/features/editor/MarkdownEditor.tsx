@@ -5,8 +5,7 @@ import {
   useRef,
   useState,
   type FormEvent as ReactFormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent
+  type KeyboardEvent as ReactKeyboardEvent
 } from "react";
 import { isTextSelection } from "@tiptap/core";
 import Link from "@tiptap/extension-link";
@@ -91,6 +90,16 @@ import {
   tryConvertMarkdownTableAtSelection,
   tryConvertMathFenceAtSelection
 } from "./extensions/markdownShortcuts";
+import {
+  classifyEditorLink,
+  resolveHashToTocItem,
+  resolveMarkdownLinkPath
+} from "./linkNavigation";
+import {
+  isDuplicateEditorLinkClick,
+  shouldRouteEditorLinkClick,
+  type LinkClickDedupState
+} from "./linkClickGuard";
 import { HighlightWithFlexibleSyntax } from "./extensions/highlightExtensions";
 import {
   AudioBlock,
@@ -133,8 +142,11 @@ import {
 import {
   runBubbleCommandAction
 } from "./bubbleCommandRunner";
+import { isUserInitiatedDocChange } from "./changeTracking";
 import {
+  createDocumentWindow,
   getAttachmentLibraryDir,
+  openExternalUrl,
   pickAttachmentLibraryDir,
   saveAttachmentBytesToLibrary,
   setAttachmentLibraryDir
@@ -152,10 +164,12 @@ interface MarkdownEditorProps {
   attachmentModalCopy: AttachmentModalCopy;
   markdown: string;
   documentPath: string | null;
+  isEditable: boolean;
   openPerfStartMs?: number;
   onMarkdownChange: (markdown: string) => void;
   onRegisterFlushMarkdown?: (flush: (() => string | null) | null) => void;
   onEditorError?: (message: string) => void;
+  onReadOnlyInteraction?: () => void;
   onStatsChange?: (stats: EditorStats) => void;
 }
 
@@ -283,9 +297,70 @@ const BUBBLE_INTERACTION_GUARD_MS = 160;
 const BUBBLE_SELECTION_SNAPSHOT_TTL_MS = 1200;
 const MARKDOWN_SYNC_DEBOUNCE_MS = 180;
 const TOC_ANCHOR_TYPES = ["heading"] as const;
+const TOC_SCROLL_OFFSET_PX = 12;
+const READ_ONLY_BLOCKED_BUBBLE_ACTION_IDS = new Set<string>([
+  "style_paragraph",
+  "style_h1",
+  "style_h2",
+  "style_h3",
+  "style_h4",
+  "bold",
+  "italic",
+  "strikethrough",
+  "superscript",
+  "subscript",
+  "blockquote",
+  "inline_code",
+  "bullet_list",
+  "ordered_list",
+  "task_list",
+  "image",
+  "video",
+  "audio",
+  "inline_math",
+  "block_math",
+  "link"
+]);
 
 function isElementTarget(target: EventTarget | null): target is Element {
   return typeof Element !== "undefined" && target instanceof Element;
+}
+
+function isNodeTarget(target: EventTarget | null): target is Node {
+  return typeof Node !== "undefined" && target instanceof Node;
+}
+
+function isAnchorElement(element: Element | null): element is HTMLAnchorElement {
+  return (
+    typeof HTMLAnchorElement !== "undefined" &&
+    element instanceof HTMLAnchorElement
+  );
+}
+
+function findAnchorElement(target: EventTarget | null): HTMLAnchorElement | null {
+  if (isElementTarget(target) && isAnchorElement(target) && target.hasAttribute("href")) {
+    return target;
+  }
+
+  if (isElementTarget(target)) {
+    const anchor = target.closest("a[href]");
+    return isAnchorElement(anchor) ? anchor : null;
+  }
+
+  if (isNodeTarget(target)) {
+    const parentElement = target.parentElement;
+    if (!parentElement) {
+      return null;
+    }
+    const anchor = parentElement.closest("a[href]");
+    return isAnchorElement(anchor) ? anchor : null;
+  }
+
+  return null;
+}
+
+function escapeSelectorValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function getBubbleActionIdFromTarget(target: EventTarget | null): string | null {
@@ -294,6 +369,14 @@ function getBubbleActionIdFromTarget(target: EventTarget | null): string | null 
   }
   const actionElement = target.closest<HTMLElement>("[data-bubble-action]");
   return actionElement?.dataset.bubbleAction ?? null;
+}
+
+function isReadOnlyBlockedBubbleAction(actionId: string): boolean {
+  return READ_ONLY_BLOCKED_BUBBLE_ACTION_IDS.has(actionId);
+}
+
+function isModifierOnlyKey(key: string): boolean {
+  return key === "Shift" || key === "Control" || key === "Alt" || key === "Meta";
 }
 
 function pad2(value: number): string {
@@ -426,10 +509,12 @@ export default function MarkdownEditor({
   attachmentModalCopy,
   markdown,
   documentPath,
+  isEditable,
   openPerfStartMs,
   onMarkdownChange,
   onRegisterFlushMarkdown,
   onEditorError,
+  onReadOnlyInteraction,
   onStatsChange
 }: MarkdownEditorProps) {
   const skipNextUpdate = useRef(false);
@@ -441,9 +526,11 @@ export default function MarkdownEditor({
   const lastSyncedMarkdownRef = useRef<string>(normalizeMarkdown(markdown));
   const documentPathRef = useRef<string | null>(documentPath);
   const onEditorErrorRef = useRef(onEditorError);
+  const onReadOnlyInteractionRef = useRef(onReadOnlyInteraction);
   const editorRef = useRef<Editor | null>(null);
   const markdownSyncTimerRef = useRef<number | null>(null);
   const hasLocalDocChangesRef = useRef(false);
+  const lastHandledLinkClickRef = useRef<LinkClickDedupState | null>(null);
   const flushSerializeRef = useRef<((reason: Exclude<MarkdownSyncReason, "debounced">) => string | null) | null>(
     null
   );
@@ -491,6 +578,10 @@ export default function MarkdownEditor({
   }, [onEditorError]);
 
   useEffect(() => {
+    onReadOnlyInteractionRef.current = onReadOnlyInteraction;
+  }, [onReadOnlyInteraction]);
+
+  useEffect(() => {
     return () => {
       if (bubbleInteractionResetTimerRef.current !== null) {
         window.clearTimeout(bubbleInteractionResetTimerRef.current);
@@ -516,6 +607,14 @@ export default function MarkdownEditor({
       return;
     }
     console.error(message);
+  }, []);
+
+  const reportReadOnlyInteraction = useCallback(() => {
+    const activeEditor = editorRef.current;
+    if (!activeEditor || activeEditor.isEditable) {
+      return;
+    }
+    onReadOnlyInteractionRef.current?.();
   }, []);
 
   const resolveEditorPrompt = useCallback((value: string | null) => {
@@ -628,6 +727,74 @@ export default function MarkdownEditor({
       })();
     },
     [copy.prompts.insert, requestMathInput]
+  );
+
+  const insertMediaFromPrompt = useCallback(
+    (activeEditor: Editor, kind: "image" | "video" | "audio") => {
+      void (async () => {
+        const src = await requestSourceInput(kind);
+        if (!src) {
+          return;
+        }
+
+        if (kind === "image") {
+          const alt = (await requestEditorPrompt({
+            label: copy.prompts.imageAltLabel,
+            placeholder: copy.prompts.imageAltPlaceholder,
+            confirmLabel: copy.prompts.insert,
+            initialValue: ""
+          })) ?? "";
+          activeEditor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "resizableImage",
+              attrs: {
+                src,
+                alt,
+                width: mediaDefaults.defaultWidth
+              }
+            })
+            .run();
+          return;
+        }
+
+        if (kind === "video") {
+          activeEditor
+            .chain()
+            .focus()
+            .insertContent({
+              type: "videoBlock",
+              attrs: {
+                src,
+                controls: true,
+                width: mediaDefaults.defaultWidth
+              }
+            })
+            .run();
+          return;
+        }
+
+        activeEditor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "audioBlock",
+            attrs: {
+              src,
+              controls: true
+            }
+          })
+          .run();
+      })();
+    },
+    [
+      copy.prompts.imageAltLabel,
+      copy.prompts.imageAltPlaceholder,
+      copy.prompts.insert,
+      requestEditorPrompt,
+      requestSourceInput
+    ]
   );
 
   const requestAttachmentLibrarySetup = useCallback((): Promise<boolean> => {
@@ -884,30 +1051,7 @@ export default function MarkdownEditor({
         icon: ImageIcon,
         keywords: ["image", "img"],
         run: (editor) => {
-          void (async () => {
-            const src = await requestSourceInput("image");
-            if (!src) {
-              return;
-            }
-            const alt = (await requestEditorPrompt({
-              label: copy.prompts.imageAltLabel,
-              placeholder: copy.prompts.imageAltPlaceholder,
-              confirmLabel: copy.prompts.insert,
-              initialValue: ""
-            })) ?? "";
-            editor
-              .chain()
-              .focus()
-              .insertContent({
-                type: "resizableImage",
-                attrs: {
-                  src,
-                  alt,
-                  width: mediaDefaults.defaultWidth
-                }
-              })
-              .run();
-          })();
+          insertMediaFromPrompt(editor, "image");
         }
       },
       {
@@ -917,24 +1061,7 @@ export default function MarkdownEditor({
         icon: Video,
         keywords: ["video"],
         run: (editor) => {
-          void (async () => {
-            const src = await requestSourceInput("video");
-            if (!src) {
-              return;
-            }
-            editor
-              .chain()
-              .focus()
-              .insertContent({
-                type: "videoBlock",
-                attrs: {
-                  src,
-                  controls: true,
-                  width: mediaDefaults.defaultWidth
-                }
-              })
-              .run();
-          })();
+          insertMediaFromPrompt(editor, "video");
         }
       },
       {
@@ -944,23 +1071,7 @@ export default function MarkdownEditor({
         icon: AudioLines,
         keywords: ["audio", "voice"],
         run: (editor) => {
-          void (async () => {
-            const src = await requestSourceInput("audio");
-            if (!src) {
-              return;
-            }
-            editor
-              .chain()
-              .focus()
-              .insertContent({
-                type: "audioBlock",
-                attrs: {
-                  src,
-                  controls: true
-                }
-              })
-              .run();
-          })();
+          insertMediaFromPrompt(editor, "audio");
         }
       },
       {
@@ -980,7 +1091,7 @@ export default function MarkdownEditor({
         run: (editor) => insertMathFromPrompt(editor, "block")
       }
     ],
-    [copy.prompts.imageAltLabel, copy.prompts.imageAltPlaceholder, copy.prompts.insert, copy.slash.commands, insertMathFromPrompt, requestEditorPrompt, requestSourceInput]
+    [copy.slash.commands, insertMathFromPrompt, insertMediaFromPrompt]
   );
 
   const slashCommandController = useMemo(
@@ -990,6 +1101,117 @@ export default function MarkdownEditor({
         copy: copy.slash
       }),
     [copy.slash, slashItems]
+  );
+
+  const jumpToTocItem = useCallback((item: TableOfContentDataItem): boolean => {
+    const activeEditor = editorRef.current;
+    if (!activeEditor || activeEditor.isDestroyed) {
+      return false;
+    }
+
+    const textSelectionPos = Math.min(
+      Math.max(item.pos + 1, 1),
+      activeEditor.state.doc.content.size
+    );
+    activeEditor.chain().focus().setTextSelection(textSelectionPos).run();
+
+    const scrollContainer = editorSurfaceRef.current;
+    if (!scrollContainer) {
+      return true;
+    }
+
+    const selector = `[data-toc-id="${escapeSelectorValue(item.id)}"]`;
+    const headingElement = scrollContainer.querySelector<HTMLElement>(selector);
+    if (!headingElement) {
+      return true;
+    }
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const headingRect = headingElement.getBoundingClientRect();
+    const nextScrollTop =
+      scrollContainer.scrollTop + (headingRect.top - containerRect.top) - TOC_SCROLL_OFFSET_PX;
+
+    scrollContainer.scrollTo({
+      top: Math.max(0, nextScrollTop),
+      behavior: "smooth"
+    });
+    return true;
+  }, []);
+
+  const handleEditorLinkClick = useCallback(
+    (event: MouseEvent): boolean => {
+      if (!shouldRouteEditorLinkClick(event)) {
+        return false;
+      }
+
+      const anchor = findAnchorElement(event.target);
+      if (!anchor) {
+        return false;
+      }
+
+      const rawHref = anchor.getAttribute("href");
+      if (!rawHref) {
+        return false;
+      }
+
+      const resolvedLink = classifyEditorLink(rawHref);
+      if (resolvedLink.kind === "unsupported") {
+        return false;
+      }
+
+      const dedupKey = `${resolvedLink.kind}:${resolvedLink.href}`;
+      const now = Date.now();
+      if (
+        isDuplicateEditorLinkClick(lastHandledLinkClickRef.current, dedupKey, now)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        return true;
+      }
+      lastHandledLinkClickRef.current = {
+        key: dedupKey,
+        timestamp: now
+      };
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (resolvedLink.kind === "hash") {
+        const targetItem = resolveHashToTocItem(rawHref, tableOfContentsItems);
+        if (!targetItem) {
+          reportEditorError(copy.errors.headingNotFound);
+          return true;
+        }
+        jumpToTocItem(targetItem);
+        return true;
+      }
+
+      if (resolvedLink.kind === "external") {
+        void openExternalUrl(resolvedLink.href).catch(() => {
+          reportEditorError(copy.errors.externalLinkOpenFailed);
+        });
+        return true;
+      }
+
+      const resolvedPath = resolveMarkdownLinkPath(
+        resolvedLink.href,
+        documentPathRef.current
+      );
+      if (!resolvedPath) {
+        if (!documentPathRef.current) {
+          reportEditorError(copy.errors.relativeLinkRequiresSavedDocument);
+        } else {
+          reportEditorError(copy.errors.invalidMarkdownLinkTarget);
+        }
+        return true;
+      }
+
+      void createDocumentWindow(resolvedPath).catch(() => {
+        reportEditorError(copy.errors.openMarkdownLinkFailed);
+      });
+      return true;
+    },
+    [copy.errors, jumpToTocItem, reportEditorError, tableOfContentsItems]
   );
 
   const editor = useEditor({
@@ -1056,16 +1278,29 @@ export default function MarkdownEditor({
       })
     ],
     content: initialContentHtmlRef.current,
+    editable: isEditable,
     immediatelyRender: false,
     editorProps: {
       attributes: {
         class:
           "mdpad-editor prose max-w-none focus:outline-none selection:bg-blue-200 selection:text-blue-900 dark:selection:bg-blue-500/30 dark:selection:text-blue-200"
       },
+      handleDOMEvents: {
+        click: (_view, event) => {
+          if (!(event instanceof MouseEvent)) {
+            return false;
+          }
+          return handleEditorLinkClick(event);
+        }
+      },
       handlePaste: (_view, event) => {
         const activeEditor = editorRef.current;
         if (!activeEditor) {
           return false;
+        }
+        if (!activeEditor.isEditable) {
+          reportEditorError(copy.errors.readOnlyBlocked);
+          return true;
         }
         return clipboardPipeline.handle(event, activeEditor);
       }
@@ -1096,6 +1331,9 @@ export default function MarkdownEditor({
       if (!transaction.docChanged) {
         return;
       }
+      if (!isUserInitiatedDocChange(transaction, activeEditor.isFocused)) {
+        return;
+      }
       hasLocalDocChangesRef.current = true;
       scheduleMarkdownSync(activeEditor);
     }
@@ -1110,6 +1348,21 @@ export default function MarkdownEditor({
       editorRef.current = null;
     };
   }, [editor]);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    if (editor.isEditable !== isEditable) {
+      editor.setEditable(isEditable);
+    }
+
+    if (!isEditable) {
+      setIsStyleMenuOpen(false);
+      setIsStyleMenuDropUp(false);
+    }
+  }, [editor, isEditable]);
 
   useEffect(() => {
     if (!editor) {
@@ -1556,6 +1809,15 @@ export default function MarkdownEditor({
           return runBubbleActionWithSelectionRetry(() =>
             editor.chain().focus().toggleTaskList().run()
           );
+        case "image":
+          insertMediaFromPrompt(editor, "image");
+          return true;
+        case "video":
+          insertMediaFromPrompt(editor, "video");
+          return true;
+        case "audio":
+          insertMediaFromPrompt(editor, "audio");
+          return true;
         case "inline_math":
           insertMathFromPrompt(editor, "inline");
           return true;
@@ -1568,13 +1830,28 @@ export default function MarkdownEditor({
           return false;
       }
     },
-    [applyTextStyle, editor, insertMathFromPrompt, runBubbleActionWithSelectionRetry, setLink]
+    [
+      applyTextStyle,
+      editor,
+      insertMathFromPrompt,
+      insertMediaFromPrompt,
+      runBubbleActionWithSelectionRetry,
+      setLink
+    ]
   );
 
   const handleBubblePointerDown = useCallback(
     (event: MouseEvent) => {
       const actionId = getBubbleActionIdFromTarget(event.target);
       if (!actionId || !editor) {
+        return;
+      }
+
+      if (!editor.isEditable && isReadOnlyBlockedBubbleAction(actionId)) {
+        event.preventDefault();
+        event.stopPropagation();
+        markBubbleInteraction();
+        reportEditorError(copy.errors.readOnlyBlocked);
         return;
       }
 
@@ -1592,9 +1869,11 @@ export default function MarkdownEditor({
     },
     [
       captureCurrentTextSelection,
+      copy.errors.readOnlyBlocked,
       editor,
       executeBubbleActionById,
       markBubbleInteraction,
+      reportEditorError,
       runBubbleAction
     ]
   );
@@ -1661,6 +1940,27 @@ export default function MarkdownEditor({
         return;
       }
 
+      if (
+        !isNodeTarget(event.target) ||
+        !editorSurfaceRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+
+      if (!editor.isEditable && !isModifierOnlyKey(event.key)) {
+        reportReadOnlyInteraction();
+      }
+
+      const isSlashShortcut =
+        (event.ctrlKey || event.metaKey) &&
+        (event.key === "/" || event.code === "Slash");
+      const isReadOnlyBlockedKey = event.key === "Enter" || isSlashShortcut;
+      if (!editor.isEditable && isReadOnlyBlockedKey) {
+        event.preventDefault();
+        reportEditorError(copy.errors.readOnlyBlocked);
+        return;
+      }
+
       if (event.key === "Enter") {
         if (tryConvertMathFenceAtSelection(editor) || tryConvertMarkdownTableAtSelection(editor)) {
           event.preventDefault();
@@ -1668,13 +1968,23 @@ export default function MarkdownEditor({
         }
       }
 
-      if ((event.ctrlKey || event.metaKey) && (event.key === "/" || event.code === "Slash")) {
+      if (isSlashShortcut) {
         event.preventDefault();
         slashCommandController.requestOpenAtCursor(editor);
       }
     },
-    [editor, slashCommandController]
+    [
+      copy.errors.readOnlyBlocked,
+      editor,
+      reportEditorError,
+      reportReadOnlyInteraction,
+      slashCommandController
+    ]
   );
+
+  const handleEditorSurfaceDoubleClick = useCallback(() => {
+    reportReadOnlyInteraction();
+  }, [reportReadOnlyInteraction]);
 
   const handleEditorPromptCancel = useCallback(() => {
     resolveEditorPrompt(null);
@@ -1731,7 +2041,7 @@ export default function MarkdownEditor({
           }}
         >
           <div
-            className="bubble-menu-shell"
+            className={`bubble-menu-shell ${editor.isEditable ? "" : "is-readonly"}`}
             ref={setBubbleShellNode}
           >
             <div
@@ -1865,12 +2175,37 @@ export default function MarkdownEditor({
             >
               <Link2 className="bubble-icon" />
             </button>
+            <button
+              className="bubble-btn"
+              data-bubble-action="image"
+              title={copy.slash.commands.image}
+              type="button"
+            >
+              <ImageIcon className="bubble-icon" />
+            </button>
+            <button
+              className="bubble-btn"
+              data-bubble-action="video"
+              title={copy.slash.commands.video}
+              type="button"
+            >
+              <Video className="bubble-icon" />
+            </button>
+            <button
+              className="bubble-btn"
+              data-bubble-action="audio"
+              title={copy.slash.commands.audio}
+              type="button"
+            >
+              <AudioLines className="bubble-icon" />
+            </button>
           </div>
         </BubbleMenu>
       )}
 
       <div
         className="editor-surface"
+        onDoubleClickCapture={handleEditorSurfaceDoubleClick}
         ref={editorSurfaceRef}
       >
         <EditorContent editor={editor} />

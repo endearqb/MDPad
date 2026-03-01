@@ -248,3 +248,14 @@
 - 在关闭/保存前做编辑器强制 `flush` 时，不能默认执行 `htmlToMarkdown(editor.getHTML())` 并参与脏判断；否则“未编辑但编解码规范化差异”会触发误报 Unsaved。
 - 需要先有“本地确实发生文档改动”的门禁（如 `transaction.docChanged` 标记或待执行的 debounce 任务）再 flush，避免把只读打开场景误判为脏。
 - 关闭请求中的最终判定应采用“flush 结果优先，fallback 到 `isDirty`”，并确保无本地变更时 flush 直接返回 `null`。
+
+## 2026-03-01 Link Click Routing Guardrails
+- Do not rely on ProseMirror `handleClick` to suppress anchor default behavior. Route links at `editorProps.handleDOMEvents.click` and call `preventDefault()` there.
+- For editor links, use a single dispatch path (`hash` / `markdown_path` / `external`) and stop propagation once a route is matched to avoid mixed default + custom handling.
+- Resolve anchor targets from both `Element` and `Text` event targets. Text-node clicks can otherwise bypass link interception.
+- Add a short duplicate-click guard window for the same link key to prevent double-open regressions from layered handlers.
+
+## 2026-03-01 Modifier Click Policy + First-launch Size Consistency
+- If product policy says modifier clicks must be intercepted, do not hardcode `ctrl/meta/shift/alt` bypass in link guards; keep only left-click + not-prevented checks.
+- Keep first-launch default window sizing consistent with the in-app resize preset logic by sharing one sizing function, instead of duplicating ratio math in multiple places.
+- Apply the 40% x 90% preset only when no persisted window size exists; once persisted, prioritize restoring user-adjusted size.

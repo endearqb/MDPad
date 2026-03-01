@@ -202,3 +202,13 @@ scripts/
 ## 参考项目
 - Novel（编辑器交互参考）：https://github.com/steven-tey/novel
 - Scratch（轻量单文件工作流参考）：https://github.com/erictli/scratch
+
+## 参照矩阵与致谢
+
+| 项目 | 参照定位 | 链接 | 说明 |
+| --- | --- | --- | --- |
+| tiptap-starter-kit | 参照基线 | https://github.com/syfxlin/tiptap-starter-kit | 作为能力与结构设计的参照目标。 |
+| Novel | 灵感来源 | https://github.com/steven-tey/novel | 提供编辑器交互与体验设计灵感。 |
+| Scratch | 灵感与对照 | https://github.com/erictli/scratch | 提供轻量桌面 Markdown 工作流对照。 |
+
+感谢 Novel 和 Scratch 提供灵感和对照。

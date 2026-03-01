@@ -404,6 +404,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(InitialFileState(Mutex::new(initial_file_map)))
         .manage(AttachmentLibraryState(Mutex::new(None)))
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(path) = extract_markdown_path(&argv) {
                 let app_handle = app.clone();

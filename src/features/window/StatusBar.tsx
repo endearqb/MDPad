@@ -20,6 +20,7 @@ interface StatusBarProps {
   uiTheme: UiTheme;
   onToggleUiTheme: () => void;
   onToggleLocale: () => void;
+  onOpenSamples: () => void;
 }
 
 const markdownThemeOptions: MarkdownTheme[] = [
@@ -76,7 +77,8 @@ export default function StatusBar({
   onSelectMarkdownTheme,
   uiTheme,
   onToggleUiTheme,
-  onToggleLocale
+  onToggleLocale,
+  onOpenSamples
 }: StatusBarProps) {
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
@@ -120,6 +122,15 @@ export default function StatusBar({
           <SaveStateIcon saveState={saveState} />
           <span>{copy.saveState[saveState]}</span>
         </span>
+        <button
+          aria-label={copy.openSamplesAria}
+          className="statusbar-theme-switch statusbar-help-btn"
+          onClick={onOpenSamples}
+          title={copy.openSamplesTitle}
+          type="button"
+        >
+          ?
+        </button>
       </section>
       <section className="statusbar-right">
         <button

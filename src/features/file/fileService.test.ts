@@ -3,13 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { invokeMock } = vi.hoisted(() => ({
   invokeMock: vi.fn()
 }));
+const { openUrlMock } = vi.hoisted(() => ({
+  openUrlMock: vi.fn()
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock
 }));
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: openUrlMock
+}));
 
 import {
   getAttachmentLibraryDir,
+  openExternalUrl,
   pickAttachmentLibraryDir,
   renameFile,
   saveAttachmentBytesToLibrary,
@@ -20,6 +27,7 @@ import {
 describe("fileService", () => {
   beforeEach(() => {
     invokeMock.mockReset();
+    openUrlMock.mockReset();
   });
 
   it("passes camelCase defaultName to save_file_as_dialog", async () => {
@@ -83,6 +91,14 @@ describe("fileService", () => {
       bytes: [1, 2, 3]
     });
     expect(path).toBe("D:\\MDPadAssets\\img-20260225.png");
+  });
+
+  it("opens external url through tauri opener plugin", async () => {
+    openUrlMock.mockResolvedValue(undefined);
+
+    await openExternalUrl("https://example.com/docs");
+
+    expect(openUrlMock).toHaveBeenCalledWith("https://example.com/docs");
   });
 
 });

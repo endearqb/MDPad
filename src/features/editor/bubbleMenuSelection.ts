@@ -60,5 +60,5 @@ export function shouldDisplayBubbleMenu(
     return false;
   }
 
-  return input.isEditable;
+  return true;
 }

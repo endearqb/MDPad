@@ -12,16 +12,22 @@ import {
   File,
   FileInput,
   FilePlus2,
+  Lock,
   Maximize2,
   Minus,
   Moon,
+  Pencil,
   Save,
   SaveAll,
   SunMedium,
   X
 } from "lucide-react";
-import type { ThemeMode } from "../../shared/types/doc";
+import type { EditorMode, ThemeMode } from "../../shared/types/doc";
 import type { TopBarCopy } from "../../shared/i18n/appI18n";
+import {
+  computePseudoMaximizeBounds,
+  type WindowBounds
+} from "../../shared/utils/windowPreset";
 
 interface TopBarProps {
   fileName: string;
@@ -30,26 +36,17 @@ interface TopBarProps {
   canRename: boolean;
   isDirty: boolean;
   isBusy: boolean;
+  editorMode: EditorMode;
+  readOnlyIconBlinkTick: number;
   themeMode: ThemeMode;
   onNewWindow: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onRename: (newBaseName: string) => Promise<boolean>;
+  onToggleEditorMode: () => void;
   onToggleTheme: () => void;
 }
-
-type WindowBounds = {
-  width: number;
-  height: number;
-  x: number;
-  y: number;
-};
-
-const PSEUDO_MAXIMIZE_WIDTH_RATIO = 0.4;
-const PSEUDO_MAXIMIZE_HEIGHT_RATIO = 0.9;
-const MIN_WINDOW_WIDTH = 420;
-const MIN_WINDOW_HEIGHT = 320;
 
 export default function TopBar({
   fileName,
@@ -58,12 +55,15 @@ export default function TopBar({
   canRename,
   isDirty,
   isBusy,
+  editorMode,
+  readOnlyIconBlinkTick,
   themeMode,
   onNewWindow,
   onOpen,
   onSave,
   onSaveAs,
   onRename,
+  onToggleEditorMode,
   onToggleTheme
 }: TopBarProps) {
   const appWindow = useMemo(() => {
@@ -76,10 +76,14 @@ export default function TopBar({
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const restoreBoundsRef = useRef<WindowBounds | null>(null);
   const fileMenuRef = useRef<HTMLDivElement | null>(null);
+  const readOnlyIconBlinkTimerRef = useRef<number | null>(null);
+  const lastHandledReadOnlyBlinkTickRef = useRef(readOnlyIconBlinkTick);
   const [isRenaming, setIsRenaming] = useState(false);
   const [isSubmittingRename, setIsSubmittingRename] = useState(false);
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const [isPseudoMaximized, setIsPseudoMaximized] = useState(false);
+  const [isReadOnlyIconBlinking, setIsReadOnlyIconBlinking] = useState(false);
+  const [readOnlyIconBlinkNonce, setReadOnlyIconBlinkNonce] = useState(0);
   const [renameDraft, setRenameDraft] = useState(fileBaseName);
 
   useEffect(() => {
@@ -128,6 +132,46 @@ export default function TopBar({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isFileMenuOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (readOnlyIconBlinkTimerRef.current !== null) {
+        window.clearTimeout(readOnlyIconBlinkTimerRef.current);
+        readOnlyIconBlinkTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (editorMode !== "readonly") {
+      if (readOnlyIconBlinkTimerRef.current !== null) {
+        window.clearTimeout(readOnlyIconBlinkTimerRef.current);
+        readOnlyIconBlinkTimerRef.current = null;
+      }
+      setIsReadOnlyIconBlinking(false);
+      lastHandledReadOnlyBlinkTickRef.current = readOnlyIconBlinkTick;
+      return;
+    }
+
+    if (
+      readOnlyIconBlinkTick <= 0 ||
+      readOnlyIconBlinkTick === lastHandledReadOnlyBlinkTickRef.current
+    ) {
+      return;
+    }
+
+    lastHandledReadOnlyBlinkTickRef.current = readOnlyIconBlinkTick;
+    setReadOnlyIconBlinkNonce((current) => current + 1);
+    setIsReadOnlyIconBlinking(true);
+
+    if (readOnlyIconBlinkTimerRef.current !== null) {
+      window.clearTimeout(readOnlyIconBlinkTimerRef.current);
+    }
+    readOnlyIconBlinkTimerRef.current = window.setTimeout(() => {
+      setIsReadOnlyIconBlinking(false);
+      readOnlyIconBlinkTimerRef.current = null;
+    }, 620);
+  }, [editorMode, readOnlyIconBlinkTick]);
 
   const handleMinimize = useCallback(async () => {
     if (!appWindow) {
@@ -181,24 +225,13 @@ export default function TopBar({
         y: currentPosition.y
       };
 
-      const workArea = monitor.workArea;
-      const targetWidth = Math.max(
-        MIN_WINDOW_WIDTH,
-        Math.round(workArea.size.width * PSEUDO_MAXIMIZE_WIDTH_RATIO)
+      const targetBounds = computePseudoMaximizeBounds(monitor.workArea);
+      await appWindow.setSize(
+        new PhysicalSize(targetBounds.width, targetBounds.height)
       );
-      const targetHeight = Math.max(
-        MIN_WINDOW_HEIGHT,
-        Math.round(workArea.size.height * PSEUDO_MAXIMIZE_HEIGHT_RATIO)
+      await appWindow.setPosition(
+        new PhysicalPosition(targetBounds.x, targetBounds.y)
       );
-      const targetX = Math.round(
-        workArea.position.x + (workArea.size.width - targetWidth) / 2
-      );
-      const targetY = Math.round(
-        workArea.position.y + (workArea.size.height - targetHeight) / 2
-      );
-
-      await appWindow.setSize(new PhysicalSize(targetWidth, targetHeight));
-      await appWindow.setPosition(new PhysicalPosition(targetX, targetY));
       setIsPseudoMaximized(true);
     } catch {
       // ignore runtime errors in non-tauri contexts
@@ -401,6 +434,23 @@ export default function TopBar({
           onClick={onSave}
         >
           <Save className="titlebar-icon" />
+        </IconButton>
+        <IconButton
+          label={
+            editorMode === "editable"
+              ? copy.switchToReadOnly
+              : copy.switchToEditable
+          }
+          onClick={onToggleEditorMode}
+        >
+          {editorMode === "editable" ? (
+            <Pencil className="titlebar-icon" />
+          ) : (
+            <Lock
+              className={`titlebar-icon ${isReadOnlyIconBlinking ? "titlebar-icon-readonly-blink" : ""}`}
+              key={isReadOnlyIconBlinking ? `readonly-icon-blink-${readOnlyIconBlinkNonce}` : "readonly-icon-idle"}
+            />
+          )}
         </IconButton>
         <IconButton
           label={themeMode === "light" ? copy.switchToDarkTheme : copy.switchToLightTheme}

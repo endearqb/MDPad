@@ -44,6 +44,8 @@ export interface TopBarCopy {
   open: string;
   saveAs: string;
   save: string;
+  switchToReadOnly: string;
+  switchToEditable: string;
   switchToDarkTheme: string;
   switchToLightTheme: string;
   renameFileAria: string;
@@ -71,6 +73,8 @@ export interface StatusBarCopy {
   switchToChinese: string;
   switchToEnglish: string;
   toggleLanguageTitle: string;
+  openSamplesAria: string;
+  openSamplesTitle: string;
 }
 
 export interface UnsavedModalCopy {
@@ -91,6 +95,14 @@ export interface AttachmentModalCopy {
 
 export interface EditorCopy {
   placeholder: string;
+  errors: {
+    headingNotFound: string;
+    externalLinkOpenFailed: string;
+    relativeLinkRequiresSavedDocument: string;
+    invalidMarkdownLinkTarget: string;
+    openMarkdownLinkFailed: string;
+    readOnlyBlocked: string;
+  };
   toc: {
     dockAriaLabel: string;
     panelTitle: string;
@@ -237,6 +249,8 @@ const enCopy: AppCopy = {
     open: "Open (Ctrl+O)",
     saveAs: "Save As (Ctrl+Shift+S)",
     save: "Save (Ctrl+S)",
+    switchToReadOnly: "Switch to read-only",
+    switchToEditable: "Switch to editable",
     switchToDarkTheme: "Switch to dark theme",
     switchToLightTheme: "Switch to light theme",
     renameFileAria: "Rename file",
@@ -272,7 +286,9 @@ const enCopy: AppCopy = {
     languageButtonLabel: "EN",
     switchToChinese: "Switch to Chinese",
     switchToEnglish: "Switch to English",
-    toggleLanguageTitle: "Switch language"
+    toggleLanguageTitle: "Switch language",
+    openSamplesAria: "Open sample document",
+    openSamplesTitle: "Open sample document"
   },
   unsavedModal: {
     title: "Unsaved changes",
@@ -291,6 +307,15 @@ const enCopy: AppCopy = {
   editor: {
     placeholder:
       "Type \"/\" on empty line, or press Ctrl+/ anywhere to open slash menu...",
+    errors: {
+      headingNotFound: "Heading not found for this anchor link.",
+      externalLinkOpenFailed: "Failed to open external link.",
+      relativeLinkRequiresSavedDocument:
+        "Please save this document first before opening relative markdown links.",
+      invalidMarkdownLinkTarget: "This markdown link target is invalid.",
+      openMarkdownLinkFailed: "Failed to open markdown link target.",
+      readOnlyBlocked: "Editor is read-only. Switch to editable mode first."
+    },
     toc: {
       dockAriaLabel: "Document outline",
       panelTitle: "Outline",
@@ -447,6 +472,8 @@ const zhCopy: AppCopy = {
     open: "打开 (Ctrl+O)",
     saveAs: "另存为 (Ctrl+Shift+S)",
     save: "保存 (Ctrl+S)",
+    switchToReadOnly: "\u5207\u6362\u4e3a\u53ea\u8bfb",
+    switchToEditable: "\u5207\u6362\u4e3a\u53ef\u7f16\u8f91",
     switchToDarkTheme: "切换到深色主题",
     switchToLightTheme: "切换到浅色主题",
     renameFileAria: "重命名文件",
@@ -482,7 +509,9 @@ const zhCopy: AppCopy = {
     languageButtonLabel: "中文",
     switchToChinese: "切换到中文",
     switchToEnglish: "切换到英文",
-    toggleLanguageTitle: "切换语言"
+    toggleLanguageTitle: "切换语言",
+    openSamplesAria: "\u6253\u5f00\u793a\u4f8b\u6587\u6863",
+    openSamplesTitle: "\u6253\u5f00\u793a\u4f8b\u6587\u6863"
   },
   unsavedModal: {
     title: "未保存更改",
@@ -500,6 +529,15 @@ const zhCopy: AppCopy = {
   },
   editor: {
     placeholder: "在空行输入“/”，或在任意位置按 Ctrl+/ 打开斜杠菜单...",
+    errors: {
+      headingNotFound: "\u672a\u627e\u5230\u951a\u70b9\u5bf9\u5e94\u7684\u6807\u9898\u3002",
+      externalLinkOpenFailed: "\u6253\u5f00\u5916\u90e8\u94fe\u63a5\u5931\u8d25\u3002",
+      relativeLinkRequiresSavedDocument:
+        "\u8bf7\u5148\u4fdd\u5b58\u5f53\u524d\u6587\u6863\uff0c\u518d\u6253\u5f00\u76f8\u5bf9 Markdown \u94fe\u63a5\u3002",
+      invalidMarkdownLinkTarget: "Markdown \u94fe\u63a5\u76ee\u6807\u65e0\u6548\u3002",
+      openMarkdownLinkFailed: "\u6253\u5f00 Markdown \u94fe\u63a5\u76ee\u6807\u5931\u8d25\u3002",
+      readOnlyBlocked: "\u5f53\u524d\u4e3a\u53ea\u8bfb\u6a21\u5f0f\uff0c\u8bf7\u5148\u5207\u6362\u4e3a\u53ef\u7f16\u8f91\u3002"
+    },
     toc: {
       dockAriaLabel: "文档目录",
       panelTitle: "目录",

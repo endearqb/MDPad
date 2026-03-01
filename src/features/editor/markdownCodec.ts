@@ -418,9 +418,9 @@ function getLastNonEmptyOutputLine(output: string[]): string | null {
   return null;
 }
 
-// Normalize non-standard leading Unicode whitespace so Markdown block syntax
+// Normalize non-standard leading Unicode whitespace and FEFF/BOM so Markdown block syntax
 // (lists/fences/blockquote/callout) remains parseable in copied content.
-const LEADING_UNICODE_SPACE_PATTERN = /^[\t \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]+/u;
+const LEADING_UNICODE_SPACE_PATTERN = /^[\uFEFF\t \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]+/u;
 
 function normalizeLeadingWhitespace(line: string): string {
   const leadingMatched = line.match(LEADING_UNICODE_SPACE_PATTERN);
@@ -434,6 +434,10 @@ function normalizeLeadingWhitespace(line: string): string {
     if (character === " " || character === "\t") {
       return character;
     }
+    if (character === "\uFEFF") {
+      hasNonStandardWhitespace = true;
+      return "";
+    }
     hasNonStandardWhitespace = true;
     return " ";
   }).join("");
@@ -446,7 +450,10 @@ function normalizeLeadingWhitespace(line: string): string {
 }
 
 function preprocessMarkdownCore(markdown: string): string {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const normalizedMarkdown = markdown.startsWith("\uFEFF")
+    ? markdown.slice(1)
+    : markdown;
+  const lines = normalizedMarkdown.replace(/\r\n/g, "\n").split("\n");
   const output: string[] = [];
   let inFence = false;
   let pendingBlockMath: string[] | null = null;
@@ -497,15 +504,20 @@ function preprocessMarkdownCore(markdown: string): string {
     }
 
     if (pendingCallout) {
+      const nextCalloutType = parseCalloutStart(line);
+      if (nextCalloutType) {
+        flushCallout();
+        pendingCallout = { type: nextCalloutType, lines: [] };
+        continue;
+      }
       if (isBlockquoteLine(line)) {
         pendingCallout.lines.push(stripBlockquotePrefix(line));
         continue;
       }
+      flushCallout();
       if (line.trim() === "") {
-        pendingCallout.lines.push("");
         continue;
       }
-      flushCallout();
     }
 
     if (pendingBlockquote.length > 0 && !isBlockquoteLine(line)) {

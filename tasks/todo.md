@@ -2017,3 +2017,299 @@
 - 验证结果：
   - `pnpm test`：通过（16 files / 112 tests passed）；
   - `pnpm build`：通过（仍存在既有大 chunk 警告，未新增失败）。
+
+## 新任务：文档链接跳转 + 未保存误报修复 + 弹窗放大（2026-03-01）
+- [x] 新增链接路由纯逻辑模块（锚点/外链/相对 `.md` 分类与解析）
+- [x] 编辑器接入链接点击分发（锚点跳转、外链浏览器打开、相对 `.md` 新窗口打开）
+- [x] 接入 Tauri opener 插件与权限（前端 API / Rust 插件 / capability）
+- [x] 修复“打开未修改即提示未保存”误报（过滤非用户触发的扩展事务）
+- [x] 将应用弹窗整体放大一档（`app-modal` + `editor-prompt`）
+- [x] 补充单元测试（链接路由与用户变更判定）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（文档链接跳转 + 未保存误报修复 + 弹窗放大）
+- `src/features/editor/linkNavigation.ts`（新增）：
+  - 提供 `classifyEditorLink` / `resolveHashToTocItem` / `resolveMarkdownLinkPath`；
+  - 支持 `#anchor`、`http/https`、`file://`、Windows 绝对路径与相对 `.md/.markdown` 解析；
+  - TOC 锚点解析采用 GitHub 风格 slug 并兼容重复标题后缀（如 `-1`）。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 链接点击改为统一分发：
+    - hash：定位并滚动到目录项；
+    - 外链：调用 Tauri opener 打开系统浏览器；
+    - 相对/绝对 Markdown 链接：解析后调用 `createDocumentWindow` 新窗口打开；
+  - 增加本地化错误提示 `copy.errors.*`；
+  - `onUpdate` 新增用户事务门禁，仅用户触发变更才计入 dirty，修复“打开未修改也提示未保存”。
+- `src/features/editor/changeTracking.ts`（新增）：
+  - 抽离 `isUserInitiatedDocChange`，基于焦点状态与事务 meta（`uiEvent/inputType/paste`）判定用户输入。
+- `src/features/file/fileService.ts`：
+  - 新增 `openExternalUrl`，基于 `@tauri-apps/plugin-opener` 打开外部链接。
+- Tauri opener 能力接入：
+  - `package.json` / `pnpm-lock.yaml`：新增 `@tauri-apps/plugin-opener`；
+  - `src-tauri/Cargo.toml`：新增 `tauri-plugin-opener = "2"`；
+  - `src-tauri/src/lib.rs`：注册 `.plugin(tauri_plugin_opener::init())`；
+  - `src-tauri/capabilities/default.json`：新增 `opener:default` 权限。
+- 弹窗尺寸优化：
+  - `src/styles.css`：统一放大 `app-modal-*` 与 `editor-prompt-*` 的宽度、内边距、标题与按钮尺寸。
+- 测试与验证：
+  - 新增并通过：`linkNavigation.test.ts`、`changeTracking.test.ts`；
+  - 更新并通过：`fileService.test.ts`；
+  - 全量验证通过：`pnpm test`（18 files / 124 tests）、`pnpm build`、`cargo check`。
+
+## 新任务：链接点击双开与默认跳转冲突修复（2026-03-01）
+- [x] 将链接点击路由从 `editorProps.handleClick` 迁移到 `editorProps.handleDOMEvents.click`
+- [x] 统一普通左键点击行为：`#anchor` 页内跳转、`./*.md` 新窗口打开、`http(s)` 浏览器打开
+- [x] 增加链接点击短窗口去重（300ms），避免单击触发重复打开
+- [x] 保留修饰键策略：仅拦截普通点击，`Ctrl/Cmd/Shift/Alt` 点击不拦截
+- [x] 修复文本节点点击时锚点识别遗漏（支持从 `Text` 上溯到 `<a href>`）
+- [x] 补充纯逻辑单元测试（点击门禁与去重）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+
+### 回顾（链接点击双开与默认跳转冲突修复）
+- 根因：`handleClick` 钩子处于 ProseMirror 的 `mouseup` 链路，无法稳定阻止后续原生 `<a>` `click` 默认行为，导致“应用内处理 + 浏览器默认跳转”并发。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 链接处理切换到 `editorProps.handleDOMEvents.click`，在原生 `click` 阶段拦截；
+  - 命中可处理链接后统一 `preventDefault + stopPropagation`；
+  - 增加 `lastHandledLinkClickRef` 去重，防止同链接短时间内重复触发；
+  - `findAnchorElement` 支持从 `Text` 目标回溯父级锚点。
+- `src/features/editor/linkClickGuard.ts`（新增）：
+  - 抽离 `shouldRouteEditorLinkClick` 与 `isDuplicateEditorLinkClick`，固化点击门禁与去重规则。
+- `src/features/editor/linkClickGuard.test.ts`（新增）：
+  - 覆盖普通点击门禁、修饰键拦截、去重时间窗边界和无历史状态场景。
+- 验证结果：
+  - `pnpm test`：通过（19 files / 127 tests passed）。
+  - `pnpm build`：通过（保留既有大 chunk 警告，未新增失败）。
+
+## 新任务：修饰键链接拦截 + 首次启动 40%×90% 窗口尺寸（2026-03-01）
+- [x] 更新链接点击门禁：`Ctrl/Cmd/Shift/Alt + 左键` 也走应用内路由拦截
+- [x] 更新链接点击单测：修饰键场景从“不拦截”改为“拦截”
+- [x] 抽取共享窗口预设工具（40%×90% + 最小尺寸 + 居中计算）
+- [x] 顶栏 40%×90% 按钮改用共享窗口预设工具（消除重复逻辑）
+- [x] 首次启动窗口初始化：仅在无历史尺寸时应用 40%×90% 预设并持久化
+- [x] 补充窗口预设纯逻辑单测（尺寸下限/居中）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（修饰键链接拦截 + 首次启动 40%×90% 窗口尺寸）
+- `src/features/editor/linkClickGuard.ts`：
+  - `shouldRouteEditorLinkClick` 改为仅校验“未被阻止 + 左键”，不再排除 `Ctrl/Cmd/Shift/Alt`。
+- `src/features/editor/linkClickGuard.test.ts`：
+  - 将修饰键场景断言从 `false` 调整为 `true`，保持去重窗口测试不变。
+- `src/shared/utils/windowPreset.ts`（新增）：
+  - 抽取窗口 40%×90% 预设计算与常量（含最小尺寸和居中计算）。
+- `src/features/window/TopBar.tsx`：
+  - 40%×90% 按钮改为复用 `computePseudoMaximizeBounds`，删除本地重复比例/尺寸计算。
+- `src/App.tsx`：
+  - 启动窗口尺寸逻辑改为：
+    - 有 `mdpad.window-size.v1` 时继续恢复历史尺寸；
+    - 无历史尺寸时基于 `currentMonitor().workArea` 应用 40%×90% 并居中，再写入持久化尺寸。
+- `src/shared/utils/windowPreset.test.ts`（新增）：
+  - 覆盖标准尺寸计算与最小尺寸下限场景。
+- 验证结果：
+  - `pnpm test`：通过（20 files / 129 tests passed）。
+  - `pnpm build`：通过（保留既有 chunk size 警告，未新增失败）。
+
+## 新任务：安装包内置中英示例文档 + 状态栏 `?` 入口（2026-03-01）
+- [x] 在 `src-tauri/resources/samples` 下新增中英示例文档与 `media` 资源目录
+- [x] 生成本地音频/视频示例文件，控制总增量明显低于 1MB
+- [x] 打包配置接入示例资源（`bundle.resources`）
+- [x] 新增示例资源路径工具与单测（按 locale 映射中文/英文文档）
+- [x] 状态栏在 `Saved/Unsaved` 后新增 `?` 按钮入口
+- [x] `App` 接入 `resolveResource + createDocumentWindow` 打开当前语言示例文档
+- [x] 补齐中英文 i18n 文案（按钮 aria/title）
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（安装包内置中英示例文档 + 状态栏 `?` 入口）
+- 新增资源文件：
+  - `src-tauri/resources/samples/MDPad-Sample.zh-CN.md`
+  - `src-tauri/resources/samples/MDPad-Sample.en-US.md`
+  - `src-tauri/resources/samples/media/logo.png`
+  - `src-tauri/resources/samples/media/sample-audio.mp3`
+  - `src-tauri/resources/samples/media/sample-video.mp4`
+- 示例文档覆盖能力：
+  - 标题/段落/行内样式、列表/任务、链接/引用、Callout、代码块、表格、分隔线、数学公式、Mermaid、图片、视频、音频；
+  - 每项均按“语法代码块 + 渲染效果”双区块组织；
+  - 中英文档互相提供相对链接，便于验证跨文档跳转。
+- 体积控制：
+  - `logo.png` 3518 B
+  - `sample-audio.mp3` 13706 B
+  - `sample-video.mp4` 28045 B
+  - 媒体总计约 44 KB（远低于 1 MB 预算）。
+- 配置与代码改动：
+  - `src-tauri/tauri.conf.json`：`bundle.resources` 新增 `resources/samples`。
+  - `src/shared/utils/sampleDocs.ts`（新增）：`getSampleDocResourcePath(locale)`。
+  - `src/shared/utils/sampleDocs.test.ts`（新增）：覆盖 `zh/en` 映射。
+  - `src/features/window/StatusBar.tsx`：新增 `onOpenSamples`，在 `Saved/Unsaved` 后增加 `?` 按钮。
+  - `src/App.tsx`：新增 `handleOpenSamples`，通过 `resolveResource(...)` 解析安装资源路径并 `createDocumentWindow(...)` 打开。
+  - `src/shared/i18n/appI18n.ts`：`StatusBarCopy` 新增 `openSamplesAria/openSamplesTitle`，中英文文案已接入。
+  - `src/styles.css`：新增 `statusbar-help-btn` 样式。
+- 验证结果：
+  - `pnpm test`：通过（21 files / 131 tests passed）。
+  - `pnpm build`：通过（保留既有 chunk size 警告，未新增失败）。
+  - `cargo check`（`src-tauri`）：通过。
+
+## 新任务：TopBar 只读/可编辑切换（2026-03-01）
+- [x] 新增 `EditorMode` 类型与按窗口持久化工具
+- [x] 新增 `editorModePreferences` 单测
+- [x] `App.tsx` 接入每窗口读取/写入与状态切换
+- [x] `TopBar.tsx` 增加只读/可编辑按钮（工具区）
+- [x] `MarkdownEditor.tsx` 接入 `editable` / `setEditable`
+- [x] 只读模式下拦截编辑动作并提示（Bubble/粘贴/快捷入口）
+- [x] 更新中英文 i18n 文案与结构
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（TopBar 只读/可编辑切换）
+- `src/shared/types/doc.ts`：
+  - 新增 `EditorMode = "editable" | "readonly"`。
+- `src/shared/utils/editorModePreferences.ts`（新增）：
+  - 新增按窗口持久化工具，键名前缀 `mdpad.editor-mode.v1.<windowLabel>`；
+  - 提供 `isEditorMode/readEditorModePreference/writeEditorModePreference`。
+- `src/shared/utils/editorModePreferences.test.ts`（新增）：
+  - 覆盖空值回退、非法值回退、写后读、窗口隔离与类型守卫。
+- `src/App.tsx`：
+  - 新增窗口级 `editorMode` 状态；
+  - 启动时按当前 window label 读取偏好，状态变化后写回 localStorage；
+  - 将模式切换回调与当前模式传递给 TopBar；
+  - 将 `isEditable` 传递给 `MarkdownEditor`。
+- `src/features/window/TopBar.tsx`：
+  - 工具区新增只读/可编辑切换按钮（`Lock`/`Pencil` 图标）；
+  - `editable` 显示“切到只读”，`readonly` 显示“切到可编辑”。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - `useEditor` 接入 `editable` 初始化；
+  - 新增运行时 `editor.setEditable(isEditable)` 同步；
+  - 只读下拦截 Bubble 编辑动作、粘贴和 `Ctrl+/`/`Enter` 快捷入口，统一提示只读；
+  - Bubble 菜单在只读时仍显示（符合“显示但禁用编辑动作”）。
+- `src/features/editor/bubbleMenuSelection.ts` / `.test.ts`：
+  - 显示逻辑调整为不因只读隐藏；
+  - 新增只读可见性测试。
+- `src/shared/i18n/appI18n.ts`：
+  - `TopBarCopy` 新增 `switchToReadOnly/switchToEditable`；
+  - `EditorCopy.errors` 新增 `readOnlyBlocked`；
+  - 中英文文案与结构同步补齐（同时保持 `StatusBar` 的 `openSamples` 字段完整）。
+- `src/styles.css`：
+  - 新增 Bubble 只读视觉禁用态样式（按钮与样式项置灰、禁用交互光标）。
+- 验证结果：
+  - `pnpm test`：通过（22 files / 137 tests passed）。
+  - `pnpm build`：通过（保留既有 chunk size 警告，未新增失败）。
+
+## 新任务：Markdown 引用边界与 BOM/FEFF 解析修复（2026-03-01）
+- [x] 在 `markdownCodec` 预处理增加 FEFF/BOM 清理（文档首与行首）
+- [x] 修复 `pendingCallout` 状态机：空行分隔 + 新 marker 分隔
+- [x] 补充 `markdownCodec` 回归测试（标题/列表/分隔线/代码块 + 相邻 callout）
+- [x] 运行验证：`pnpm -s vitest run src/features/editor/markdownCodec.test.ts`、`pnpm -s test`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（Markdown 引用边界与 BOM/FEFF 解析修复）
+- 核心修复文件：`src/features/editor/markdownCodec.ts`。
+  - 行首归一化扩展为处理 `\uFEFF`（删除而非替换为空格），并在预处理入口去除文档首 BOM；
+  - `pendingCallout` 状态机改为：
+    - 遇到新 callout marker（`> [!TYPE]`）立即切分为新 callout；
+    - 遇到未加 `>` 的空行时结束当前 callout（作为块分隔）；
+    - 其余非引用行结束 callout 后按普通 Markdown 继续解析。
+- 回归测试文件：`src/features/editor/markdownCodec.test.ts`。
+  - 新增 BOM/FEFF 解析用例：标题、列表、分隔线、代码块、文档中段 FEFF 行首；
+  - 新增相邻 callout 用例：空行分隔与无空行新 marker 分隔；
+  - 新增 round-trip 用例：确保不再出现 `\[!WARNING\]` 被错误转义进前一个 callout。
+- 验证结果：
+  - `pnpm -s vitest run src/features/editor/markdownCodec.test.ts`：通过（1 file / 40 tests）。
+  - `pnpm -s test`：通过（22 files / 144 tests）。
+
+## 新任务：只读图标状态与只读交互闪烁（2026-03-01）
+- [x] 调整 TopBar 编辑模式图标映射：可编辑显示 `Pencil`，只读显示 `Lock`
+- [x] 在编辑器只读模式下监听编辑页双击与键盘输入，并上报只读交互信号
+- [x] 在 TopBar 接入只读交互信号，使只读锁图标触发闪烁反馈
+- [x] 补充样式（只读锁图标闪烁动画）并保证两套 UI 主题表现一致
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（只读图标状态与只读交互闪烁）
+- `src/features/window/TopBar.tsx`：
+  - 编辑模式图标映射调整为“可编辑显示 `Pencil`、只读显示 `Lock`”；
+  - 新增 `readOnlyIconBlinkTick` 入参，按 tick 触发锁图标短时闪烁；
+  - 增加闪烁状态与计时器清理，避免模式切换后的残留闪烁态。
+- `src/App.tsx`：
+  - 新增 `readOnlyIconBlinkTick` 状态；
+  - 新增 `handleReadOnlyInteraction` 回调，仅在只读模式下递增 tick；
+  - 将该回调下发给编辑器，将 tick 下发给 TopBar。
+- `src/features/editor/MarkdownEditor.tsx`：
+  - 新增可选回调 `onReadOnlyInteraction`；
+  - 在只读模式下，编辑页内键盘输入（排除纯修饰键）时上报交互信号；
+  - 在编辑页 `double click` 时上报交互信号。
+- `src/styles.css`：
+  - 新增 `titlebar-readonly-icon-blink` 动画与 `titlebar-icon-readonly-blink` 类，驱动锁图标闪烁。
+- 验证结果：
+  - `pnpm test`：通过（22 files / 144 tests passed）。
+  - `pnpm build`：通过（构建成功，保留既有 chunk size 警告）。
+
+## 新任务：中英文 Sample 文档增加文档内目录语法（2026-03-01）
+- [x] 在中文 sample 文档新增“文档内目录语法”章节（含语法与渲染效果）
+- [x] 在英文 sample 文档新增对应章节（含语法与渲染效果）
+- [x] 保持两份 sample 结构一致并检查锚点链接格式
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（中英文 Sample 文档增加文档内目录语法）
+- 变更文件：
+  - `src-tauri/resources/samples/MDPad-Sample.zh-CN.md`
+  - `src-tauri/resources/samples/MDPad-Sample.en-US.md`
+- 两份文档均在开头新增 `## 0` 章节，统一包含：
+  - `Syntax`/`语法`：展示“通过 heading 锚点链接组织文档目录”的 Markdown 写法；
+  - `Rendered Result`/`渲染效果`：展示可点击的目录列表。
+- 锚点格式检查：
+  - 中文示例使用 `#1-标题与文本样式` 等哈希锚点；
+  - 英文示例使用 `#1-headings-and-text-styles` 等 slug 锚点；
+  - 与现有章节标题命名保持一致。
+- 验证结果：
+  - 已人工核对两份 sample 文件内容与结构，无代码逻辑改动，未执行构建/测试命令。
+
+## 新任务：划词菜单增加图片/音频/视频按钮（2026-03-01）
+- [x] 在 Bubble Menu 增加“添加图片/音频/视频”按钮
+- [x] 复用现有媒体插入逻辑，避免与 slash 菜单实现分叉
+- [x] 只读模式下新增按钮接入统一拦截提示
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（划词菜单增加图片/音频/视频按钮）
+- 核心改动文件：`src/features/editor/MarkdownEditor.tsx`。
+- Bubble Menu 新增三个按钮与动作：
+  - `image`（`ImageIcon`）
+  - `video`（`Video`）
+  - `audio`（`AudioLines`）
+- 实现方式：
+  - 新增 `insertMediaFromPrompt(editor, kind)`，统一处理媒体来源输入与节点插入；
+  - slash 菜单与 bubble 菜单共同复用该函数，避免重复逻辑与后续行为分叉。
+- 只读模式：
+  - `READ_ONLY_BLOCKED_BUBBLE_ACTION_IDS` 新增 `image/video/audio`；
+  - 只读点击这三个按钮时，沿用现有统一拦截与提示链路。
+- 验证结果：
+  - `pnpm test`：通过（22 files / 144 tests passed）。
+  - `pnpm build`：通过（构建成功，保留既有 chunk size 警告）。
+
+## 新任务：0.1.8 发布（版本+构建+README+Release+Public+MIT）（2026-03-01）
+- [x] 版本号递增 `+0.0.1` 到 `0.1.8`（`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`）
+- [x] 更新 `README.md` 与 `README_zh.md`，并在末尾新增参照表格（含 `tiptap-starter-kit`，感谢 Novel / Scratch）
+- [x] 新增 `LICENSE`（MIT，Copyright `MDPad Contributors`）
+- [x] 执行验证与构建：`pnpm test`、`pnpm build`、`pnpm tauri:build:no-bump`
+- [x] 提交并推送 `main`，创建并推送标签 `v0.1.8`
+- [x] 仓库切换为 Public（`gh repo edit --visibility public`）
+- [x] 创建 GitHub Release 并上传 `MDPad_0.1.8_x64-setup.exe`
+- [x] 在本文件追加本次任务回顾
+
+### 回顾（0.1.8 发布：版本+构建+README+Release+Public+MIT）
+- 版本号：`0.1.7 -> 0.1.8`，已同步至：
+  - `package.json`
+  - `src-tauri/tauri.conf.json`
+  - `src-tauri/Cargo.toml`
+- 文档更新：
+  - `README.md` 与 `README_zh.md` 末尾新增参照矩阵，包含 `tiptap-starter-kit`；
+  - 新增致谢：感谢 Novel 与 Scratch 提供灵感和对照。
+- 协议与仓库：
+  - 新增 `LICENSE`（MIT）；
+  - 仓库切换为 Public。
+- 验证与构建结果：
+  - `pnpm test`：通过（22 files / 144 tests passed）。
+  - `pnpm build`：通过（保留既有 chunk size 警告）。
+  - `pnpm tauri:build:no-bump`：通过，产物 `src-tauri/target/release/bundle/nsis/MDPad_0.1.8_x64-setup.exe`。
+- 发布结果：
+  - Tag：`v0.1.8`
+  - Release：`https://github.com/endearqb/MDPad/releases/tag/v0.1.8`

@@ -82,6 +82,39 @@ describe("markdownCodec", () => {
     expect(html).not.toContain("<pre><code>");
   });
 
+  it("parses BOM-prefixed heading as heading block", () => {
+    const html = markdownToHtml("\uFEFF# Title");
+
+    expect(html).toContain("<h1>Title</h1>");
+  });
+
+  it("parses BOM-prefixed first list item as list block", () => {
+    const html = markdownToHtml("\uFEFF- item a\n- item b");
+
+    expect(html).toContain("<ul>");
+    expect(html).toContain("<li>item a</li>");
+    expect(html).toContain("<li>item b</li>");
+  });
+
+  it("parses BOM-prefixed thematic break and fenced code block", () => {
+    const thematicBreakHtml = markdownToHtml("\uFEFF---\n\nnext");
+    const fencedCodeHtml = markdownToHtml("\uFEFF```ts\nconst n = 1;\n```");
+
+    expect(thematicBreakHtml).toContain("<hr>");
+    expect(thematicBreakHtml).toContain("<p>next</p>");
+    expect(fencedCodeHtml).toContain('<pre><code class="language-ts">');
+    expect(fencedCodeHtml).toContain("const n = 1;");
+  });
+
+  it("parses FEFF-prefixed heading and list lines in mid-document", () => {
+    const markdown = "text\n\n\uFEFF## next\n\n\uFEFF- a\n- b";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<h2>next</h2>");
+    expect(html).toContain("<li>a</li>");
+    expect(html).toContain("<li>b</li>");
+  });
+
   it("parses fenced code after list when fence line starts with NBSP", () => {
     const nbsp = "\u00A0";
     const markdown = [
@@ -202,6 +235,37 @@ describe("markdownCodec", () => {
     expect(html).toContain("<p>Keep this in mind.</p>");
     expect(html).toContain("<p>Extra detail.</p>");
     expect(html).not.toContain("[!TIP]");
+  });
+
+  it("splits adjacent callouts separated by a blank line", () => {
+    const markdown = "> [!TIP]\n> A\n\n> [!WARNING]\n> B";
+    const html = markdownToHtml(markdown);
+    const calloutCount = (html.match(/blockquote data-callout=/g) ?? []).length;
+
+    expect(calloutCount).toBe(2);
+    expect(html).toContain('data-callout="tip"');
+    expect(html).toContain('data-callout="warning"');
+    expect(html).not.toContain("[!WARNING]");
+  });
+
+  it("splits adjacent callouts when a new marker appears without blank separator", () => {
+    const markdown = "> [!TIP]\n> A\n> [!WARNING]\n> B";
+    const html = markdownToHtml(markdown);
+    const calloutCount = (html.match(/blockquote data-callout=/g) ?? []).length;
+
+    expect(calloutCount).toBe(2);
+    expect(html).toContain('data-callout="tip"');
+    expect(html).toContain('data-callout="warning"');
+    expect(html).not.toContain("[!WARNING]");
+  });
+
+  it("keeps adjacent callout markers unescaped in round trip", () => {
+    const markdown = "> [!TIP]\n> A\n> [!WARNING]\n> B";
+    const roundTripped = htmlToMarkdown(markdownToHtml(markdown));
+
+    expect(roundTripped).toContain("> [!TIP]");
+    expect(roundTripped).toContain("> [!WARNING]");
+    expect(roundTripped).not.toContain("\\[!WARNING\\]");
   });
 
   it("parses markdown syntax after a normal blockquote", () => {
