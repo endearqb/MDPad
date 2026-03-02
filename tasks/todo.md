@@ -2313,3 +2313,145 @@
 - 发布结果：
   - Tag：`v0.1.8`
   - Release：`https://github.com/endearqb/MDPad/releases/tag/v0.1.8`
+
+## 新任务：Tauri 无系统标题栏方案沉淀与优化（2026-03-02）
+- [x] 新建沉淀文档：`docs/tauri-frameless-custom-titlebar-best-practices.md`（保留 `docs/无title栏设计.txt`）
+- [x] 基于 MDPad 当前实现抽取“最小可用方案”（配置、权限、React 顶栏、样式层次）
+- [x] 网络检索并融合官方最佳实践（Window Customization / Window API / Capabilities / Config）
+- [x] 网络检索并融合社区避坑案例（issues：边框白线、resize 边缘、拖拽属性行为）
+- [x] 形成可执行文档结构（实现模板、Do/Don't、排障顺序、上线检查清单）
+- [x] 完成文档自检（配置项/API 名称/链接可用性）并在本文件追加回顾
+
+### 回顾（Tauri 无系统标题栏方案沉淀与优化）
+- 新增文档：`docs/tauri-frameless-custom-titlebar-best-practices.md`。
+- 文档定位为“通用技术教程”，但保留了 MDPad 的实现对照，便于迁移与落地。
+- 官方来源已覆盖：Window Customization、Window API、Capabilities、Core Permissions、WindowConfig 与相关 release note。
+- 社区来源已覆盖：`#8519`（Closed）、`#11945`（Closed）、`#9287`（Open），并在文档中标注状态，避免把历史问题误写成当前必现。
+- 自检结果：
+  - 本地实现映射已核对：`src-tauri/tauri.conf.json`、`src-tauri/capabilities/default.json`、`src/features/window/TopBar.tsx`、`src/styles.css`、`src/shared/utils/windowPreset.ts`、`src/App.tsx`。
+  - 文档中的 API/权限命名已对照 Tauri v2 文档检查。
+  - 参考链接已逐条打开核验可访问。
+
+## 新任务：Classic UI 设计沉淀（2026-03-02）
+- [x] 新建 Classic UI 设计文档（配色方案 + UI/UX 理念 + 复用规范）
+- [x] 从 `src/styles.css` 提炼 Classic Light/Dark 色板与语义变量
+- [x] 从 TopBar/StatusBar/App 布局提炼信息架构、交互模型与尺寸节奏
+- [x] 输出可复用设计规范（设计原则、组件规则、状态反馈、落地清单）
+- [x] 完成文档自检并在本文件追加回顾
+
+### 回顾（Classic UI 设计沉淀）
+- 新增文档：`docs/classic-ui-design-guide.md`。
+- 文档内容覆盖：
+  - Classic Light/Dark 双主题语义色板（含 `accent`、`hover`、`editor`、`status`、`link`）。
+  - 关键尺寸与空间节奏（titlebar、win-btn、statusbar、editor max width）。
+  - UI/UX 设计理念（信息架构、动作分层、低噪音交互、桌面心智）。
+  - 可复用落地清单（从 token 到组件，再到交互反馈）。
+- 自检结果：
+  - 颜色与尺寸均对照 `src/styles.css` 当前实现核对。
+  - 交互规则均对照 `src/features/window/TopBar.tsx`、`src/features/window/StatusBar.tsx` 与 `src/App.tsx` 核对。
+  - 文档结构与语言已面向“设计同种风格 app”场景整理，可直接复用。
+
+## 新任务：右侧目录交互优化（2026-03-02）
+- [x] 在 `tasks/todo.md` 写入实施计划并锁定交互边界（高度阈值、层级范围、点击后行为）
+- [x] 重构 `TableOfContentsDock` 为双层交互：hover rail + 点击展开完整目录面板
+- [x] 新增窗口高度阈值逻辑（`window.innerHeight > 480`）并在小窗口下禁用展开入口
+- [x] 在 hover 展开 rail 时于左侧中线显示无边框向左 icon 按钮，点击后打开完整目录
+- [x] 完整目录面板样式：无边框、主题圆角、阴影、`max-height: 50vh`、可滚动且隐藏滚动条
+- [x] 新增“点击容器外关闭”逻辑，确保不会误伤容器内点击
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在本文件追加本次任务回顾与验证结果
+
+### 回顾（右侧目录交互优化）
+- 变更文件：
+  - `src/features/editor/components/TableOfContentsDock.tsx`
+  - `src/styles.css`
+  - `tasks/todo.md`
+- 交互实现：
+  - 目录组件由单层 `rail` 扩展为双层交互：`hover rail` + 点击展开完整目录面板；
+  - 新增窗口高度阈值（`window.innerHeight > 480`），仅在满足条件时显示左侧向左 icon 展开按钮；
+  - 完整目录面板使用 H1-H3 全量条目，点击条目后执行跳转并关闭面板；
+  - 面板打开时监听全局 `pointerdown`，点击容器外自动关闭。
+- 样式实现：
+  - 新增无边框左侧展开按钮（小尺寸、居中、轻量 hover 反馈）；
+  - 新增完整目录面板样式：无边框、`var(--editor-surface-radius)` 圆角、`var(--shadow-surface)` 阴影、`max-height: 50vh`；
+  - 面板内容可滚动且滚动条完全隐藏（`scrollbar-width: none` + `::-webkit-scrollbar { display: none; }`）。
+- 验证结果：
+  - `pnpm test`：通过（22 files / 144 tests passed，因本机沙箱 `spawn EPERM` 使用提权执行）。
+  - `pnpm build`：通过（Vite 生产构建成功，保留既有 chunk size 警告）。
+
+## 新任务：Sample 文档增强 + 删除线语法统一为 `~~`（2026-03-02）
+- [x] 在 `tasks/todo.md` 写入实施计划并锁定边界（仅支持 `~~`，不做单 `~` 兼容）
+- [x] 更新中英文 sample：补充加粗/斜体/粗斜体/删除线/高亮示例与说明
+- [x] 更新中英文 sample：补充任务列表“输入快捷（`[] `）vs 保存语法（`- [ ]`）”说明
+- [x] 更新中英文 sample：明确 Mermaid 标准 fenced 语法（` ```mermaid ... ``` `）
+- [x] 修改 `markdownCodec`：Markdown 解析仅允许 `~~...~~` 生成删除线
+- [x] 补充 `markdownCodec.test.ts` 回归测试（`~...~` 不再识别、`1~3` 不误判、`~~...~~` 正常）
+- [x] 运行验证：`pnpm test`、`pnpm build`
+- [x] 在 `tasks/todo.md` 追加回顾并在 `tasks/lessons.md` 记录本次经验
+
+### 回顾（Sample 文档增强 + 删除线语法统一为 `~~`）
+- 变更文件：
+  - `src-tauri/resources/samples/MDPad-Sample.zh-CN.md`
+  - `src-tauri/resources/samples/MDPad-Sample.en-US.md`
+  - `src/features/editor/markdownCodec.ts`
+  - `src/features/editor/markdownCodec.test.ts`
+  - `tasks/todo.md`
+  - `tasks/lessons.md`
+- Sample 文档更新：
+  - 中英文“标题与文本样式”均新增 `***粗斜体/bold italic***` 与 `==高亮==` 示例，并明确删除线仅支持 `~~...~~`。
+  - 中英文“列表与任务”均新增说明：编辑器可通过 `[] `（或 `[ ] `）快捷创建任务项，但保存/导出语法统一为 `- [ ]` / `- [x]`。
+  - 中英文 “Mermaid” 语法区块均明确标准 fenced 写法：` ```mermaid` 起始，` ``` ` 结束。
+- 解析行为收敛：
+  - `markdownCodec` 中为 `marked` 注册自定义 `Tokenizer.del`，仅匹配双波浪 `~~...~~`。
+  - 单波浪 `~...~` 不再识别为删除线；数字区间 `1~3`、`6~7` 自然保持普通文本，无需额外保护分支。
+- 测试补充：
+  - 新增 `~~...~~` 正常渲染、`~...~` 不渲染删除线、`1~3`/`6~7` 不误判、`<del>` 反序列化仍输出 `~~...~~` 的回归用例。
+- 验证结果：
+  - `pnpm test`：通过（22 files / 148 tests passed，因本机沙箱 `spawn EPERM` 使用提权执行）。
+  - `pnpm build`：通过（Vite 生产构建成功，保留既有 chunk size 警告；因本机沙箱 `spawn EPERM` 使用提权执行）。
+
+## 新任务：标题栏文件名去 `.md` + Save As 默认名去 `.md`（2026-03-02）
+- [x] `App.tsx` 标题显示统一改为基础名（不含扩展名）
+- [x] `TopBar` 中 `fileName` 入参改为基础名（保持未保存文档不可双击重命名）
+- [x] `saveCurrentAs` 默认建议名改为无后缀（已保存取基础名，未保存取 `untitledBaseName`）
+- [x] `src-tauri/src/lib.rs` `save_file_as_dialog` 后端回退名改为 `untitled`
+- [x] 运行验证：`pnpm test`、`pnpm build`、`cargo check`
+
+### 回顾（标题栏文件名去 `.md` + Save As 默认名去 `.md`）
+- 变更文件：
+  - `src/App.tsx`
+  - `src-tauri/src/lib.rs`
+  - `tasks/todo.md`
+- 行为变化：
+  - 窗口标题与 TopBar 文件名均显示基础名（如 `note`），不再显示 `note.md`。
+  - Save As 系统弹窗预填文件名不再带 `.md`。
+  - 未保存文档（`Untitled/未命名`）仍不可双击重命名，保持现有交互边界。
+- 验证结果：
+  - `pnpm test`：通过（22 files / 148 tests passed，因本机沙箱 `spawn EPERM` 使用提权执行）。
+  - `pnpm build`：通过（Vite 生产构建成功，保留既有 chunk size 警告；因本机沙箱 `spawn EPERM` 使用提权执行）。
+  - `cargo check`：通过（`src-tauri`，无新增错误）。
+
+## 新任务：点击展开目录面板去掉 `Outline` 标题栏（2026-03-02）
+- [x] 移除 `TableOfContentsDock` 面板中的 `Outline` 标题节点
+- [x] 同步调整目录面板布局样式，避免标题移除后出现留白占位
+- [x] 运行验证：`pnpm build`
+
+### 回顾（点击展开目录面板去掉 `Outline` 标题栏）
+- 变更文件：
+  - `src/features/editor/components/TableOfContentsDock.tsx`
+  - `src/styles.css`
+  - `tasks/todo.md`
+- 行为变化：
+  - 点击展开后的目录容器不再显示 `Outline` 标题栏，直接展示目录条目列表。
+  - 面板滚动、隐藏滚动条、点击外部关闭等交互保持不变。
+- 验证结果：
+  - `pnpm build`：通过（Vite 生产构建成功，保留既有 chunk size 警告；因本机沙箱 `spawn EPERM` 使用提权执行）。
+
+## 新任务：0.1.9 发布（版本 + 构建 + 推送 + Release）（2026-03-02）
+- [ ] 版本号执行 `+0.0.1`（`0.1.8 -> 0.1.9`）并同步到前后端配置
+- [ ] 执行构建生成新的安装包（NSIS EXE）
+- [ ] 运行必要验证（至少 `pnpm test`、`pnpm build`）
+- [ ] 提交本次改动并推送到 `origin/main`
+- [ ] 创建并推送标签 `v0.1.9`
+- [ ] 创建 GitHub Release 并上传 `MDPad_0.1.9_x64-setup.exe`
+- [ ] 在本文件追加回顾（含 release 链接与资产说明）

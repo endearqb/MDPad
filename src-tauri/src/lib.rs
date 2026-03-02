@@ -82,7 +82,7 @@ fn save_file_as_dialog(default_name: Option<String>) -> Result<Option<String>, S
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("untitled.md");
+        .unwrap_or("untitled");
 
     let file = rfd::FileDialog::new()
         .set_file_name(suggested_name)

@@ -1,5 +1,6 @@
 import TurndownService from "turndown";
 import { marked } from "marked";
+import type { Tokens } from "marked";
 import { gfm } from "turndown-plugin-gfm";
 import { MarkdownHookRegistry } from "./codec/hooks/registry";
 import {
@@ -9,11 +10,32 @@ import {
   widthPxToPercent
 } from "./markdownImageSyntax";
 
+const DOUBLE_TILDE_STRIKE_PATTERN =
+  /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
+
+class DoubleTildeStrikeTokenizer extends marked.Tokenizer {
+  del(src: string): Tokens.Del | undefined {
+    const matched = DOUBLE_TILDE_STRIKE_PATTERN.exec(src);
+    if (!matched) {
+      return undefined;
+    }
+
+    const text = matched[2] ?? "";
+    return {
+      type: "del",
+      raw: matched[0],
+      text,
+      tokens: this.lexer.inlineTokens(text)
+    };
+  }
+}
+
 marked.setOptions({
   async: false,
   gfm: true,
   // Preserve single-line breaks from note-style markdown input.
-  breaks: true
+  breaks: true,
+  tokenizer: new DoubleTildeStrikeTokenizer()
 });
 
 const supportedCalloutTypes = [

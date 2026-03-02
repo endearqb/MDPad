@@ -46,6 +46,33 @@ describe("markdownCodec", () => {
     expect(html).not.toContain("<mark>highlight</mark>");
   });
 
+  it("renders double-tilde strikethrough syntax", () => {
+    const html = markdownToHtml("prefix ~~gone~~ suffix");
+
+    expect(html).toContain("<del>gone</del>");
+  });
+
+  it("does not render single-tilde as strikethrough", () => {
+    const html = markdownToHtml("prefix ~gone~ suffix");
+
+    expect(html).not.toContain("<del>");
+    expect(html).toContain("~gone~");
+  });
+
+  it("keeps numeric range tilde text as plain text", () => {
+    const html = markdownToHtml("数据覆盖 2023 年 1~3 月，三个月的上架节奏较为均匀（每月 6~7 款）");
+
+    expect(html).not.toContain("<del>");
+    expect(html).toContain("1~3");
+    expect(html).toContain("6~7");
+  });
+
+  it("serializes del tags back to double-tilde syntax", () => {
+    const markdown = htmlToMarkdown("<p><del>gone</del></p>");
+
+    expect(markdown).toContain("~~gone~~");
+  });
+
   it("converts single-line $$...$$ into block math", () => {
     const html = markdownToHtml("$$ddadf$$");
 

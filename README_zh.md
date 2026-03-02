@@ -5,140 +5,181 @@
 [English Docs (README.md)](./README.md)
 
 ## 目录
-- [项目简介](#项目简介)
-- [核心亮点](#核心亮点)
-- [支持的 Markdown 语法与能力](#支持的-markdown-语法与能力)
-- [功能使用说明](#功能使用说明)
-- [快捷键](#快捷键)
-- [本地开发（Local Development）](#本地开发local-development)
-- [构建与发布](#构建与发布)
-- [项目结构](#项目结构)
-- [常见问题](#常见问题)
-- [参考项目](#参考项目)
+
+-   [项目简介](#%E9%A1%B9%E7%9B%AE%E7%AE%80%E4%BB%8B)
+    
+-   [核心亮点](#%E6%A0%B8%E5%BF%83%E4%BA%AE%E7%82%B9)
+    
+-   [支持的 Markdown 语法与能力](#%E6%94%AF%E6%8C%81%E7%9A%84-markdown-%E8%AF%AD%E6%B3%95%E4%B8%8E%E8%83%BD%E5%8A%9B)
+    
+-   [功能使用说明](#%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E)
+    
+-   [快捷键](#%E5%BF%AB%E6%8D%B7%E9%94%AE)
+    
+-   [本地开发（Local Development）](#%E6%9C%AC%E5%9C%B0%E5%BC%80%E5%8F%91local-development)
+    
+-   [构建与发布](#%E6%9E%84%E5%BB%BA%E4%B8%8E%E5%8F%91%E5%B8%83)
+    
+-   [项目结构](#%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84)
+    
+-   [常见问题](#%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98)
+    
+-   [参考项目](#%E5%8F%82%E8%80%83%E9%A1%B9%E7%9B%AE)
+    
 
 ## 项目简介
+
 MDPad 目标是“快速打开、快速编辑、Markdown 原文可控”的桌面写作体验：
-- 每个窗口专注一个文档。
-- 以 Markdown 为最终数据源（可导入/导出）。
-- 兼容常见笔记写法（包含部分 Obsidian 风格图片语法）。
+
+-   每个窗口专注一个文档。
+    
+-   以 Markdown 为最终数据源（可导入/导出）。
+    
+-   兼容常见笔记写法（包含部分 Obsidian 风格图片语法）。
+    
 
 ## 核心亮点
-- Windows 原生桌面体验（Tauri v2）。
-- 多窗口工作流（`Ctrl+N` 新建空白窗口）。
-- 支持 `.md` / `.markdown` 打开、保存、另存为、重命名。
-- 关闭窗口前未保存检测与确认弹窗。
-- Slash 命令菜单（空行 `/` 或任意位置 `Ctrl+/`）。
-- 划词 Bubble 菜单（快速格式化）。
-- 右侧目录导读键（H1-H3，折叠/展开策略）。
-- 明暗主题、UI 主题（Classic/Modern）、Markdown 主题切换。
-- 中英文界面切换。
-- 粘贴媒体附件库（首次配置目录后自动保存）。
+
+-   Windows 原生桌面体验（Tauri v2）。
+    
+-   多窗口工作流（`Ctrl+N` 新建空白窗口）。
+    
+-   支持 `.md` / `.markdown` 打开、保存、另存为、重命名。
+    
+-   关闭窗口前未保存检测与确认弹窗。
+    
+-   Slash 命令菜单（空行 `/` 或任意位置 `Ctrl+/`）。
+    
+-   划词 Bubble 菜单（快速格式化）。
+    
+-   右侧目录导读键（H1-H3，折叠/展开策略）。
+    
+-   明暗主题、UI 主题（Classic/Modern）、Markdown 主题切换。
+    
+-   中英文界面切换。
+    
+-   粘贴媒体附件库（首次配置目录后自动保存）。
+    
 
 ## 支持的 Markdown 语法与能力
 
 ### 基础语法
-| 语法项 | 是否支持 | 说明 |
-| --- | --- | --- |
-| 标题（`#` 到 `######`） | 支持 | 气泡菜单样式器可快速切换正文/H1-H4。 |
-| 加粗 / 斜体 / 删除线 | 支持 | Markdown 往返保持。 |
-| 行内代码 / 围栏代码块 | 支持 | 代码块支持复制；`mermaid` 代码块可切预览。 |
-| 引用块 | 支持 | 标准 Markdown 引用写法。 |
-| 有序/无序列表 | 支持 | Slash 与 Bubble 都可快速插入。 |
-| 任务列表（`- [ ]` / `- [x]`） | 支持 | 编辑态任务项，导出仍为任务列表语法。 |
-| 分割线（`---`） | 支持 | Slash 菜单包含 Divider。 |
-| 链接 | 支持 | 气泡菜单支持添加/修改链接。 |
-| 表格（GFM） | 支持 | 支持 Markdown 表格导入导出和可视化表格操作。 |
-| 行内公式（`$...$`） | 支持 | 转换为数学节点渲染。 |
-| 块级公式（`$$...$$`） | 支持 | 转换为块级数学节点渲染。 |
-| 高亮（`==text==`） | 支持 | 可解析并导出回 `==...==`。 |
-| Mermaid（` ```mermaid `） | 支持 | 可渲染图表，支持回切源码。 |
+
+<table style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>语法项</p></th><th colspan="1" rowspan="1"><p>是否支持</p></th><th colspan="1" rowspan="1"><p>说明</p></th></tr><tr><td colspan="1" rowspan="1"><p>标题（<code>#</code> 到 <code>######</code>）</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>气泡菜单样式器可快速切换正文/H1-H4。</p></td></tr><tr><td colspan="1" rowspan="1"><p>加粗 / 斜体 / 删除线</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>Markdown 往返保持。</p></td></tr><tr><td colspan="1" rowspan="1"><p>行内代码 / 围栏代码块</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>代码块支持复制；<code>mermaid</code> 代码块可切预览。</p></td></tr><tr><td colspan="1" rowspan="1"><p>引用块</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>标准 Markdown 引用写法。</p></td></tr><tr><td colspan="1" rowspan="1"><p>有序/无序列表</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>Slash 与 Bubble 都可快速插入。</p></td></tr><tr><td colspan="1" rowspan="1"><p>任务列表（<code>- [ ]</code> / <code>- [x]</code>）</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>编辑态任务项，导出仍为任务列表语法。</p></td></tr><tr><td colspan="1" rowspan="1"><p>分割线（<code>---</code>）</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>Slash 菜单包含 Divider。</p></td></tr><tr><td colspan="1" rowspan="1"><p>链接</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>气泡菜单支持添加/修改链接。</p></td></tr><tr><td colspan="1" rowspan="1"><p>表格（GFM）</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>支持 Markdown 表格导入导出和可视化表格操作。</p></td></tr><tr><td colspan="1" rowspan="1"><p>行内公式（<code>$...$</code>）</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>转换为数学节点渲染。</p></td></tr><tr><td colspan="1" rowspan="1"><p>块级公式（<code>$$...$$</code>）</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>转换为块级数学节点渲染。</p></td></tr><tr><td colspan="1" rowspan="1"><p>高亮（<code>==text==</code>）</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>可解析并导出回 <code>==...==</code>。</p></td></tr><tr><td colspan="1" rowspan="1"><p>Mermaid（<code>```mermaid</code>）</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>可渲染图表，支持回切源码。</p></td></tr></tbody></table>
 
 ### 媒体与扩展语法
-| 语法项 | 是否支持 | 说明 |
-| --- | --- | --- |
-| 标准图片 `![alt](src)` | 支持 | 编辑器内可缩放显示。 |
-| 图片标题 | 支持 | 往返保留。 |
-| 图片尺寸提示 `![alt](src =300x)` | 支持 | 解析尺寸并映射到编辑器宽度/高度。 |
-| Obsidian 图片嵌入 `![[img.png\|300x200]]` | 部分支持 | 可识别图片与可选尺寸参数。 |
-| 链接包裹图片 `[![alt](img)](link)` | 支持 | 会解析为带链接属性的图片节点。 |
-| 视频/音频 HTML 标签 | 支持 | `<video ...>`、`<audio ...>` 可保留并可视化。 |
-| 二进制媒体粘贴 | 支持 | 首次粘贴会引导选择全局附件目录并落盘。 |
+
+<table style="min-width: 75px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>语法项</p></th><th colspan="1" rowspan="1"><p>是否支持</p></th><th colspan="1" rowspan="1"><p>说明</p></th></tr><tr><td colspan="1" rowspan="1"><p>标准图片 <code>![alt](src)</code></p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>编辑器内可缩放显示。</p></td></tr><tr><td colspan="1" rowspan="1"><p>图片标题</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>往返保留。</p></td></tr><tr><td colspan="1" rowspan="1"><p>图片尺寸提示 <code>&lt;img src="src" alt="alt" data-width="38.46" /&gt;</code></p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>解析尺寸并映射到编辑器宽度/高度。</p></td></tr><tr><td colspan="1" rowspan="1"><p>Obsidian 图片嵌入 <code>&lt;img src="img.png\" data-width="38.46" data-height-px="200" /&gt;</code></p></td><td colspan="1" rowspan="1"><p>部分支持</p></td><td colspan="1" rowspan="1"><p>可识别图片与可选尺寸参数。</p></td></tr><tr><td colspan="1" rowspan="1"><p>链接包裹图片 <code>[![alt](img)](link)</code></p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>会解析为带链接属性的图片节点。</p></td></tr><tr><td colspan="1" rowspan="1"><p>视频/音频 HTML 标签</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p><code>&lt;video ...&gt;</code>、<code>&lt;audio ...&gt;</code> 可保留并可视化。</p></td></tr><tr><td colspan="1" rowspan="1"><p>二进制媒体粘贴</p></td><td colspan="1" rowspan="1"><p>支持</p></td><td colspan="1" rowspan="1"><p>首次粘贴会引导选择全局附件目录并落盘。</p></td></tr></tbody></table>
 
 ### 编辑器交互能力
-- Slash 菜单分组：Basic / Insert / Media / Math。
-- Bubble 菜单：样式、常用标记、列表、公式、链接。
-- 表格浮动菜单：表格/行/列/单元格的插入、删除、对齐、合并拆分、表头切换。
-- 右侧目录导读键（TOC）：
-  - 仅追踪 H1-H3。
-  - 折叠态默认显示 5 键。
-  - hover/focus 展开后最多显示 20 键，并按结构策略选取。
-- Markdown 同步链路：
-  - 输入期间采用节流同步。
-  - 保存/重命名/关闭前强制 flush，降低内容丢失风险。
+
+-   Slash 菜单分组：Basic / Insert / Media / Math。
+    
+-   Bubble 菜单：样式、常用标记、列表、公式、链接。
+    
+-   表格浮动菜单：表格/行/列/单元格的插入、删除、对齐、合并拆分、表头切换。
+    
+-   右侧目录导读键（TOC）：
+    
+    -   仅追踪 H1-H3。
+        
+    -   折叠态默认显示 5 键。
+        
+    -   hover/focus 展开后最多显示 20 键，并按结构策略选取。
+        
+-   Markdown 同步链路：
+    
+    -   输入期间采用节流同步。
+        
+    -   保存/重命名/关闭前强制 flush，降低内容丢失风险。
+        
 
 ## 功能使用说明
 
 ### 文件与窗口
-- 顶栏 `File` 菜单：
-  - New Window
-  - Open
-  - Save As
-- 顶栏独立保存按钮可快速保存。
-- 双击文件名可重命名（仅已有路径文档）。
-- 将 `.md` / `.markdown` 拖入窗口可在新窗口打开。
+
+-   顶栏 `File` 菜单：
+    
+    -   New Window
+        
+    -   Open
+        
+    -   Save As
+        
+-   顶栏独立保存按钮可快速保存。
+    
+-   双击文件名可重命名（仅已有路径文档）。
+    
+-   将 `.md` / `.markdown` 拖入窗口可在新窗口打开。
+    
 
 ### 主题与语言
-- 顶栏按钮切换明暗主题（Light/Dark）。
-- 底栏可切换：
-  - 语言（EN / 中文）
-  - Markdown 主题（Default / Notion / GitHub / Academic）
-  - UI 主题（Classic Theme / Modern Theme）
+
+-   顶栏按钮切换明暗主题（Light/Dark）。
+    
+-   底栏可切换：
+    
+    -   语言（EN / 中文）
+        
+    -   Markdown 主题（Default / Notion / GitHub / Academic）
+        
+    -   UI 主题（Classic Theme / Modern Theme）
+        
 
 ### 编辑操作
-- 空白行输入 `/` 打开 Slash 命令菜单。
-- 任意位置 `Ctrl+/` 强制打开 Slash 菜单。
-- 选中文本后弹出 Bubble 菜单进行格式化。
-- 当输入 Markdown 表格文本时，按 `Enter` 可触发表格节点转换。
+
+-   空白行输入 `/` 打开 Slash 命令菜单。
+    
+-   任意位置 `Ctrl+/` 强制打开 Slash 菜单。
+    
+-   选中文本后弹出 Bubble 菜单进行格式化。
+    
+-   当输入 Markdown 表格文本时，按 `Enter` 可触发表格节点转换。
+    
 
 ## 快捷键
-| 快捷键 | 功能 |
-| --- | --- |
-| `Ctrl+N` | 新建窗口 |
-| `Ctrl+O` | 打开 Markdown 文件 |
-| `Ctrl+S` | 保存 |
-| `Ctrl+Shift+S` | 另存为 |
-| `Ctrl+/` | 在光标处打开 Slash 菜单 |
-| `Esc` | 关闭当前菜单/弹窗（可用场景下） |
-| 双击标题栏空白区 | 切换预设窗口尺寸 |
-| 双击顶栏文件名 | 重命名当前文件 |
+
+<table style="min-width: 50px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>快捷键</p></th><th colspan="1" rowspan="1"><p>功能</p></th></tr><tr><td colspan="1" rowspan="1"><p><code>Ctrl+N</code></p></td><td colspan="1" rowspan="1"><p>新建窗口</p></td></tr><tr><td colspan="1" rowspan="1"><p><code>Ctrl+O</code></p></td><td colspan="1" rowspan="1"><p>打开 Markdown 文件</p></td></tr><tr><td colspan="1" rowspan="1"><p><code>Ctrl+S</code></p></td><td colspan="1" rowspan="1"><p>保存</p></td></tr><tr><td colspan="1" rowspan="1"><p><code>Ctrl+Shift+S</code></p></td><td colspan="1" rowspan="1"><p>另存为</p></td></tr><tr><td colspan="1" rowspan="1"><p><code>Ctrl+/</code></p></td><td colspan="1" rowspan="1"><p>在光标处打开 Slash 菜单</p></td></tr><tr><td colspan="1" rowspan="1"><p><code>Esc</code></p></td><td colspan="1" rowspan="1"><p>关闭当前菜单/弹窗（可用场景下）</p></td></tr><tr><td colspan="1" rowspan="1"><p>双击标题栏空白区</p></td><td colspan="1" rowspan="1"><p>切换预设窗口尺寸</p></td></tr><tr><td colspan="1" rowspan="1"><p>双击顶栏文件名</p></td><td colspan="1" rowspan="1"><p>重命名当前文件</p></td></tr></tbody></table>
 
 ## 本地开发（Local Development）
 
 ### 环境要求
-- Windows 10/11
-- Node.js 20+（推荐 LTS）
-- `pnpm`
-- Rust stable 工具链
-- Tauri v2 的 Windows 依赖：
-  - Microsoft C++ Build Tools
-  - WebView2 Runtime
+
+-   Windows 10/11
+    
+-   Node.js 20+（推荐 LTS）
+    
+-   `pnpm`
+    
+-   Rust stable 工具链
+    
+-   Tauri v2 的 Windows 依赖：
+    
+    -   Microsoft C++ Build Tools
+        
+    -   WebView2 Runtime
+        
 
 ### 安装依赖
+
 ```bash
 pnpm install
 ```
 
 ### 仅前端开发
+
 ```bash
 pnpm dev
 ```
 
 ### 桌面联调（Tauri）
+
 ```bash
 pnpm tauri:dev
 ```
 
 ### 质量检查
+
 ```bash
 pnpm lint
 pnpm test
@@ -146,6 +187,7 @@ pnpm build
 ```
 
 可选 Rust 检查：
+
 ```bash
 cd src-tauri
 cargo check
@@ -154,27 +196,37 @@ cargo check
 ## 构建与发布
 
 ### 构建安装包（自动补丁版本 +0.0.1）
+
 ```bash
 pnpm tauri:build
 ```
-- `pnpm tauri:build` 会自动执行 patch 递增。
-- 版本号源头是 `package.json`。
-- 会同步到：
-  - `src-tauri/tauri.conf.json`
-  - `src-tauri/Cargo.toml`
+
+-   `pnpm tauri:build` 会自动执行 patch 递增。
+    
+-   版本号源头是 `package.json`。
+    
+-   会同步到：
+    
+    -   `src-tauri/tauri.conf.json`
+        
+    -   `src-tauri/Cargo.toml`
+        
 
 ### 构建安装包（不自动 bump）
+
 ```bash
 pnpm tauri:build:no-bump
 ```
 
 ### 版本脚本
+
 ```bash
 pnpm version:sync
 pnpm version:bump:patch
 ```
 
 ## 项目结构
+
 ```text
 src/
   App.tsx
@@ -191,24 +243,22 @@ scripts/
 ```
 
 ## 常见问题
-- 构建时出现 `spawn EPERM`：
-  - 使用管理员权限终端重试。
-  - 检查安全软件是否拦截 `esbuild` 或 Rust 构建进程。
-- 文件关联打开不生效：
-  - 检查 `src-tauri/tauri.conf.json` 中 `.md/.markdown` 关联配置。
-- 粘贴媒体失败或未落盘：
-  - 检查附件库目录是否已配置以及目录写权限。
 
-## 参考项目
-- Novel（编辑器交互参考）：https://github.com/steven-tey/novel
-- Scratch（轻量单文件工作流参考）：https://github.com/erictli/scratch
+-   构建时出现 `spawn EPERM`：
+    
+    -   使用管理员权限终端重试。
+        
+    -   检查安全软件是否拦截 `esbuild` 或 Rust 构建进程。
+        
+-   文件关联打开不生效：
+    
+    -   检查 `src-tauri/tauri.conf.json` 中 `.md/.markdown` 关联配置。
+        
+-   粘贴媒体失败或未落盘：
+    
+    -   检查附件库目录是否已配置以及目录写权限。
+        
 
 ## 参照矩阵与致谢
 
-| 项目 | 参照定位 | 链接 | 说明 |
-| --- | --- | --- | --- |
-| tiptap-starter-kit | 参照基线 | https://github.com/syfxlin/tiptap-starter-kit | 作为能力与结构设计的参照目标。 |
-| Novel | 灵感来源 | https://github.com/steven-tey/novel | 提供编辑器交互与体验设计灵感。 |
-| Scratch | 灵感与对照 | https://github.com/erictli/scratch | 提供轻量桌面 Markdown 工作流对照。 |
-
-感谢 Novel 和 Scratch 提供灵感和对照。
+<table style="min-width: 100px;"><colgroup><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"><col style="min-width: 25px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>项目</p></th><th colspan="1" rowspan="1"><p>参照定位</p></th><th colspan="1" rowspan="1"><p>链接</p></th><th colspan="1" rowspan="1"><p>说明</p></th></tr><tr><td colspan="1" rowspan="1"><p>tiptap-starter-kit</p></td><td colspan="1" rowspan="1"><p>参照基线</p></td><td colspan="1" rowspan="1"><p><a target="_blank" rel="noopener noreferrer nofollow" href="https://github.com/syfxlin/tiptap-starter-kit">https://github.com/syfxlin/tiptap-starter-kit</a></p></td><td colspan="1" rowspan="1"><p>作为能力与结构设计的参照目标。</p></td></tr><tr><td colspan="1" rowspan="1"><p>Novel</p></td><td colspan="1" rowspan="1"><p>灵感来源</p></td><td colspan="1" rowspan="1"><p><a target="_blank" rel="noopener noreferrer nofollow" href="https://github.com/steven-tey/novel">https://github.com/steven-tey/novel</a></p></td><td colspan="1" rowspan="1"><p>提供编辑器交互与体验设计灵感。</p></td></tr><tr><td colspan="1" rowspan="1"><p>Scratch</p></td><td colspan="1" rowspan="1"><p>灵感与对照</p></td><td colspan="1" rowspan="1"><p><a target="_blank" rel="noopener noreferrer nofollow" href="https://github.com/erictli/scratch">https://github.com/erictli/scratch</a></p></td><td colspan="1" rowspan="1"><p>提供轻量桌面 Markdown 工作流对照。</p></td></tr></tbody></table>

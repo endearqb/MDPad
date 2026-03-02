@@ -1,6 +1,8 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type FocusEvent as ReactFocusEvent,
   type MouseEvent as ReactMouseEvent,
@@ -8,6 +10,7 @@ import {
 } from "react";
 import type { Editor } from "@tiptap/core";
 import type { TableOfContentDataItem } from "@tiptap/extension-table-of-contents";
+import { ChevronLeft } from "lucide-react";
 import type { EditorCopy } from "../../../shared/i18n/appI18n";
 import {
   filterTocByHeadingLevel,
@@ -23,6 +26,7 @@ const TOC_ANCHOR_QUOTA = 2;
 const TOC_NEIGHBOR_QUOTA = 7;
 const TOC_STRUCTURE_QUOTA = 11;
 const TOC_SCROLL_OFFSET_PX = 12;
+const TOC_PANEL_MIN_WINDOW_HEIGHT_PX = 480;
 
 const TOC_EXPANDED_SELECTION_CONFIG = {
   maxItems: TOC_EXPANDED_RAIL_ITEMS,
@@ -42,13 +46,23 @@ function escapeSelectorValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function isViewportTallEnoughForPanel(): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  return window.innerHeight > TOC_PANEL_MIN_WINDOW_HEIGHT_PX;
+}
+
 export default function TableOfContentsDock({
   editor,
   items,
   scrollContainerRef,
   copy
 }: TableOfContentsDockProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isRailExpanded, setIsRailExpanded] = useState(false);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const [isViewportTall, setIsViewportTall] = useState(isViewportTallEnoughForPanel);
+  const dockRef = useRef<HTMLElement | null>(null);
   const visibleItems = useMemo(
     () => filterTocByHeadingLevel(items, TOC_MAX_HEADING_LEVEL),
     [items]
@@ -62,7 +76,7 @@ export default function TableOfContentsDock({
     () => selectCollapsedTocItems(expandedItems, activeId, TOC_COLLAPSED_RAIL_ITEMS),
     [activeId, expandedItems]
   );
-  const railItems = isExpanded ? expandedItems : compactItems;
+  const railItems = isRailExpanded ? expandedItems : compactItems;
 
   const jumpToItem = useCallback((event: ReactMouseEvent, item: TableOfContentDataItem): void => {
     event.preventDefault();
@@ -99,6 +113,49 @@ export default function TableOfContentsDock({
     });
   }, [editor, scrollContainerRef]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleResize = () => {
+      setIsViewportTall(isViewportTallEnoughForPanel());
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isViewportTall) {
+      return;
+    }
+    setIsPanelOpen(false);
+  }, [isViewportTall]);
+
+  useEffect(() => {
+    if (!isPanelOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && dockRef.current?.contains(target)) {
+        return;
+      }
+      setIsPanelOpen(false);
+      setIsRailExpanded(false);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isPanelOpen]);
+
   if (visibleItems.length === 0) {
     return null;
   }
@@ -106,40 +163,94 @@ export default function TableOfContentsDock({
   const handleBlurCapture = (event: ReactFocusEvent<HTMLElement>) => {
     const nextTarget = event.relatedTarget as Node | null;
     if (!nextTarget || !event.currentTarget.contains(nextTarget)) {
-      setIsExpanded(false);
+      setIsPanelOpen(false);
+      setIsRailExpanded(false);
     }
   };
+
+  const showPanelTrigger = isViewportTall && isRailExpanded && !isPanelOpen;
 
   return (
     <aside
       aria-label={copy.dockAriaLabel}
       className="toc-dock"
+      onBlurCapture={handleBlurCapture}
+      ref={dockRef}
     >
+      {isPanelOpen && (
+        <div
+          aria-label={copy.panelTitle}
+          className="toc-panel"
+          role="navigation"
+        >
+          <div className="toc-panel-list">
+            {visibleItems.map((item) => {
+              const isActive = item.id === activeId;
+              const levelClassName = `level-${Math.min(3, Math.max(1, item.originalLevel))}`;
+              return (
+                <button
+                  aria-label={item.textContent}
+                  className={`toc-panel-item ${levelClassName} ${isActive ? "is-active" : ""}`}
+                  key={`panel-${item.id}`}
+                  onClick={(event) => {
+                    jumpToItem(event, item);
+                    setIsPanelOpen(false);
+                  }}
+                  title={item.textContent}
+                  type="button"
+                >
+                  <span className="toc-panel-item-label">{item.textContent}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div
-        aria-label={copy.dockAriaLabel}
-        className={`toc-rail ${isExpanded ? "is-expanded" : "is-collapsed"}`}
-        onBlurCapture={handleBlurCapture}
-        onFocusCapture={() => setIsExpanded(true)}
-        onMouseEnter={() => setIsExpanded(true)}
-        onMouseLeave={() => setIsExpanded(false)}
-        role="navigation"
+        className="toc-trigger-zone"
+        onFocusCapture={() => setIsRailExpanded(true)}
+        onMouseEnter={() => setIsRailExpanded(true)}
+        onMouseLeave={() => {
+          if (isPanelOpen) {
+            return;
+          }
+          setIsRailExpanded(false);
+        }}
       >
-        {railItems.map((item) => {
-          const isActive = item.id === activeId;
-          const levelClassName = `level-${Math.min(3, Math.max(1, item.originalLevel))}`;
-          return (
-            <button
-              aria-label={item.textContent}
-              className={`toc-rail-button ${levelClassName} ${isActive ? "is-active" : ""}`}
-              key={`rail-${item.id}`}
-              onClick={(event) => jumpToItem(event, item)}
-              title={item.textContent}
-              type="button"
-            >
-              <span className="toc-rail-label">{item.textContent}</span>
-            </button>
-          );
-        })}
+        {showPanelTrigger && (
+          <button
+            aria-label={copy.panelTitle}
+            className="toc-expand-trigger"
+            onClick={() => setIsPanelOpen(true)}
+            title={copy.panelTitle}
+            type="button"
+          >
+            <ChevronLeft className="toc-expand-trigger-icon" />
+          </button>
+        )}
+        <div
+          aria-label={copy.dockAriaLabel}
+          className={`toc-rail ${isRailExpanded ? "is-expanded" : "is-collapsed"}`}
+          role="navigation"
+        >
+          {railItems.map((item) => {
+            const isActive = item.id === activeId;
+            const levelClassName = `level-${Math.min(3, Math.max(1, item.originalLevel))}`;
+            return (
+              <button
+                aria-label={item.textContent}
+                className={`toc-rail-button ${levelClassName} ${isActive ? "is-active" : ""}`}
+                key={`rail-${item.id}`}
+                onClick={(event) => jumpToItem(event, item)}
+                title={item.textContent}
+                type="button"
+              >
+                <span className="toc-rail-label">{item.textContent}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </aside>
   );

@@ -32,7 +32,9 @@
 ### Heading 3
 #### Heading 4
 
-This is a paragraph with **bold**, *italic*, ~~strikethrough~~, and `inline code`.
+This is a paragraph with **bold**, *italic*, ***bold italic***, ~~strikethrough~~, ==highlight==, and `inline code`.
+
+Strikethrough syntax only supports `~~text~~`, not `~text~`.
 ````
 
 ### Rendered Result
@@ -42,13 +44,18 @@ This is a paragraph with **bold**, *italic*, ~~strikethrough~~, and `inline code
 ### Heading 3
 #### Heading 4
 
-This is a paragraph with **bold**, *italic*, ~~strikethrough~~, and `inline code`.
+This is a paragraph with **bold**, *italic*, ***bold italic***, ~~strikethrough~~, ==highlight==, and `inline code`.
+
+Strikethrough syntax only supports `~~text~~`, not `~text~`.
 
 ## 2. Lists and Tasks
 
 ### Syntax
 
 ````markdown
+Editor quick input: type `[] ` (or `[ ] `) then a space to create a task item.
+When saved as Markdown, task syntax is normalized to `- [ ]` / `- [x]`.
+
 - Bullet A
 - Bullet B
 
@@ -60,6 +67,9 @@ This is a paragraph with **bold**, *italic*, ~~strikethrough~~, and `inline code
 ````
 
 ### Rendered Result
+
+Editor quick input: type `[] ` (or `[ ] `) then a space to create a task item.  
+When saved as Markdown, task syntax is normalized to `- [ ]` / `- [x]`.
 
 - Bullet A
 - Bullet B
@@ -185,6 +195,8 @@ $$
 ### Syntax
 
 ````markdown
+Use standard fenced syntax: start with ` ```mermaid` and end with ` ``` `.
+
 ```mermaid
 graph TD
   A[Write] --> B[Preview]

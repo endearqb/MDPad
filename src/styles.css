@@ -580,8 +580,123 @@ body {
   transform: translateY(-50%);
   display: flex;
   align-items: center;
+  gap: 8px;
   z-index: 40;
   pointer-events: none;
+}
+
+.toc-trigger-zone {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toc-expand-trigger {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0.9;
+  transition: color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+
+.toc-expand-trigger:hover {
+  color: var(--text-primary);
+  opacity: 1;
+  transform: translateX(-1px);
+}
+
+.toc-expand-trigger:focus-visible {
+  outline: none;
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.toc-expand-trigger-icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.1;
+}
+
+.toc-panel {
+  pointer-events: auto;
+  width: min(320px, 44vw);
+  max-height: 50vh;
+  border: none;
+  border-radius: var(--editor-surface-radius);
+  background: color-mix(in srgb, var(--editor-bg) 96%, var(--hover-soft) 4%);
+  box-shadow: var(--shadow-surface);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.toc-panel-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.toc-panel-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.toc-panel-item {
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  padding: 5px 8px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.toc-panel-item.level-1 {
+  padding-left: 8px;
+}
+
+.toc-panel-item.level-2 {
+  padding-left: 18px;
+}
+
+.toc-panel-item.level-3 {
+  padding-left: 28px;
+}
+
+.toc-panel-item:hover {
+  background: color-mix(in srgb, var(--hover-soft) 70%, transparent);
+  color: var(--text-primary);
+}
+
+.toc-panel-item.is-active {
+  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
+  color: var(--accent);
+}
+
+.toc-panel-item-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toc-rail {
@@ -696,6 +811,10 @@ body {
 @media (max-width: 860px) {
   .toc-dock {
     right: 4px;
+  }
+
+  .toc-panel {
+    width: min(280px, 62vw);
   }
 
   .toc-rail-label {

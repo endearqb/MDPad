@@ -259,3 +259,13 @@
 - If product policy says modifier clicks must be intercepted, do not hardcode `ctrl/meta/shift/alt` bypass in link guards; keep only left-click + not-prevented checks.
 - Keep first-launch default window sizing consistent with the in-app resize preset logic by sharing one sizing function, instead of duplicating ratio math in multiple places.
 - Apply the 40% x 90% preset only when no persisted window size exists; once persisted, prioritize restoring user-adjusted size.
+
+## 2026-03-02 Strikethrough Syntax Policy
+- 当产品明确要求“删除线只支持双波浪”时，必须统一三层行为：输入规则、粘贴规则、Markdown 解析。
+- 不要再为单波浪 `~...~` 增加兼容识别，也不要引入“数字区间保护”这类补丁式分支；直接在解析器层禁用单波浪删除线。
+- 示例文档必须同步写清楚规范语法（`~~...~~`）与任务快捷输入/保存语法差异，避免用户把编辑器快捷输入误认为持久化语法。
+
+## 2026-03-02 TOC Expanded Panel Header Minimalism
+- 当用户要求目录展开面板“只保留目录条目”时，不要额外保留 `Outline` 或同类标题栏；默认直接进入列表内容。
+- 移除面板标题后要同步清理布局占位（例如 `grid-template-rows` 与标题 `gap`），避免出现无意义留白。
+- 该类视觉微调要做最小验证（至少 `pnpm build`），确保组件结构与样式未引入编译回归。

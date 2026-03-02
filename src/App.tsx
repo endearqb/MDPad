@@ -48,8 +48,6 @@ import {
 } from "./shared/utils/localePreferences";
 import {
   getFileBaseName,
-  getDefaultSaveName,
-  getFileName,
   isMarkdownPath
 } from "./shared/utils/path";
 import {
@@ -226,10 +224,6 @@ export default function App() {
   const appBootStartRef = useRef(nowMs());
   const flushEditorMarkdownRef = useRef<(() => string | null) | null>(null);
   const copy = useMemo(() => getAppCopy(locale), [locale]);
-  const displayFileName = useMemo(
-    () => (doc.currentPath ? getFileName(doc.currentPath) : copy.app.untitledFileName),
-    [copy.app.untitledFileName, doc.currentPath]
-  );
   const displayFileBaseName = useMemo(
     () => (doc.currentPath ? getFileBaseName(doc.currentPath) : copy.app.untitledBaseName),
     [copy.app.untitledBaseName, doc.currentPath]
@@ -249,8 +243,8 @@ export default function App() {
 
   useEffect(() => {
     const marker = doc.isDirty ? "*" : "";
-    document.title = `${marker}${displayFileName} - MDPad`;
-  }, [displayFileName, doc.isDirty]);
+    document.title = `${marker}${displayFileBaseName} - MDPad`;
+  }, [displayFileBaseName, doc.isDirty]);
 
   useEffect(() => {
     writeThemeModePreference(themeMode);
@@ -461,8 +455,8 @@ export default function App() {
     const current = docRef.current;
     const contentToSave = content ?? flushEditorMarkdown();
     const defaultSaveName = current.currentPath
-      ? getDefaultSaveName(current.currentPath)
-      : `${copy.app.untitledBaseName}.md`;
+      ? getFileBaseName(current.currentPath)
+      : copy.app.untitledBaseName;
     const targetPath = await saveFileAsDialog(defaultSaveName);
 
     if (!targetPath) {
@@ -825,7 +819,7 @@ export default function App() {
           <TopBar
             canRename={Boolean(doc.currentPath)}
             copy={copy.topBar}
-            fileName={displayFileName}
+            fileName={displayFileBaseName}
             fileBaseName={displayFileBaseName}
             isBusy={isBusy}
             isDirty={doc.isDirty}
