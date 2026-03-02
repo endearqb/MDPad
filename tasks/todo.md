@@ -2448,10 +2448,27 @@
   - `pnpm build`：通过（Vite 生产构建成功，保留既有 chunk size 警告；因本机沙箱 `spawn EPERM` 使用提权执行）。
 
 ## 新任务：0.1.9 发布（版本 + 构建 + 推送 + Release）（2026-03-02）
-- [ ] 版本号执行 `+0.0.1`（`0.1.8 -> 0.1.9`）并同步到前后端配置
-- [ ] 执行构建生成新的安装包（NSIS EXE）
-- [ ] 运行必要验证（至少 `pnpm test`、`pnpm build`）
-- [ ] 提交本次改动并推送到 `origin/main`
-- [ ] 创建并推送标签 `v0.1.9`
-- [ ] 创建 GitHub Release 并上传 `MDPad_0.1.9_x64-setup.exe`
-- [ ] 在本文件追加回顾（含 release 链接与资产说明）
+- [x] 版本号执行 `+0.0.1`（`0.1.8 -> 0.1.9`）并同步到前后端配置
+- [x] 执行构建生成新的安装包（NSIS EXE）
+- [x] 运行必要验证（至少 `pnpm test`、`pnpm build`）
+- [x] 提交本次改动并推送到 `origin/main`
+- [x] 创建并推送标签 `v0.1.9`
+- [x] 创建 GitHub Release 并上传 `MDPad_0.1.9_x64-setup.exe`
+- [x] 在本文件追加回顾（含 release 链接与资产说明）
+
+### 回顾（0.1.9 发布）
+- 版本号已从 `0.1.8` 升级到 `0.1.9`：
+  - `package.json`
+  - `src-tauri/Cargo.toml`
+  - `src-tauri/tauri.conf.json`
+- 构建与验证结果：
+  - `pnpm test`：通过（22 files / 148 tests passed；本机沙箱 `spawn EPERM`，提权后通过）
+  - `pnpm build`：通过（Vite 构建成功，保留既有 chunk size 警告；本机沙箱 `spawn EPERM`，提权后通过）
+  - `pnpm tauri:build:no-bump`：通过，生成安装包
+- 发布结果：
+  - 提交已推送：`main` -> `origin/main`
+  - 标签：`v0.1.9`（已推送）
+  - Release：`https://github.com/endearqb/MDPad/releases/tag/v0.1.9`
+  - 资产：`MDPad_0.1.9_x64-setup.exe`
+  - 资产下载：`https://github.com/endearqb/MDPad/releases/download/v0.1.9/MDPad_0.1.9_x64-setup.exe`
+  - SHA256：`56ad75930dcdc5d840516064af2519fa67a6824a1799a5d16b0492478d3a9eff`
