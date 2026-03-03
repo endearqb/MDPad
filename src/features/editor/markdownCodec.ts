@@ -443,6 +443,30 @@ function getLastNonEmptyOutputLine(output: string[]): string | null {
 // Normalize non-standard leading Unicode whitespace and FEFF/BOM so Markdown block syntax
 // (lists/fences/blockquote/callout) remains parseable in copied content.
 const LEADING_UNICODE_SPACE_PATTERN = /^[\uFEFF\t \u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]+/u;
+const SETEXT_UNDERLINE_LINE_PATTERN = /^\s{0,3}(?:-{3,}|={3,})\s*$/u;
+
+function isPotentialSetextUnderlineLine(line: string): boolean {
+  return SETEXT_UNDERLINE_LINE_PATTERN.test(line);
+}
+
+function shouldForceThematicBreak(line: string, previousLine: string | undefined): boolean {
+  if (!isPotentialSetextUnderlineLine(line)) {
+    return false;
+  }
+  if (!previousLine || previousLine.trim() === "") {
+    return false;
+  }
+  if (isFenceDelimiter(previousLine)) {
+    return false;
+  }
+  if (isBlockquoteLine(previousLine)) {
+    return false;
+  }
+  if (isMarkdownListItemLine(previousLine)) {
+    return false;
+  }
+  return true;
+}
 
 function normalizeLeadingWhitespace(line: string): string {
   const leadingMatched = line.match(LEADING_UNICODE_SPACE_PATTERN);
@@ -511,7 +535,10 @@ function preprocessMarkdownCore(markdown: string): string {
     pendingBlockquote = [];
   };
 
-  for (const rawLine of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const rawLine = lines[lineIndex] ?? "";
+    const previousRawLine = lineIndex > 0 ? lines[lineIndex - 1] : undefined;
+    const previousLine = previousRawLine ? normalizeLeadingWhitespace(previousRawLine) : undefined;
     const line = normalizeLeadingWhitespace(rawLine);
 
     if (pendingMermaid) {
@@ -646,6 +673,14 @@ function preprocessMarkdownCore(markdown: string): string {
         checked: (taskMatch[1] ?? " ").toLowerCase() === "x",
         content: taskMatch[2] ?? ""
       });
+      continue;
+    }
+
+    if (shouldForceThematicBreak(line, previousLine)) {
+      flushTasks();
+      flushCallout();
+      flushBlockquote();
+      output.push("***");
       continue;
     }
 

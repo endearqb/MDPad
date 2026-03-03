@@ -183,6 +183,7 @@ pnpm tauri:dev
 ```bash
 pnpm lint
 pnpm test
+pnpm test:e2e
 pnpm build
 ```
 
@@ -240,6 +241,9 @@ src-tauri/
   tauri.conf.json    # App/bundle config
 scripts/
   version-manager.mjs
+e2e/
+  *.e2e.test.ts
+vitest.e2e.config.ts
 ```
 
 ## Troubleshooting

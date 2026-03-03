@@ -133,6 +133,46 @@ describe("markdownCodec", () => {
     expect(fencedCodeHtml).toContain("const n = 1;");
   });
 
+  it("forces contiguous --- after paragraph to thematic break instead of setext heading", () => {
+    const markdown = "See README or `package.json` / `pyproject.toml`.\n---\n\n## Roadmap";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<p>See README or <code>package.json</code> / <code>pyproject.toml</code>.</p>");
+    expect(html).toContain("<hr>");
+    expect(html).toContain("<h2>Roadmap</h2>");
+    expect(html).not.toContain("<h2>See README");
+  });
+
+  it("forces contiguous === after paragraph to thematic break instead of setext heading", () => {
+    const markdown = "Overview line\n===\n\n## Next";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<p>Overview line</p>");
+    expect(html).toContain("<hr>");
+    expect(html).toContain("<h2>Next</h2>");
+    expect(html).not.toContain("<h1>Overview line</h1>");
+  });
+
+  it("keeps gfm table delimiter row parse behavior", () => {
+    const markdown = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<table>");
+    expect(html).toContain("<tbody>");
+    expect(html).not.toContain("<hr>");
+  });
+
+  it("does not rewrite --- inside fenced code blocks", () => {
+    const markdown = "```md\nTitle\n---\n```";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain('<pre><code class="language-md">');
+    expect(html).toContain("Title");
+    expect(html).toContain("---");
+    expect(html).not.toContain("<hr>");
+    expect(html).not.toContain("<h2>Title</h2>");
+  });
+
   it("parses FEFF-prefixed heading and list lines in mid-document", () => {
     const markdown = "text\n\n\uFEFF## next\n\n\uFEFF- a\n- b";
     const html = markdownToHtml(markdown);

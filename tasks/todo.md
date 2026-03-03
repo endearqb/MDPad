@@ -2472,3 +2472,125 @@
   - 资产：`MDPad_0.1.9_x64-setup.exe`
   - 资产下载：`https://github.com/endearqb/MDPad/releases/download/v0.1.9/MDPad_0.1.9_x64-setup.exe`
   - SHA256：`56ad75930dcdc5d840516064af2519fa67a6824a1799a5d16b0492478d3a9eff`
+
+## 新任务：MDPad Pro 需求文档落盘与二次需求挖掘（2026-03-02）
+- [x] 新建 `docs/MDPad-Pro-PRD.md`，按可评审 PRD 结构整理目标、范围、用户、场景与验收标准
+- [x] 写入“多轮调研结论”章节，覆盖社区视角、官方实践与工程可落地结论
+- [x] 写入“单窗口 3 栏/4 宫格/6 宫格”需求与技术方案（含选型建议与降级策略）
+- [x] 写入“AI 需求收敛”章节：排除 10 个常见需求，提炼核心 80% 用户诉求
+- [x] 写入“高同理心核心功能”定义：重返写作胶囊（Re-entry Capsule）
+- [x] 写入“进一步发掘需求方向”章节，给出后续研究问题、方法、样本与产出
+- [x] 在 `tasks/todo.md` 追加本次任务回顾
+
+### 回顾（MDPad Pro 需求文档落盘与二次需求挖掘）
+- 新增文档：`docs/MDPad-Pro-PRD.md`。
+- 文档已覆盖用户提出的四项核心要求：
+  - 多轮调研不同社区与人群对文档写作的需求；
+  - 单窗口 3/4/6 布局能力与技术实现建议；
+  - AI 写作需求去同质化（排除 10 项常见能力）；
+  - 高同理心且高普适性的核心功能定义（重返写作胶囊）。
+- 文档新增“进一步发掘需求方向”章节，包含 6 条研究轨道：
+  - 中断恢复机制、面板认知负荷、AI 可信度、非 AI 用户价值、受众重标尺、隐私分层。
+- 本次仅进行文档与规划输出，未启动任何开发实现与代码功能改动。
+
+## 新任务：MDPad Pro 深度研究与需求文档2（20/80 收敛）（2026-03-02）
+- [x] 基于 `docs/MDPad-Pro-PRD.md` 第 13 章建立第二轮研究框架（中英双语社区 + 定量研究 + 官方实践）
+- [x] 扩展候选需求池到 25 条，并建立“常见需求剔除”判定规则
+- [x] 执行 25 -> 5 收敛：舍弃常见 80% 需求，保留 20% 核心需求
+- [x] 为每条核心需求补齐 3 类证据链（社区/定量/官方）
+- [x] 输出覆盖度证明（80%+ 场景覆盖的推断模型）
+- [x] 新建 `docs/MDPad-Pro-PRD-2.md`，完成深度研究文档落盘（仅文档任务，无编码开发）
+- [x] 在 `tasks/todo.md` 追加本次任务回顾
+
+### 回顾（MDPad Pro 深度研究与需求文档2）
+- 新增文档：`docs/MDPad-Pro-PRD-2.md`。
+- 本次采用独立文档形态，面向“产品 + 研发联合评审”，未覆盖/替换原 PRD。
+- 文档核心完成项：
+  - 以 25 条候选需求为输入，执行“剔除 20 条、保留 5 条核心需求”的 Pareto 收敛；
+  - 明确 5 条核心需求：连续性引擎、证据锚定、可验证 AI 回路、受众重标尺、非打断式推进；
+  - 给出 80%+ 覆盖推断模型（Persona x 高频场景权重）；
+  - 补充中英社区、定量研究、官方实践三类证据索引（含来源链接）。
+- 本次仅执行深度调研与文档撰写，不涉及代码逻辑变更、功能开发或构建发布。
+
+## 新任务：Markdown `---/===` 防误判为 Setext 标题（2026-03-04）
+- [x] 在 `tasks/todo.md` 写入实施计划并确认执行边界（仅 Markdown 预处理与测试，不改编辑器 UI）
+- [x] 在 `markdownCodec` 预处理新增规则：正文后紧跟 `---/===` 时优先按分隔线处理，避免生成 setext 标题
+- [x] 补充 `markdownCodec.test.ts` 回归用例：覆盖 `---`、`===`、表格分隔行、代码块四类场景
+- [x] 运行验证：`pnpm test`
+- [x] 在本文件追加回顾与验证结果
+
+### 回顾（Markdown `---/===` 防误判为 Setext 标题）
+- 变更文件：
+  - `src/features/editor/markdownCodec.ts`
+  - `src/features/editor/markdownCodec.test.ts`
+  - `tasks/todo.md`
+- 解析逻辑调整：
+  - 在 `preprocessMarkdownCore` 新增 `SETEXT_UNDERLINE_LINE_PATTERN` 与 `shouldForceThematicBreak`；
+  - 当检测到“正文后紧跟 `---/===`（三连及以上）”且不处于 fence/blockquote/list 语境时，将该行标准化为 `***`；
+  - 该处理使输入从 setext 标题语义转为明确分隔线语义，避免正文被提升为标题。
+- 回归测试新增：
+  - `---` 连续写法不再把上一行渲染为 `h2`；
+  - `===` 连续写法不再把上一行渲染为 `h1`，改为分隔线；
+  - GFM 表格分隔行（`| --- | --- |`）继续按表格解析；
+  - fenced code 内 `---` 保持代码文本，不会被改写成 `<hr>`。
+- 验证结果：
+  - `pnpm test`：通过（22 files / 152 tests passed）。
+
+## 新任务：标准化 `test:e2e` 脚本入口并接入 README（2026-03-04）
+- [x] 在 `tasks/todo.md` 写入实施计划并确认边界（仅新增脚本入口与文档说明，不引入浏览器驱动）
+- [x] 新增独立 e2e 测试配置与目录约定（`vitest.e2e.config.ts` + `e2e/**/*.e2e.test.ts`）
+- [x] 在 `package.json` 增加标准化脚本入口（至少 `test:e2e`）
+- [x] 新增最小可运行 e2e smoke 用例，确保 `pnpm test:e2e` 在仓库内可直接执行
+- [x] 更新 `README.md` 与 `README_zh.md` 的质量检查命令，接入 `pnpm test:e2e`
+- [x] 运行验证：`pnpm test:e2e`、`pnpm test`、`pnpm lint`
+- [x] 在本文件追加回顾与验证结果
+
+### 回顾（标准化 `test:e2e` 脚本入口并接入 README）
+- 变更文件：
+  - `package.json`
+  - `vitest.e2e.config.ts`
+  - `e2e/markdown-flow.e2e.test.ts`
+  - `README.md`
+  - `README_zh.md`
+  - `tasks/todo.md`
+- 脚本入口：
+  - 新增 `test:e2e`：`vitest run --config vitest.e2e.config.ts`
+  - 新增 `test:e2e:watch`：`vitest --config vitest.e2e.config.ts`
+- 约定与最小用例：
+  - 新增独立 e2e 配置文件 `vitest.e2e.config.ts`，约定 `e2e/**/*.e2e.test.ts` 为 e2e 测试入口。
+  - 新增 smoke 用例 `e2e/markdown-flow.e2e.test.ts`，覆盖 Markdown -> HTML -> Markdown 主流程，验证“正文 + 分隔线 + 标题”结构稳定。
+- README 接入：
+  - 在中英文 README 的“质量检查”命令区块新增 `pnpm test:e2e`。
+  - 在中英文 README 的项目结构中补充 `e2e/` 与 `vitest.e2e.config.ts`。
+- 验证结果：
+  - `pnpm test:e2e`：通过（1 file / 1 test passed）。
+  - `pnpm test`：通过（22 files / 152 tests passed）。
+  - `pnpm lint`：通过（`tsc --noEmit`）。
+
+## 新任务：0.1.10 发布（版本 + 构建 + 推送 + Release）（2026-03-04）
+- [x] 在 `tasks/todo.md` 写入发布计划并锁定提交范围（本次功能改动 + `test:e2e` 接入 + 版本同步）
+- [x] 版本号执行 `+0.0.1`（`0.1.9 -> 0.1.10`）并同步到前后端配置
+- [x] 执行构建生成新的安装包（NSIS EXE）
+- [x] 运行必要验证（至少 `pnpm test:e2e`、`pnpm test`、`pnpm lint`）
+- [x] 提交本次改动并推送到 `origin/main`
+- [x] 创建并推送标签 `v0.1.10`
+- [x] 创建 GitHub Release 并上传 `MDPad_0.1.10_x64-setup.exe`
+- [x] 在本文件追加回顾（含 release 链接与资产信息）
+
+### 回顾（0.1.10 发布）
+- 版本号已从 `0.1.9` 升级到 `0.1.10`：
+  - `package.json`
+  - `src-tauri/Cargo.toml`
+  - `src-tauri/tauri.conf.json`
+- 构建与验证结果：
+  - `pnpm test:e2e`：通过（1 file / 1 test passed）
+  - `pnpm test`：通过（22 files / 152 tests passed）
+  - `pnpm lint`：通过（`tsc --noEmit`）
+  - `pnpm tauri:build:no-bump`：通过，生成安装包
+- 发布结果：
+  - 提交已推送：`main` -> `origin/main`
+  - 标签：`v0.1.10`（已推送）
+  - Release：`https://github.com/endearqb/MDPad/releases/tag/v0.1.10`
+  - 资产：`MDPad_0.1.10_x64-setup.exe`
+  - 资产下载：`https://github.com/endearqb/MDPad/releases/download/v0.1.10/MDPad_0.1.10_x64-setup.exe`
+  - SHA256：`de39718930a95628021ded4dec8a318441b6416723f89a04a2dbf5e456b66f4e`
