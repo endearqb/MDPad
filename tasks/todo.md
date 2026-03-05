@@ -2637,8 +2637,21 @@
   - `pnpm tauri:build:no-bump`：通过（包含 `pnpm build` 前端构建）
 
 ## 新任务：0.1.11 发布收尾（提交 + Tag + Release）（2026-03-05）
-- [ ] 提交本次发布相关改动到 `main`
-- [ ] 推送提交到 `origin/main`
-- [ ] 创建并推送标签 `v0.1.11`
-- [ ] 创建 GitHub Release 并上传 `MDPad_0.1.11_x64-setup.exe`
-- [ ] 在本文件追加发布结果回顾（含 Release 链接与资产信息）
+- [x] 提交本次发布相关改动到 `main`
+- [x] 推送提交到 `origin/main`
+- [x] 创建并推送标签 `v0.1.11`
+- [x] 创建 GitHub Release 并上传 `MDPad_0.1.11_x64-setup.exe`
+- [x] 在本文件追加发布结果回顾（含 Release 链接与资产信息）
+
+### 回顾（0.1.11 发布收尾：提交 + Tag + Release）
+- 提交信息：
+  - Commit：`388cb2d`
+  - Message：`release: prepare v0.1.11`
+- 推送结果：
+  - `main` 已推送到 `origin/main`
+  - 标签 `v0.1.11` 已推送到 `origin`
+- Release：
+  - 链接：`https://github.com/endearqb/MDPad/releases/tag/v0.1.11`
+  - 资产：`MDPad_0.1.11_x64-setup.exe`
+  - 资产下载：`https://github.com/endearqb/MDPad/releases/download/v0.1.11/MDPad_0.1.11_x64-setup.exe`
+  - SHA256：`7a210f6031d89287a6ff7052e5da9ea59451033a3e8edf53c6a1fc23dfe01429`
