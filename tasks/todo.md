@@ -2594,3 +2594,51 @@
   - 资产：`MDPad_0.1.10_x64-setup.exe`
   - 资产下载：`https://github.com/endearqb/MDPad/releases/download/v0.1.10/MDPad_0.1.10_x64-setup.exe`
   - SHA256：`de39718930a95628021ded4dec8a318441b6416723f89a04a2dbf5e456b66f4e`
+
+## 新任务：第 4 个文档窗口未置顶修复（2026-03-05）
+- [x] 在 `tasks/todo.md` 写入实施计划并确认边界（仅修窗口激活/置顶链路，不改文档打开策略与 UI）
+- [x] 排查 `create_document_window` 创建后窗口激活顺序，定位第 4 窗口失焦根因
+- [x] 在 `src-tauri/src/lib.rs` 实施修复：新建文档窗口后显式执行可见化与聚焦
+- [x] 运行验证：`cargo check`（必做）+ `pnpm build`（可选）
+- [x] 在本文件追加回顾与验证结果
+
+### 回顾（第 4 个文档窗口未置顶修复）
+- 变更文件：
+  - `src-tauri/src/lib.rs`
+  - `tasks/todo.md`
+- 根因与修复：
+  - 根因定位为文档窗口创建成功后未显式执行激活链路，Windows 多窗口场景下新窗口可能被放在后层。
+  - 在 `create_document_window_internal` 中保留 build 成功后的窗口句柄，新增 `show -> unminimize -> set_focus` 顺序调用，确保新建文档窗口前置并聚焦。
+  - 保留原有失败回滚逻辑：若 build 失败，仍会清理 `InitialFileState` 中对应 label。
+- 验证结果：
+  - `cargo check`：通过（`src-tauri`）
+  - `pnpm build`：通过（TypeScript + Vite）
+
+## 新任务：0.1.11 发布（版本 + 安装包 + 更新说明）（2026-03-05）
+- [x] 在 `tasks/todo.md` 写入发布计划并确认边界（仅版本升级、构建、说明文档）
+- [x] 版本号执行 `+0.0.1`（`0.1.10 -> 0.1.11`）并同步到前后端配置
+- [x] 构建 Windows 安装包（NSIS EXE）
+- [x] 产出版本更新说明文档（可用于 Release 描述）
+- [x] 运行发布链路验证并在本文件追加回顾
+
+### 回顾（0.1.11 发布：版本 + 安装包 + 更新说明）
+- 版本号已从 `0.1.10` 升级到 `0.1.11`：
+  - `package.json`
+  - `src-tauri/Cargo.toml`
+  - `src-tauri/tauri.conf.json`
+- 构建结果：
+  - 安装包产物：`src-tauri/target/release/bundle/nsis/MDPad_0.1.11_x64-setup.exe`
+  - 文件大小：`3,990,180` bytes
+  - SHA256：`7a210f6031d89287a6ff7052e5da9ea59451033a3e8edf53c6a1fc23dfe01429`
+- 更新说明文档：
+  - `docs/release-notes-v0.1.11.md`
+- 验证结果：
+  - `pnpm version:bump:patch`：通过
+  - `pnpm tauri:build:no-bump`：通过（包含 `pnpm build` 前端构建）
+
+## 新任务：0.1.11 发布收尾（提交 + Tag + Release）（2026-03-05）
+- [ ] 提交本次发布相关改动到 `main`
+- [ ] 推送提交到 `origin/main`
+- [ ] 创建并推送标签 `v0.1.11`
+- [ ] 创建 GitHub Release 并上传 `MDPad_0.1.11_x64-setup.exe`
+- [ ] 在本文件追加发布结果回顾（含 Release 链接与资产信息）

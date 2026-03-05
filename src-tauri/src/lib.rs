@@ -323,18 +323,25 @@ fn create_document_window_internal(
         lock.insert(label.clone(), normalized_path);
     }
 
-    let build_result = WebviewWindowBuilder::from_config(app, &window_config)
+    let window = match WebviewWindowBuilder::from_config(app, &window_config)
         .map_err(|error| format!("Failed to prepare window: {error}"))?
         .build()
-        .map_err(|error| format!("Failed to build window: {error}"));
-
-    if let Err(error) = build_result {
-        let state = app.state::<InitialFileState>();
-        if let Ok(mut lock) = state.0.lock() {
-            let _ = lock.remove(label.as_str());
+        .map_err(|error| format!("Failed to build window: {error}"))
+    {
+        Ok(window) => window,
+        Err(error) => {
+            let state = app.state::<InitialFileState>();
+            if let Ok(mut lock) = state.0.lock() {
+                let _ = lock.remove(label.as_str());
+            }
+            return Err(error);
         }
-        return Err(error);
-    }
+    };
+
+    // Keep new document windows in the foreground on multi-window desktop flows.
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
 
     Ok(())
 }
