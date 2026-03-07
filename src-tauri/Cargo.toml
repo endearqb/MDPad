@@ -1,6 +1,6 @@
 [package]
 name = "mdpad"
-version = "0.1.11"
+version = "0.1.12"
 description = "A lightweight single-file Markdown editor for Windows."
 authors = ["MDPad Contributors"]
 edition = "2021"

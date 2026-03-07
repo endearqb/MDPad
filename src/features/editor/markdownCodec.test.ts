@@ -133,6 +133,33 @@ describe("markdownCodec", () => {
     expect(fencedCodeHtml).toContain("const n = 1;");
   });
 
+  it("strips yaml front matter from rendered body html", () => {
+    const markdown = [
+      "---",
+      'title: "Cursor"',
+      "tags:",
+      '  - "clippings"',
+      "---",
+      "# Heading",
+      "Body"
+    ].join("\n");
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<h1>Heading</h1>");
+    expect(html).toContain("<p>Body</p>");
+    expect(html).not.toContain("title:");
+    expect(html).not.toContain("clippings");
+  });
+
+  it("keeps ordinary markdown when top --- block is not valid front matter delimiter pair", () => {
+    const markdown = "---\nTitle\n\ntext";
+    const html = markdownToHtml(markdown);
+
+    expect(html).toContain("<hr>");
+    expect(html).toContain("<p>Title</p>");
+    expect(html).toContain("<p>text</p>");
+  });
+
   it("forces contiguous --- after paragraph to thematic break instead of setext heading", () => {
     const markdown = "See README or `package.json` / `pyproject.toml`.\n---\n\n## Roadmap";
     const html = markdownToHtml(markdown);

@@ -108,6 +108,33 @@ export interface EditorCopy {
     panelTitle: string;
     empty: string;
   };
+  frontMatter: {
+    title: string;
+    subtitle: string;
+    propertiesTab: string;
+    yamlTab: string;
+    showPropertiesAria: string;
+    showPropertiesTitle: string;
+    showYamlAria: string;
+    showYamlTitle: string;
+    addProperty: string;
+    deleteProperty: string;
+    addListItem: string;
+    deleteListItem: string;
+    editInYaml: string;
+    empty: string;
+    booleanLabel: string;
+    complexValue: string;
+    yamlPlaceholder: string;
+    invalidYamlTitle: string;
+    invalidYamlBody: string;
+    mappingOnlyTitle: string;
+    mappingOnlyBody: string;
+    propertyKeyLabel: string;
+    propertyKeyPlaceholder: string;
+    propertyKeyEmptyError: string;
+    propertyKeyDuplicateError: string;
+  };
   styleLabels: {
     paragraph: string;
     h1: string;
@@ -320,6 +347,33 @@ const enCopy: AppCopy = {
       dockAriaLabel: "Document outline",
       panelTitle: "Outline",
       empty: "No headings yet"
+    },
+    frontMatter: {
+      title: "Properties",
+      subtitle: "YAML front matter is edited separately from the document body.",
+      propertiesTab: "Properties",
+      yamlTab: "YAML",
+      showPropertiesAria: "Show structured properties",
+      showPropertiesTitle: "Show structured properties",
+      showYamlAria: "Show YAML source",
+      showYamlTitle: "Show YAML source",
+      addProperty: "Add Property",
+      deleteProperty: "Delete",
+      addListItem: "Add Item",
+      deleteListItem: "Remove",
+      editInYaml: "Edit in YAML",
+      empty: "No properties yet.",
+      booleanLabel: "Boolean value",
+      complexValue: "Complex value",
+      yamlPlaceholder: "key: value",
+      invalidYamlTitle: "Invalid YAML front matter",
+      invalidYamlBody: "Fix the YAML source below before switching back to Properties view.",
+      mappingOnlyTitle: "Properties view needs a mapping root",
+      mappingOnlyBody: "This front matter is valid YAML, but its top-level value is not a key/value map.",
+      propertyKeyLabel: "New property key",
+      propertyKeyPlaceholder: "example_key",
+      propertyKeyEmptyError: "Property key cannot be empty.",
+      propertyKeyDuplicateError: "A property with this key already exists."
     },
     styleLabels: {
       paragraph: "Paragraph",
@@ -542,6 +596,33 @@ const zhCopy: AppCopy = {
       dockAriaLabel: "文档目录",
       panelTitle: "目录",
       empty: "暂无标题"
+    },
+    frontMatter: {
+      title: "属性",
+      subtitle: "YAML front matter 与正文分开编辑。",
+      propertiesTab: "属性",
+      yamlTab: "YAML",
+      showPropertiesAria: "显示结构化属性",
+      showPropertiesTitle: "显示结构化属性",
+      showYamlAria: "显示 YAML 源码",
+      showYamlTitle: "显示 YAML 源码",
+      addProperty: "新增属性",
+      deleteProperty: "删除",
+      addListItem: "新增条目",
+      deleteListItem: "移除",
+      editInYaml: "切到 YAML",
+      empty: "暂无属性。",
+      booleanLabel: "布尔值",
+      complexValue: "复杂值",
+      yamlPlaceholder: "key: value",
+      invalidYamlTitle: "YAML front matter 无法解析",
+      invalidYamlBody: "请先在下方修复 YAML 源码，再切回属性视图。",
+      mappingOnlyTitle: "属性视图只支持键值映射",
+      mappingOnlyBody: "当前 front matter 虽然是合法 YAML，但顶层不是 key/value 映射结构。",
+      propertyKeyLabel: "新属性键名",
+      propertyKeyPlaceholder: "example_key",
+      propertyKeyEmptyError: "属性键名不能为空。",
+      propertyKeyDuplicateError: "该属性键名已存在。"
     },
     styleLabels: {
       paragraph: "正文",

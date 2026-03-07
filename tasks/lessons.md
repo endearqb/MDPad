@@ -269,3 +269,8 @@
 - 当用户要求目录展开面板“只保留目录条目”时，不要额外保留 `Outline` 或同类标题栏；默认直接进入列表内容。
 - 移除面板标题后要同步清理布局占位（例如 `grid-template-rows` 与标题 `gap`），避免出现无意义留白。
 - 该类视觉微调要做最小验证（至少 `pnpm build`），确保组件结构与样式未引入编译回归。
+
+## 2026-03-07 Front Matter UI Alignment
+- 编辑器内嵌 metadata/front matter 面板必须与 `.mdpad-editor` 共享同一个内容宽度变量；不要让属性区比正文更宽或更窄。
+- 当用户要求“极简、编辑器原生”的视觉方向时，优先移除独立 head 栏和文字 tab，改用与 Mermaid/代码块一致的 hover icon toolbar。
+- front matter 属性行默认收敛为 `key | value | inline actions`，按钮优先使用 icon-only 和极小间距；除非用户明确要求更强分组，否则不要回到多层卡片式布局。

@@ -1,7 +1,7 @@
 {
   "name": "mdpad",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.12",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -55,7 +55,8 @@
     "styletron-react": "^6.1.1",
     "tippy.js": "^6.3.7",
     "turndown": "^7.2.0",
-    "turndown-plugin-gfm": "^1.0.2"
+    "turndown-plugin-gfm": "^1.0.2",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.19",

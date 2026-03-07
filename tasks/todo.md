@@ -2655,3 +2655,125 @@
   - 资产：`MDPad_0.1.11_x64-setup.exe`
   - 资产下载：`https://github.com/endearqb/MDPad/releases/download/v0.1.11/MDPad_0.1.11_x64-setup.exe`
   - SHA256：`7a210f6031d89287a6ff7052e5da9ea59451033a3e8edf53c6a1fc23dfe01429`
+
+## 新任务：Markdown YAML Front Matter 适配规划（2026-03-07）
+- [x] 审查 `markdownCodec` 与编辑器载入/保存链路，确认当前把文档头部 `--- ... ---` 按正文 Markdown 渲染
+- [x] 对照示例文档与官方/社区资料，收敛 YAML front matter 的处理最佳实践
+- [x] 在 `tasks/todo.md` 写入详细开发计划、边界、验收标准与验证方案
+- [x] 在 `src/features/editor` 增加 front matter 检测/提取模块，仅识别“文档起始处（允许 BOM）且闭合完整”的 YAML `---` 头部
+- [x] 建立 `rawFrontMatter + bodyMarkdown + parsedData` 的内部模型，正文渲染链路不再把 front matter 当正文 HTML
+- [x] 调整 `markdownToHtml` / 编辑器初始化链路：正文仅渲染 body，front matter 以独立元数据对象保留
+- [x] 调整保存/flush 链路：若用户未编辑元数据，保存时原样前置 `rawFrontMatter`，front matter 一旦被编辑则用 AST 重建 YAML
+- [x] 实现首版 front matter 面板：支持 `Properties` 结构化编辑与 `YAML` 源码编辑双模式
+- [x] 明确失败回退策略：头部未闭合时回退为普通 Markdown；闭合但 YAML 非法时进入源码修复模式
+- [x] 补充测试：
+  - [x] Obsidian Clipper 样例（标题、链接、列表、日期、tags）
+  - [x] 简单双字段样例（`name` / `description`）
+  - [x] BOM + front matter
+  - [x] 无 front matter
+  - [x] 正文中的 `---`
+  - [x] 未闭合/非法 YAML 头部
+- [x] 运行验证：`pnpm lint`、`pnpm test`、`pnpm test:e2e`、`pnpm build`
+- [ ] 手动在应用内打开两份示例文档做最终 UI 验收
+- [x] 在本文件追加实现回顾、验证结果与最终行为说明
+
+### 回顾（Front Matter 调研结论与规格冻结）
+- 现状与根因：
+  - 两个示例文件头部都是 YAML front matter；当前 `src/features/editor/markdownCodec.ts` 的 `preprocessMarkdown -> marked.parse` 链路没有 front matter 分支，因此头部内容被当正文解析，出现 `title:`、`source:`、列表缩进等被直接渲染的问题。
+  - 这不是单个样例特例，而是整个 Markdown 打开链路对文档级 metadata 缺少建模。
+- 官方文档共识：
+  - Obsidian 将其称为 Properties / Frontmatter，属于文档顶部元数据；wikilink 等值在 YAML 中需要按 YAML 规则书写。
+  - Jekyll 明确 front matter 必须位于文件开头，使用成对 `---` 包裹，内容为有效 YAML。
+  - Hugo 同样将 front matter 视为位于内容顶部的 metadata 区，只是额外支持 YAML/TOML/JSON 多种格式。
+- 社区/生态共识：
+  - `remark-frontmatter` 明确建议“写 front matter 时优先使用 YAML，并且不要允许 front matter 出现在文档任意位置”，即识别范围应限制在文档起始处。
+  - 生态中普遍把 front matter 当“文档级 metadata”而非“正文节点”；正文 HTML 渲染通常会把它剥离，若要显示则以单独 UI 呈现。
+- 本项目首轮规格冻结：
+  - 首轮只适配 YAML `--- ... ---` 语法；不在本次任务中扩展 `+++` TOML 与 `{}` JSON，但代码结构预留扩展点。
+  - 仅识别文档起始处的 front matter；正文中间出现的 `---` 继续按现有分隔线/普通 Markdown 逻辑处理。
+  - 解析与保存分离：检测到 front matter 后，正文编辑只作用于 body；保存时默认拼回原始 `rawFrontMatter`，优先保证 round-trip 稳定性。
+  - 首轮不让 front matter 的 `title`、`name` 等字段直接接管窗口标题、文件名或重命名逻辑，避免影响现有文件系统心智。
+  - 若 YAML 非法或头部未闭合，绝不静默丢弃内容；优先保守回退，保证用户原文可见、可保存。
+- 建议实现顺序：
+  - Step 1：新增纯函数 `splitFrontMatter(markdown)`，负责检测、提取、保留 raw block。
+  - Step 2：在 `markdownToHtml` 前只向现有 `preprocessMarkdown` 传入 body。
+  - Step 3：在编辑器 flush/save 时把 `rawFrontMatter` 与最新 body 重新拼装。
+  - Step 4：增加只读属性展示 UI；确认视觉方案后再决定是否进入可编辑属性面板。
+- 验收标准：
+  - 打开用户给出的两个样例文件时，头部不再以正文大段文本形式出现在文档开头。
+  - 不带 front matter 的普通 Markdown 文档行为完全不变。
+  - 包含 front matter 的文档在“打开 -> 不修改正文 -> 保存”后，头部语义与原始文本保持稳定。
+  - `---` 分隔线、现有 setext 修正、callout/mermaid/task list 等既有兼容逻辑不回归。
+
+### 回顾（Front Matter 完整属性编辑适配）
+- 变更文件：
+  - `src/features/editor/frontMatter.ts`
+  - `src/features/editor/components/FrontMatterPanel.tsx`
+  - `src/features/editor/MarkdownEditor.tsx`
+  - `src/features/editor/markdownCodec.ts`
+  - `src/features/editor/frontMatter.test.ts`
+  - `src/features/editor/markdownCodec.test.ts`
+  - `src/shared/i18n/appI18n.ts`
+  - `src/styles.css`
+  - `package.json`
+  - `pnpm-lock.yaml`
+- 实现结果：
+  - 新增 front matter helper：支持 `splitFrontMatter`、`composeFrontMatter`、`parseFrontMatterYaml` 与基于 `yaml` AST 的字段增删改。
+  - `markdownToHtml` 现在会先剥离文档顶部 YAML front matter，再把正文送入现有 Markdown 渲染链路。
+  - `MarkdownEditor` 新增 front matter 独立状态，正文 TipTap 与 front matter 面板分离编辑，但统一回写为单一 markdown 字符串。
+  - 新增顶部属性面板：
+    - `Properties` 视图支持顶层 scalar / boolean / flat list 的结构化编辑；
+    - `YAML` 视图支持直接编辑原始 YAML；
+    - 遇到非法 YAML 时自动保留 front matter 并切到源码修复模式；
+    - 顶层复杂值（object / array-of-object）提示切到 `YAML` 编辑。
+  - 文件名、窗口标题、重命名逻辑保持以文件系统名称为准，不受 `title` / `name` front matter 字段影响。
+- 验证结果：
+  - `pnpm lint`：通过（`tsc --noEmit`）
+  - `pnpm test`：通过（23 files / 163 tests passed）
+  - `pnpm test:e2e`：通过（1 file / 1 test passed）
+  - `pnpm build`：通过（Vite 生产构建成功，保留既有 chunk size 警告）
+  - 样例脚本校验：
+    - `docs/Cursor Goes To War For AI Coding Dominance.md`：成功识别 front matter，提取键 `title/source/author/published/created/description/tags`
+    - `docs/SKILL.md`：成功识别 front matter，提取键 `name/description`
+- 未完成项：
+  - 尚未在桌面应用里手动打开上述两份样例文档做最终 UI 肉眼验收。
+
+## 新任务：Front Matter 面板视觉与布局收敛（2026-03-07）
+- [x] 在 `tasks/todo.md` 写入本次 UI 收敛计划并锁定边界（仅改 front matter 面板壳层与样式，不改解析/保存/dirty/标题逻辑）
+- [x] 重构 `FrontMatterPanel.tsx`：移除 head 栏/文字 tab/文字按钮，改为极简 headless 面板
+- [x] 将模式切换改为右上角 hover toolbar，使用 `Eye` / `Code2` icon，交互语言对齐 Mermaid 代码/预览切换
+- [x] 将属性视图收敛为紧凑单行 row 布局：`key | value | inline actions`，列表项改为 inline chip/input 流
+- [x] 调整 `appI18n.ts` 与 `styles.css`：补齐 icon-only aria/title 文案、共享 `--editor-content-max-width` 并收敛 front matter 样式
+- [x] 运行验证：`pnpm lint`、`pnpm test`、`pnpm build`
+- [x] 在本文件追加回顾与验证结果
+
+### 回顾（Front Matter 面板视觉与布局收敛）
+- 变更文件：
+  - `src/features/editor/components/FrontMatterPanel.tsx`
+  - `src/shared/i18n/appI18n.ts`
+  - `src/styles.css`
+  - `tasks/todo.md`
+- 布局与视觉收敛：
+  - front matter 面板改为 headless 单层 surface，移除了标题、副标题、文字 tab 和文字操作按钮。
+  - 新增共享变量 `--editor-content-max-width`，由 `.editor-surface` 提供，`.mdpad-editor` 与 front matter 面板共同使用，正文列与 front matter 宽度保持一致。
+  - 右上角模式切换改为 hover toolbar，使用 `Eye` / `Code2` 小 icon，视觉语言对齐 Mermaid 预览/源码切换。
+  - 顶层属性改为紧凑单行 row：`key | value | actions`；列表值改为 inline chip/input 流；复杂值改为单行紧凑预览 + `Code2` 跳转。
+  - 非法 YAML 与“非映射根节点”提示改为细条 notice，不再使用大块 alert/card。
+- 交互与文案：
+  - icon-only 模式切换新增 `showPropertiesAria/showPropertiesTitle` 与 `showYamlAria/showYamlTitle`。
+  - 新增/删除属性、列表项增删、切到 YAML 全部改为无文字小 icon 按钮，继续复用既有 front matter 业务文案作为 `title` / `aria-label`。
+- 验证结果：
+  - `pnpm lint`：通过（`tsc --noEmit`）
+  - `pnpm test`：通过（23 files / 163 tests passed）
+  - `pnpm build`：通过（Vite 生产构建成功，保留既有 chunk size 警告）
+- 未完成项：
+  - 尚未在桌面应用里手动打开 `docs/Cursor Goes To War For AI Coding Dominance.md` 与 `docs/SKILL.md` 做最终肉眼验收。
+
+## 新任务：0.1.12 发布（版本 + 安装包 + Git + Release）（2026-03-07）
+- [ ] 在 `tasks/todo.md` 写入发布计划并锁定边界（包含当前 front matter 改动；不提交用户本地未跟踪示例文档）
+- [ ] 版本号执行 `+0.0.1`（`0.1.11 -> 0.1.12`）并同步到 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`
+- [ ] 运行发布前验证（至少 `pnpm lint`、`pnpm test`、`pnpm test:e2e`）并构建 Windows 安装包
+- [ ] 提交本次改动并推送到 `origin/main`
+- [ ] 创建并推送标签 `v0.1.12`
+- [ ] 创建 GitHub Release 并上传 `MDPad_0.1.12_x64-setup.exe`
+- [ ] 在本文件追加回顾（含验证结果、Release 链接、资产路径与哈希）

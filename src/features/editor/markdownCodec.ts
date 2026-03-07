@@ -3,6 +3,7 @@ import { marked } from "marked";
 import type { Tokens } from "marked";
 import { gfm } from "turndown-plugin-gfm";
 import { MarkdownHookRegistry } from "./codec/hooks/registry";
+import { splitFrontMatter } from "./frontMatter";
 import {
   hasMarkdownImageSizeHint,
   parseObsidianEmbedImageSyntax,
@@ -1092,7 +1093,8 @@ function preprocessMarkdown(markdown: string): string {
 }
 
 export function markdownToHtml(markdown: string): string {
-  const parsed = marked.parse(preprocessMarkdown(markdown)) as string;
+  const { bodyMarkdown } = splitFrontMatter(markdown);
+  const parsed = marked.parse(preprocessMarkdown(bodyMarkdown)) as string;
   return rewriteLinkedImageAnchors(parsed);
 }
 

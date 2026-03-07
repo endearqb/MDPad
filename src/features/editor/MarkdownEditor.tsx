@@ -156,7 +156,23 @@ import {
   writeAttachmentLibraryDirPreference
 } from "../../shared/utils/attachmentPreferences";
 import AttachmentLibrarySetupModal from "../file/AttachmentLibrarySetupModal";
+import FrontMatterPanel, {
+  type FrontMatterPanelMode
+} from "./components/FrontMatterPanel";
 import TableOfContentsDock from "./components/TableOfContentsDock";
+import {
+  addFrontMatterField,
+  addFrontMatterListItem,
+  composeFrontMatter,
+  parseFrontMatterYaml,
+  removeFrontMatterField,
+  removeFrontMatterListItem,
+  splitFrontMatter,
+  updateFrontMatterBooleanField,
+  updateFrontMatterListItem,
+  updateFrontMatterScalarField,
+  type FrontMatterComposeInput
+} from "./frontMatter";
 
 interface MarkdownEditorProps {
   copy: EditorCopy;
@@ -192,6 +208,10 @@ interface TextSelectionSnapshot {
 interface CachedTextSelectionSnapshot {
   range: TextSelectionSnapshot;
   timestamp: number;
+}
+
+interface FrontMatterState extends FrontMatterComposeInput {
+  panelMode: FrontMatterPanelMode;
 }
 
 type TextStyleValue = "paragraph" | 1 | 2 | 3 | 4;
@@ -503,6 +523,25 @@ function buildEditorStats(editor: Editor): EditorStats {
   };
 }
 
+function createFrontMatterState(markdown: string): {
+  bodyMarkdown: string;
+  state: FrontMatterState;
+} {
+  const parts = splitFrontMatter(markdown);
+  const parsed = parts.hasFrontMatter ? parseFrontMatterYaml(parts.rawYaml) : null;
+
+  return {
+    bodyMarkdown: parts.bodyMarkdown,
+    state: {
+      bom: parts.bom,
+      hasFrontMatter: parts.hasFrontMatter,
+      rawBlock: parts.rawBlock,
+      rawYaml: parts.rawYaml,
+      panelMode: parsed?.error ? "yaml" : "properties"
+    }
+  };
+}
+
 export default function MarkdownEditor({
   copy,
   extensionCopy,
@@ -524,6 +563,15 @@ export default function MarkdownEditor({
   const isBubbleInteractingRef = useRef(false);
   const recentTextSelectionRef = useRef<CachedTextSelectionSnapshot | null>(null);
   const lastSyncedMarkdownRef = useRef<string>(normalizeMarkdown(markdown));
+  const initialMarkdownStateRef = useRef<ReturnType<typeof createFrontMatterState> | null>(
+    null
+  );
+  if (initialMarkdownStateRef.current === null) {
+    initialMarkdownStateRef.current = createFrontMatterState(markdown);
+  }
+  const initialMarkdownState = initialMarkdownStateRef.current;
+  const bodyMarkdownRef = useRef(initialMarkdownState.bodyMarkdown);
+  const frontMatterStateRef = useRef(initialMarkdownState.state);
   const documentPathRef = useRef<string | null>(documentPath);
   const onEditorErrorRef = useRef(onEditorError);
   const onReadOnlyInteractionRef = useRef(onReadOnlyInteraction);
@@ -548,6 +596,7 @@ export default function MarkdownEditor({
   const [editorPromptValue, setEditorPromptValue] = useState("");
   const [bubbleShellNode, setBubbleShellNode] = useState<HTMLDivElement | null>(null);
   const [tableOfContentsItems, setTableOfContentsItems] = useState<TableOfContentDataItem[]>([]);
+  const [frontMatterState, setFrontMatterState] = useState<FrontMatterState>(initialMarkdownState.state);
   const firstEditableLoggedRef = useRef(false);
 
   const emitStats = useCallback(
@@ -562,12 +611,20 @@ export default function MarkdownEditor({
   const initialContentHtmlRef = useRef<string | null>(null);
   if (initialContentHtmlRef.current === null) {
     const parseStart = nowMs();
-    initialContentHtmlRef.current = markdownToHtml(markdown);
+    initialContentHtmlRef.current = markdownToHtml(initialMarkdownState.bodyMarkdown);
     logOpenPerfElapsed("open.markdown_to_html_ms", parseStart, {
       phase: "initial"
     });
     lastSyncedMarkdownRef.current = normalizeMarkdown(markdown);
   }
+  const parsedFrontMatter = useMemo(
+    () => parseFrontMatterYaml(frontMatterState.rawYaml),
+    [frontMatterState.rawYaml]
+  );
+  const canUseStructuredFrontMatter =
+    frontMatterState.hasFrontMatter &&
+    !parsedFrontMatter.error &&
+    parsedFrontMatter.isMappingRoot;
 
   useEffect(() => {
     documentPathRef.current = documentPath;
@@ -888,6 +945,55 @@ export default function MarkdownEditor({
     }
   }, []);
 
+  const applyFrontMatterState = useCallback((nextState: FrontMatterState) => {
+    frontMatterStateRef.current = nextState;
+    setFrontMatterState(nextState);
+  }, []);
+
+  const composeDocumentMarkdown = useCallback(
+    (
+      bodyMarkdown: string,
+      nextFrontMatterState: FrontMatterComposeInput = frontMatterStateRef.current
+    ): string => composeFrontMatter(nextFrontMatterState, bodyMarkdown),
+    []
+  );
+
+  const readLatestBodyMarkdown = useCallback((): string => {
+    const activeEditor = editorRef.current;
+    const hasPendingTimer = markdownSyncTimerRef.current !== null;
+    if (!activeEditor || (!hasLocalDocChangesRef.current && !hasPendingTimer)) {
+      return bodyMarkdownRef.current;
+    }
+
+    clearMarkdownSyncTimer();
+    const nextBodyMarkdown = htmlToMarkdown(activeEditor.getHTML());
+    bodyMarkdownRef.current = nextBodyMarkdown;
+    hasLocalDocChangesRef.current = false;
+    return nextBodyMarkdown;
+  }, [clearMarkdownSyncTimer]);
+
+  const syncCombinedMarkdown = useCallback(
+    (
+      nextBodyMarkdown: string,
+      nextFrontMatterState: FrontMatterComposeInput = frontMatterStateRef.current
+    ): string | null => {
+      bodyMarkdownRef.current = nextBodyMarkdown;
+      const nextMarkdown = composeDocumentMarkdown(
+        nextBodyMarkdown,
+        nextFrontMatterState
+      );
+      const normalizedNextMarkdown = normalizeMarkdown(nextMarkdown);
+      if (normalizedNextMarkdown === lastSyncedMarkdownRef.current) {
+        return null;
+      }
+
+      lastSyncedMarkdownRef.current = normalizedNextMarkdown;
+      onMarkdownChange(nextMarkdown);
+      return nextMarkdown;
+    },
+    [composeDocumentMarkdown, onMarkdownChange]
+  );
+
   const serializeMarkdownNow = useCallback(
     (reason: MarkdownSyncReason, activeEditor?: Editor): string | null => {
       const targetEditor = activeEditor ?? editorRef.current;
@@ -903,10 +1009,12 @@ export default function MarkdownEditor({
         return null;
       }
       const serializeStart = nowMs();
-      const nextMarkdown = htmlToMarkdown(targetEditor.getHTML());
+      const nextBodyMarkdown = htmlToMarkdown(targetEditor.getHTML());
       logOpenPerfElapsed("open.html_to_markdown_ms", serializeStart, {
         reason
       });
+      bodyMarkdownRef.current = nextBodyMarkdown;
+      const nextMarkdown = composeDocumentMarkdown(nextBodyMarkdown);
       const normalizedNextMarkdown = normalizeMarkdown(nextMarkdown);
       if (normalizedNextMarkdown === lastSyncedMarkdownRef.current) {
         hasLocalDocChangesRef.current = false;
@@ -917,7 +1025,7 @@ export default function MarkdownEditor({
       hasLocalDocChangesRef.current = false;
       return nextMarkdown;
     },
-    [onMarkdownChange]
+    [composeDocumentMarkdown, onMarkdownChange]
   );
 
   const flushMarkdownSync = useCallback(
@@ -940,6 +1048,143 @@ export default function MarkdownEditor({
   );
 
   flushSerializeRef.current = flushMarkdownSync;
+
+  const applyFrontMatterYamlUpdate = useCallback(
+    (nextRawYaml: string, preferredMode?: FrontMatterPanelMode) => {
+      const nextParsed = parseFrontMatterYaml(nextRawYaml);
+      const nextState: FrontMatterState = {
+        ...frontMatterStateRef.current,
+        rawBlock: null,
+        rawYaml: nextRawYaml,
+        panelMode:
+          nextParsed.error || !nextParsed.isMappingRoot
+            ? "yaml"
+            : preferredMode ?? frontMatterStateRef.current.panelMode
+      };
+
+      applyFrontMatterState(nextState);
+      const latestBodyMarkdown = readLatestBodyMarkdown();
+      syncCombinedMarkdown(latestBodyMarkdown, nextState);
+    },
+    [applyFrontMatterState, readLatestBodyMarkdown, syncCombinedMarkdown]
+  );
+
+  const handleFrontMatterModeChange = useCallback(
+    (mode: FrontMatterPanelMode) => {
+      if (mode === "properties" && !canUseStructuredFrontMatter) {
+        return;
+      }
+      applyFrontMatterState({
+        ...frontMatterStateRef.current,
+        panelMode: mode
+      });
+    },
+    [applyFrontMatterState, canUseStructuredFrontMatter]
+  );
+
+  const runFrontMatterMutation = useCallback(
+    (mutate: (rawYaml: string) => string) => {
+      try {
+        const nextRawYaml = mutate(frontMatterStateRef.current.rawYaml);
+        applyFrontMatterYamlUpdate(nextRawYaml, "properties");
+      } catch (error) {
+        reportEditorError(
+          formatErrorMessage(error, copy.frontMatter.invalidYamlTitle)
+        );
+      }
+    },
+    [applyFrontMatterYamlUpdate, copy.frontMatter.invalidYamlTitle, reportEditorError]
+  );
+
+  const handleFrontMatterYamlChange = useCallback(
+    (value: string) => {
+      applyFrontMatterYamlUpdate(value, "yaml");
+    },
+    [applyFrontMatterYamlUpdate]
+  );
+
+  const handleFrontMatterAddField = useCallback(() => {
+    void (async () => {
+      const rawKey =
+        (await requestEditorPrompt({
+          label: copy.frontMatter.propertyKeyLabel,
+          placeholder: copy.frontMatter.propertyKeyPlaceholder,
+          confirmLabel: copy.frontMatter.addProperty,
+          initialValue: ""
+        })) ?? "";
+      const key = rawKey.trim();
+      if (!key) {
+        reportEditorError(copy.frontMatter.propertyKeyEmptyError);
+        return;
+      }
+      if (parsedFrontMatter.fields.some((field) => field.key === key)) {
+        reportEditorError(copy.frontMatter.propertyKeyDuplicateError);
+        return;
+      }
+
+      runFrontMatterMutation((rawYaml) => addFrontMatterField(rawYaml, key));
+    })();
+  }, [
+    copy.frontMatter.addProperty,
+    copy.frontMatter.propertyKeyDuplicateError,
+    copy.frontMatter.propertyKeyEmptyError,
+    copy.frontMatter.propertyKeyLabel,
+    copy.frontMatter.propertyKeyPlaceholder,
+    parsedFrontMatter.fields,
+    reportEditorError,
+    requestEditorPrompt,
+    runFrontMatterMutation
+  ]);
+
+  const handleFrontMatterRemoveField = useCallback(
+    (key: string) => {
+      runFrontMatterMutation((rawYaml) => removeFrontMatterField(rawYaml, key));
+    },
+    [runFrontMatterMutation]
+  );
+
+  const handleFrontMatterScalarChange = useCallback(
+    (key: string, value: string) => {
+      runFrontMatterMutation((rawYaml) =>
+        updateFrontMatterScalarField(rawYaml, key, value)
+      );
+    },
+    [runFrontMatterMutation]
+  );
+
+  const handleFrontMatterBooleanChange = useCallback(
+    (key: string, value: boolean) => {
+      runFrontMatterMutation((rawYaml) =>
+        updateFrontMatterBooleanField(rawYaml, key, value)
+      );
+    },
+    [runFrontMatterMutation]
+  );
+
+  const handleFrontMatterAddListItem = useCallback(
+    (key: string) => {
+      runFrontMatterMutation((rawYaml) => addFrontMatterListItem(rawYaml, key));
+    },
+    [runFrontMatterMutation]
+  );
+
+  const handleFrontMatterListItemChange = useCallback(
+    (key: string, index: number, value: string) => {
+      runFrontMatterMutation((rawYaml) =>
+        updateFrontMatterListItem(rawYaml, key, index, value)
+      );
+    },
+    [runFrontMatterMutation]
+  );
+
+  const handleFrontMatterRemoveListItem = useCallback(
+    (key: string, index: number) => {
+      runFrontMatterMutation((rawYaml) =>
+        removeFrontMatterListItem(rawYaml, key, index)
+      );
+    },
+    [runFrontMatterMutation]
+  );
 
   const slashItems = useMemo<SlashCommandItem[]>(
     () => [
@@ -1450,10 +1695,13 @@ export default function MarkdownEditor({
       return;
     }
 
+    const nextMarkdownState = createFrontMatterState(markdown);
     clearMarkdownSyncTimer();
     hasLocalDocChangesRef.current = false;
+    bodyMarkdownRef.current = nextMarkdownState.bodyMarkdown;
+    applyFrontMatterState(nextMarkdownState.state);
     const parseStart = nowMs();
-    const nextHtml = markdownToHtml(markdown);
+    const nextHtml = markdownToHtml(nextMarkdownState.bodyMarkdown);
     logOpenPerfElapsed("open.markdown_to_html_ms", parseStart, {
       phase: "sync"
     });
@@ -1464,7 +1712,14 @@ export default function MarkdownEditor({
     logOpenPerfElapsed("open.editor_set_content_ms", setContentStart);
     lastSyncedMarkdownRef.current = normalizedMarkdown;
     emitStats(editor);
-  }, [clearMarkdownSyncTimer, editor, emitStats, markdown, normalizedMarkdown]);
+  }, [
+    applyFrontMatterState,
+    clearMarkdownSyncTimer,
+    editor,
+    emitStats,
+    markdown,
+    normalizedMarkdown
+  ]);
 
   const textStyleOptions = useMemo<
     Array<{
@@ -2208,6 +2463,26 @@ export default function MarkdownEditor({
         onDoubleClickCapture={handleEditorSurfaceDoubleClick}
         ref={editorSurfaceRef}
       >
+        <FrontMatterPanel
+          copy={copy.frontMatter}
+          fields={parsedFrontMatter.fields}
+          hasFrontMatter={frontMatterState.hasFrontMatter}
+          hasStructuredView={canUseStructuredFrontMatter}
+          isEditable={isEditable}
+          mode={frontMatterState.panelMode}
+          onAddField={handleFrontMatterAddField}
+          onAddListItem={handleFrontMatterAddListItem}
+          onBooleanChange={handleFrontMatterBooleanChange}
+          onEditInYaml={() => handleFrontMatterModeChange("yaml")}
+          onListItemChange={handleFrontMatterListItemChange}
+          onModeChange={handleFrontMatterModeChange}
+          onRemoveField={handleFrontMatterRemoveField}
+          onRemoveListItem={handleFrontMatterRemoveListItem}
+          onScalarChange={handleFrontMatterScalarChange}
+          onYamlChange={handleFrontMatterYamlChange}
+          parseError={parsedFrontMatter.error}
+          yamlValue={frontMatterState.rawYaml}
+        />
         <EditorContent editor={editor} />
       </div>
       {editor && (
