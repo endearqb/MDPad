@@ -2770,10 +2770,38 @@
   - 尚未在桌面应用里手动打开 `docs/Cursor Goes To War For AI Coding Dominance.md` 与 `docs/SKILL.md` 做最终肉眼验收。
 
 ## 新任务：0.1.12 发布（版本 + 安装包 + Git + Release）（2026-03-07）
-- [ ] 在 `tasks/todo.md` 写入发布计划并锁定边界（包含当前 front matter 改动；不提交用户本地未跟踪示例文档）
-- [ ] 版本号执行 `+0.0.1`（`0.1.11 -> 0.1.12`）并同步到 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`
-- [ ] 运行发布前验证（至少 `pnpm lint`、`pnpm test`、`pnpm test:e2e`）并构建 Windows 安装包
-- [ ] 提交本次改动并推送到 `origin/main`
-- [ ] 创建并推送标签 `v0.1.12`
-- [ ] 创建 GitHub Release 并上传 `MDPad_0.1.12_x64-setup.exe`
-- [ ] 在本文件追加回顾（含验证结果、Release 链接、资产路径与哈希）
+- [x] 在 `tasks/todo.md` 写入发布计划并锁定边界（包含当前 front matter 改动；不提交用户本地未跟踪示例文档）
+- [x] 版本号执行 `+0.0.1`（`0.1.11 -> 0.1.12`）并同步到 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`
+- [x] 运行发布前验证（至少 `pnpm lint`、`pnpm test`、`pnpm test:e2e`）并构建 Windows 安装包
+- [x] 提交本次改动并推送到 `origin/main`
+- [x] 创建并推送标签 `v0.1.12`
+- [x] 创建 GitHub Release 并上传 `MDPad_0.1.12_x64-setup.exe`
+- [x] 在本文件追加回顾（含验证结果、Release 链接、资产路径与哈希）
+
+### 回顾（0.1.12 发布：版本 + 安装包 + Git + Release）
+- 版本同步：
+  - `package.json`：`0.1.11 -> 0.1.12`
+  - `src-tauri/Cargo.toml`：`0.1.11 -> 0.1.12`
+  - `src-tauri/tauri.conf.json`：`0.1.11 -> 0.1.12`
+- 本次发布包含：
+  - YAML front matter 解析与独立编辑链路
+  - front matter 极简属性面板与 YAML / Properties 双模式 UI 收敛
+  - 对应单测、e2e、文案与样式调整
+- 验证结果：
+  - `pnpm lint`：通过（`tsc --noEmit`）
+  - `pnpm test`：通过（23 files / 163 tests passed）
+  - `pnpm test:e2e`：通过（1 file / 1 test passed）
+  - `pnpm tauri:build:no-bump`：通过（生成 Windows NSIS 安装包）
+- Git 发布结果：
+  - 分支：`main`
+  - 提交：`082d087`
+  - 标签：`v0.1.12`
+  - `main` 与标签均已推送到 `origin`
+- Release：
+  - 链接：`https://github.com/endearqb/MDPad/releases/tag/v0.1.12`
+  - 资产：`MDPad_0.1.12_x64-setup.exe`
+  - 下载：`https://github.com/endearqb/MDPad/releases/download/v0.1.12/MDPad_0.1.12_x64-setup.exe`
+- 安装包产物：
+  - 本地路径：`src-tauri/target/release/bundle/nsis/MDPad_0.1.12_x64-setup.exe`
+  - 大小：`4,021,149` bytes
+  - SHA256：`c5f12405fa28aad8c73da82742e9dca1fcd06f115f1ea83aec23d1e89437bbd1`
