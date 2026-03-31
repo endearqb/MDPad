@@ -19,6 +19,10 @@ export interface ClassifiedEditorLink {
   hash: string | null;
 }
 
+interface EditorHrefValidationContext {
+  defaultValidate: (url: string) => boolean;
+}
+
 function decodeSegment(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -251,6 +255,42 @@ export function classifyEditorLink(rawHref: string): ClassifiedEditorLink {
     href,
     hash
   };
+}
+
+export function isAllowedEditorHref(
+  rawHref: string,
+  context: EditorHrefValidationContext
+): boolean {
+  const href = normalizeHref(rawHref);
+  if (!href) {
+    return false;
+  }
+
+  if (context.defaultValidate(href)) {
+    return true;
+  }
+
+  if (href.startsWith("#")) {
+    return extractHash(href) !== null;
+  }
+
+  const pathPart = decodeSegment(stripQueryAndHash(href));
+  if (!pathPart) {
+    return false;
+  }
+
+  if (
+    WINDOWS_ABSOLUTE_PATH_PATTERN.test(pathPart) ||
+    WINDOWS_UNC_PATH_PATTERN.test(pathPart)
+  ) {
+    return isMarkdownPath(pathPart);
+  }
+
+  if (SCHEME_PATTERN.test(href) || EXTERNAL_LINK_PATTERN.test(href)) {
+    return false;
+  }
+
+  return isMarkdownPath(pathPart);
 }
 
 export function resolveMarkdownLinkPath(

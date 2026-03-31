@@ -8,12 +8,16 @@ use tauri::{Manager, WebviewWindowBuilder, Window};
 struct InitialFileState(Mutex<HashMap<String, Option<String>>>);
 struct AttachmentLibraryState(Mutex<Option<String>>);
 
-fn is_markdown_file(path: &Path) -> bool {
+fn is_supported_text_file(path: &Path) -> bool {
     matches!(
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| ext.to_ascii_lowercase()),
-        Some(ext) if ext == "md" || ext == "markdown"
+        Some(ext)
+            if matches!(
+                ext.as_str(),
+                "md" | "markdown" | "html" | "htm" | "py" | "js" | "ts" | "json"
+            )
     )
 }
 
@@ -42,14 +46,14 @@ fn normalize_path(path: PathBuf) -> String {
     strip_windows_verbatim_prefix(normalized)
 }
 
-fn extract_markdown_path(args: &[String]) -> Option<String> {
+fn extract_supported_text_path(args: &[String]) -> Option<String> {
     for arg in args.iter().skip(1) {
         if arg.starts_with('-') {
             continue;
         }
 
         let candidate = PathBuf::from(arg);
-        if is_markdown_file(&candidate) {
+        if is_supported_text_file(&candidate) {
             return Some(normalize_path(candidate));
         }
     }
@@ -71,7 +75,10 @@ fn get_initial_file(
 #[tauri::command]
 fn open_file_dialog() -> Result<Option<String>, String> {
     let file = rfd::FileDialog::new()
-        .add_filter("Markdown", &["md", "markdown"])
+        .add_filter(
+            "Supported Text Files",
+            &["md", "markdown", "html", "htm", "py", "js", "ts", "json"],
+        )
         .pick_file();
     Ok(file.map(|path| path.to_string_lossy().into_owned()))
 }
@@ -86,7 +93,10 @@ fn save_file_as_dialog(default_name: Option<String>) -> Result<Option<String>, S
 
     let file = rfd::FileDialog::new()
         .set_file_name(suggested_name)
-        .add_filter("Markdown", &["md", "markdown"])
+        .add_filter(
+            "Supported Text Files",
+            &["md", "markdown", "html", "htm", "py", "js", "ts", "json"],
+        )
         .save_file();
     Ok(file.map(|path| path.to_string_lossy().into_owned()))
 }
@@ -275,10 +285,13 @@ fn write_text_file(path: String, content: String) -> Result<(), String> {
     fs::write(path, content).map_err(|error| format!("Failed to write file: {error}"))
 }
 
-fn normalize_markdown_path(path: String) -> Result<String, String> {
+fn normalize_supported_text_path(path: String) -> Result<String, String> {
     let candidate = PathBuf::from(path);
-    if !is_markdown_file(&candidate) {
-        return Err("Only .md/.markdown files can be opened in MDPad.".to_string());
+    if !is_supported_text_file(&candidate) {
+        return Err(
+            "Only supported text files (.md, .markdown, .html, .htm, .py, .js, .ts, .json) can be opened in MDPad."
+                .to_string(),
+        );
     }
     Ok(normalize_path(candidate))
 }
@@ -299,7 +312,7 @@ fn create_document_window_internal(
     path: Option<String>
 ) -> Result<(), String> {
     let normalized_path = match path {
-        Some(raw_path) => Some(normalize_markdown_path(raw_path)?),
+        Some(raw_path) => Some(normalize_supported_text_path(raw_path)?),
         None => None
     };
 
@@ -366,8 +379,11 @@ fn rename_file(path: String, new_base_name: String) -> Result<String, String> {
     if !source_path.exists() {
         return Err("File does not exist.".to_string());
     }
-    if !is_markdown_file(&source_path) {
-        return Err("Only .md/.markdown files can be renamed.".to_string());
+    if !is_supported_text_file(&source_path) {
+        return Err(
+            "Only supported text files (.md, .markdown, .html, .htm, .py, .js, .ts, .json) can be renamed."
+                .to_string(),
+        );
     }
 
     let trimmed_name = new_base_name.trim();
@@ -404,7 +420,7 @@ fn rename_file(path: String, new_base_name: String) -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let initial_file = extract_markdown_path(&std::env::args().collect::<Vec<_>>());
+    let initial_file = extract_supported_text_path(&std::env::args().collect::<Vec<_>>());
     let mut initial_file_map = HashMap::new();
     initial_file_map.insert("main".to_string(), initial_file);
 
@@ -413,7 +429,7 @@ pub fn run() {
         .manage(AttachmentLibraryState(Mutex::new(None)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            if let Some(path) = extract_markdown_path(&argv) {
+            if let Some(path) = extract_supported_text_path(&argv) {
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = create_document_window_internal(&app_handle, Some(path));

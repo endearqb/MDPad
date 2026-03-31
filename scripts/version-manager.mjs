@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,7 +33,7 @@ function writeJsonIfChanged(filePath, nextValue) {
   return writeTextIfChanged(filePath, nextContent);
 }
 
-function parsePatchVersion(version) {
+export function parseSemverVersion(version) {
   const matched = version.match(/^(\d+)\.(\d+)\.(\d+)$/u);
   if (!matched) {
     throw new Error(`Unsupported semantic version "${version}". Expected x.y.z`);
@@ -45,12 +45,40 @@ function parsePatchVersion(version) {
   };
 }
 
-function bumpPatch(version) {
-  const parsed = parsePatchVersion(version);
-  return `${parsed.major}.${parsed.minor}.${parsed.patch + 1}`;
+export function formatSemverVersion(version) {
+  return `${version.major}.${version.minor}.${version.patch}`;
 }
 
-function updateCargoPackageVersion(content, nextVersion) {
+export function bumpVersion(version, releaseType) {
+  const parsed = parseSemverVersion(version);
+
+  if (releaseType === "patch") {
+    return formatSemverVersion({
+      ...parsed,
+      patch: parsed.patch + 1
+    });
+  }
+
+  if (releaseType === "minor") {
+    return formatSemverVersion({
+      ...parsed,
+      minor: parsed.minor + 1,
+      patch: 0
+    });
+  }
+
+  if (releaseType === "major") {
+    return formatSemverVersion({
+      major: parsed.major + 1,
+      minor: 0,
+      patch: 0
+    });
+  }
+
+  throw new Error(`Unsupported bump release type "${releaseType}". Expected patch|minor|major`);
+}
+
+export function updateCargoPackageVersion(content, nextVersion) {
   const newline = content.includes("\r\n") ? "\r\n" : "\n";
   const lines = content.split(/\r?\n/u);
   let inPackageSection = false;
@@ -85,7 +113,7 @@ function updateCargoPackageVersion(content, nextVersion) {
 function syncVersionsFromPackage() {
   const packageJson = readJson(packageJsonPath);
   const sourceVersion = packageJson.version;
-  parsePatchVersion(sourceVersion);
+  parseSemverVersion(sourceVersion);
 
   const tauriConfig = readJson(tauriConfigPath);
   tauriConfig.version = sourceVersion;
@@ -104,14 +132,14 @@ function syncVersionsFromPackage() {
   );
 }
 
-function bumpPatchAndSync() {
+function bumpAndSync(releaseType) {
   const packageJson = readJson(packageJsonPath);
   const previousVersion = packageJson.version;
-  const nextVersion = bumpPatch(previousVersion);
+  const nextVersion = bumpVersion(previousVersion, releaseType);
   packageJson.version = nextVersion;
   writeJsonIfChanged(packageJsonPath, packageJson);
   console.log(
-    `[version-manager] bumped package.json version: ${previousVersion} -> ${nextVersion}`
+    `[version-manager] bumped package.json version (${releaseType}): ${previousVersion} -> ${nextVersion}`
   );
 
   syncVersionsFromPackage();
@@ -121,17 +149,19 @@ function printUsage() {
   console.log("Usage:");
   console.log("  node scripts/version-manager.mjs sync");
   console.log("  node scripts/version-manager.mjs bump patch");
+  console.log("  node scripts/version-manager.mjs bump minor");
+  console.log("  node scripts/version-manager.mjs bump major");
 }
 
-function main() {
-  const [command, argument] = process.argv.slice(2);
+export function main(argv = process.argv.slice(2)) {
+  const [command, argument] = argv;
   if (command === "sync") {
     syncVersionsFromPackage();
     return;
   }
 
-  if (command === "bump" && argument === "patch") {
-    bumpPatchAndSync();
+  if (command === "bump" && ["patch", "minor", "major"].includes(argument)) {
+    bumpAndSync(argument);
     return;
   }
 
@@ -139,4 +169,6 @@ function main() {
   process.exitCode = 1;
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

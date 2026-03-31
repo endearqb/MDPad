@@ -1,7 +1,7 @@
 {
   "name": "mdpad",
   "private": true,
-  "version": "0.1.12",
+  "version": "0.1.13",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,10 +15,26 @@
     "tauri:dev": "tauri dev",
     "version:sync": "node scripts/version-manager.mjs sync",
     "version:bump:patch": "node scripts/version-manager.mjs bump patch",
-    "tauri:build:no-bump": "pnpm version:sync && tauri build",
-    "tauri:build": "pnpm version:bump:patch && tauri build"
+    "version:bump:minor": "node scripts/version-manager.mjs bump minor",
+    "version:bump:major": "node scripts/version-manager.mjs bump major",
+    "release:patch": "pnpm version:bump:patch && tauri build",
+    "release:minor": "pnpm version:bump:minor && tauri build",
+    "release:major": "pnpm version:bump:major && tauri build",
+    "release:no-bump": "pnpm version:sync && tauri build",
+    "tauri:build:no-bump": "pnpm release:no-bump",
+    "tauri:build": "pnpm release:patch"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.0",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.3.4",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/language": "^6.11.3",
+    "@codemirror/search": "^6.5.11",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.6",
     "@tauri-apps/api": "2.10.1",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "@tiptap/core": "^2.27.2",

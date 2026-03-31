@@ -1,5 +1,9 @@
 import type { DocState } from "../../shared/types/doc";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
+import {
+  getDocumentKindFromPath,
+  getPathExtension
+} from "../../shared/utils/documentKind";
 
 export const EMPTY_DOC_CONTENT = "";
 
@@ -14,6 +18,8 @@ export function createEmptyDocState(): DocState {
   const normalized = normalizeMarkdown(EMPTY_DOC_CONTENT);
   return {
     currentPath: null,
+    kind: "markdown",
+    fileExtension: "md",
     content: EMPTY_DOC_CONTENT,
     lastSavedContent: normalized,
     isDirty: false
@@ -26,6 +32,8 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       const normalized = normalizeMarkdown(action.content);
       return {
         currentPath: action.path,
+        kind: getDocumentKindFromPath(action.path),
+        fileExtension: getPathExtension(action.path),
         content: action.content,
         lastSavedContent: normalized,
         isDirty: false
@@ -44,6 +52,8 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       const normalized = normalizeMarkdown(nextContent);
       return {
         currentPath: action.path ?? state.currentPath,
+        kind: getDocumentKindFromPath(action.path ?? state.currentPath),
+        fileExtension: getPathExtension(action.path ?? state.currentPath),
         content: nextContent,
         lastSavedContent: normalized,
         isDirty: false
@@ -52,7 +62,9 @@ export function docReducer(state: DocState, action: DocAction): DocState {
     case "rename_path": {
       return {
         ...state,
-        currentPath: action.path
+        currentPath: action.path,
+        kind: getDocumentKindFromPath(action.path),
+        fileExtension: getPathExtension(action.path)
       };
     }
     case "reset_document": {
@@ -60,6 +72,8 @@ export function docReducer(state: DocState, action: DocAction): DocState {
       const normalized = normalizeMarkdown(nextContent);
       return {
         currentPath: null,
+        kind: "markdown",
+        fileExtension: "md",
         content: nextContent,
         lastSavedContent: normalized,
         isDirty: false

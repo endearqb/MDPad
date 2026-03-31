@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TableOfContentDataItem } from "@tiptap/extension-table-of-contents";
 import {
   classifyEditorLink,
+  isAllowedEditorHref,
   resolveHashToTocItem,
   resolveMarkdownLinkPath,
   toGithubStyleSlug
@@ -103,5 +104,36 @@ describe("linkNavigation", () => {
     expect(
       resolveMarkdownLinkPath("./docs/image.png", "C:\\notes\\README.md")
     ).toBeNull();
+  });
+
+  it("allows markdown-relative hrefs that start with bare path segments", () => {
+    const defaultValidate = (value: string) =>
+      value === "./README_zh.md" || value === "https://example.com";
+
+    expect(
+      isAllowedEditorHref("tasks/lessons.md", {
+        defaultValidate
+      })
+    ).toBe(true);
+    expect(
+      isAllowedEditorHref("./README_zh.md", {
+        defaultValidate
+      })
+    ).toBe(true);
+    expect(
+      isAllowedEditorHref("#section-a", {
+        defaultValidate
+      })
+    ).toBe(true);
+    expect(
+      isAllowedEditorHref("javascript:alert(1)", {
+        defaultValidate
+      })
+    ).toBe(false);
+    expect(
+      isAllowedEditorHref("tasks/lessons.txt", {
+        defaultValidate
+      })
+    ).toBe(false);
   });
 });

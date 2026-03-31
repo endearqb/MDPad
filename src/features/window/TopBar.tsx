@@ -9,6 +9,8 @@ import {
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import {
+  Code2,
+  Eye,
   File,
   FileInput,
   FilePlus2,
@@ -39,11 +41,13 @@ interface TopBarProps {
   editorMode: EditorMode;
   readOnlyIconBlinkTick: number;
   themeMode: ThemeMode;
+  documentViewToggleLabel?: string | null;
   onNewWindow: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
   onRename: (newBaseName: string) => Promise<boolean>;
+  onToggleDocumentView?: (() => void) | null;
   onToggleEditorMode: () => void;
   onToggleTheme: () => void;
 }
@@ -58,11 +62,13 @@ export default function TopBar({
   editorMode,
   readOnlyIconBlinkTick,
   themeMode,
+  documentViewToggleLabel,
   onNewWindow,
   onOpen,
   onSave,
   onSaveAs,
   onRename,
+  onToggleDocumentView,
   onToggleEditorMode,
   onToggleTheme
 }: TopBarProps) {
@@ -452,6 +458,19 @@ export default function TopBar({
             />
           )}
         </IconButton>
+        {documentViewToggleLabel && onToggleDocumentView ? (
+          <IconButton
+            label={documentViewToggleLabel}
+            onClick={onToggleDocumentView}
+          >
+            {documentViewToggleLabel === copy.switchToSourceView ||
+            documentViewToggleLabel === copy.switchToCodeView ? (
+              <Code2 className="titlebar-icon" />
+            ) : (
+              <Eye className="titlebar-icon" />
+            )}
+          </IconButton>
+        ) : null}
         <IconButton
           label={themeMode === "light" ? copy.switchToDarkTheme : copy.switchToLightTheme}
           onClick={onToggleTheme}

@@ -92,6 +92,7 @@ import {
 } from "./extensions/markdownShortcuts";
 import {
   classifyEditorLink,
+  isAllowedEditorHref,
   resolveHashToTocItem,
   resolveMarkdownLinkPath
 } from "./linkNavigation";
@@ -120,6 +121,7 @@ import {
   TableRowKit
 } from "./extensions/tableKit";
 import { isCellSelection } from "./extensions/tableKit/tableSelection";
+import { NeighborColumnResize } from "./extensions/tableNeighborResize";
 import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
@@ -173,6 +175,7 @@ import {
   updateFrontMatterScalarField,
   type FrontMatterComposeInput
 } from "./frontMatter";
+import { MD_TABLE_CELL_MIN_WIDTH } from "./constants";
 
 interface MarkdownEditorProps {
   copy: EditorCopy;
@@ -1486,7 +1489,11 @@ export default function MarkdownEditor({
       SuperscriptExtension,
       slashCommandController.extension,
       Link.configure({
-        openOnClick: false
+        openOnClick: false,
+        isAllowedUri: (href, context) =>
+          isAllowedEditorHref(href, {
+            defaultValidate: context.defaultValidate
+          })
       }),
       Placeholder.configure({
         placeholder: copy.placeholder
@@ -1497,7 +1504,7 @@ export default function MarkdownEditor({
       }),
       TableKit.configure({
         resizable: true,
-        cellMinWidth: 25,
+        cellMinWidth: MD_TABLE_CELL_MIN_WIDTH,
         dictionary: copy.tableMenu.table
       }),
       TableRowKit.configure({
@@ -1508,6 +1515,9 @@ export default function MarkdownEditor({
       }),
       TableCellKit.configure({
         dictionary: copy.tableMenu.cell
+      }),
+      NeighborColumnResize.configure({
+        cellMinWidth: MD_TABLE_CELL_MIN_WIDTH
       }),
       ResizableImage,
       VideoBlock,
@@ -1528,7 +1538,8 @@ export default function MarkdownEditor({
     editorProps: {
       attributes: {
         class:
-          "mdpad-editor prose max-w-none focus:outline-none selection:bg-blue-200 selection:text-blue-900 dark:selection:bg-blue-500/30 dark:selection:text-blue-200"
+          "mdpad-editor prose max-w-none focus:outline-none selection:bg-blue-200 selection:text-blue-900 dark:selection:bg-blue-500/30 dark:selection:text-blue-200",
+        style: `--md-table-cell-min-width: ${MD_TABLE_CELL_MIN_WIDTH}px;`
       },
       handleDOMEvents: {
         click: (_view, event) => {

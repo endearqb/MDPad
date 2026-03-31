@@ -44,6 +44,10 @@ export interface TopBarCopy {
   open: string;
   saveAs: string;
   save: string;
+  switchToSourceView: string;
+  switchToRichTextView: string;
+  switchToPreview: string;
+  switchToCodeView: string;
   switchToReadOnly: string;
   switchToEditable: string;
   switchToDarkTheme: string;
@@ -265,7 +269,8 @@ const enCopy: AppCopy = {
     untitledFileName: "Untitled",
     errors: {
       unknown: "Unknown error",
-      onlyMarkdown: "Only .md and .markdown files are supported.",
+      onlyMarkdown:
+        "Only supported text files (.md, .markdown, .html, .htm, .py, .js, .ts, .json) are supported.",
       fileNameEmpty: "File name cannot be empty."
     }
   },
@@ -276,6 +281,10 @@ const enCopy: AppCopy = {
     open: "Open (Ctrl+O)",
     saveAs: "Save As (Ctrl+Shift+S)",
     save: "Save (Ctrl+S)",
+    switchToSourceView: "Switch to source view",
+    switchToRichTextView: "Switch to rich text view",
+    switchToPreview: "Switch to preview",
+    switchToCodeView: "Switch to code view",
     switchToReadOnly: "Switch to read-only",
     switchToEditable: "Switch to editable",
     switchToDarkTheme: "Switch to dark theme",
@@ -515,7 +524,8 @@ const zhCopy: AppCopy = {
     untitledFileName: "未命名",
     errors: {
       unknown: "未知错误",
-      onlyMarkdown: "仅支持 .md 和 .markdown 文件。",
+      onlyMarkdown:
+        "仅支持 .md、.markdown、.html、.htm、.py、.js、.ts、.json 文本文件。",
       fileNameEmpty: "文件名不能为空。"
     }
   },
@@ -526,6 +536,10 @@ const zhCopy: AppCopy = {
     open: "打开 (Ctrl+O)",
     saveAs: "另存为 (Ctrl+Shift+S)",
     save: "保存 (Ctrl+S)",
+    switchToSourceView: "切换到源码视图",
+    switchToRichTextView: "切换到富文本视图",
+    switchToPreview: "切换到预览",
+    switchToCodeView: "切换到代码视图",
     switchToReadOnly: "\u5207\u6362\u4e3a\u53ea\u8bfb",
     switchToEditable: "\u5207\u6362\u4e3a\u53ef\u7f16\u8f91",
     switchToDarkTheme: "切换到深色主题",

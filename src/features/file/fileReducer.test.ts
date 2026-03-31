@@ -15,6 +15,8 @@ describe("fileReducer", () => {
     });
 
     expect(next.currentPath).toBe("D:\\Docs\\note.md");
+    expect(next.kind).toBe("markdown");
+    expect(next.fileExtension).toBe("md");
     expect(next.content).toBe("# Hello");
     expect(next.isDirty).toBe(false);
   });
@@ -80,6 +82,8 @@ describe("fileReducer", () => {
     });
 
     expect(saved.currentPath).toBe("D:\\Docs\\draft.md");
+    expect(saved.kind).toBe("markdown");
+    expect(saved.fileExtension).toBe("md");
     expect(saved.isDirty).toBe(false);
     expect(saved.lastSavedContent).toBe("Draft v2");
   });
@@ -93,6 +97,8 @@ describe("fileReducer", () => {
     const reset = docReducer(initial, { type: "reset_document" });
 
     expect(reset.currentPath).toBeNull();
+    expect(reset.kind).toBe("markdown");
+    expect(reset.fileExtension).toBe("md");
     expect(reset.content).toBe(EMPTY_DOC_CONTENT);
     expect(reset.isDirty).toBe(false);
   });
@@ -109,8 +115,34 @@ describe("fileReducer", () => {
     });
 
     expect(renamed.currentPath).toBe("D:\\Docs\\new.md");
+    expect(renamed.kind).toBe("markdown");
+    expect(renamed.fileExtension).toBe("md");
     expect(renamed.content).toBe("Value");
     expect(renamed.lastSavedContent).toBe("Value");
     expect(renamed.isDirty).toBe(false);
+  });
+
+  it("tracks html document metadata", () => {
+    const initial = createEmptyDocState();
+    const next = docReducer(initial, {
+      type: "load_document",
+      path: "D:\\Docs\\index.html",
+      content: "<h1>Hello</h1>"
+    });
+
+    expect(next.kind).toBe("html");
+    expect(next.fileExtension).toBe("html");
+  });
+
+  it("tracks code document metadata", () => {
+    const initial = createEmptyDocState();
+    const next = docReducer(initial, {
+      type: "load_document",
+      path: "D:\\Docs\\script.ts",
+      content: "console.log('hi');"
+    });
+
+    expect(next.kind).toBe("code");
+    expect(next.fileExtension).toBe("ts");
   });
 });

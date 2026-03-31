@@ -31,8 +31,11 @@ import TopBar from "./features/window/TopBar";
 import StatusBar from "./features/window/StatusBar";
 import type {
   AppLocale,
+  DocumentKind,
   EditorMode,
+  HtmlViewMode,
   MarkdownTheme,
+  MarkdownViewMode,
   OpenFilePayload,
   PendingAction,
   SaveState,
@@ -40,7 +43,6 @@ import type {
   UiTheme
 } from "./shared/types/doc";
 import { getAppCopy } from "./shared/i18n/appI18n";
-import { hasUnsavedMarkdownChanges } from "./shared/utils/documentDirty";
 import {
   getSystemDefaultLocale,
   readAppLocalePreference,
@@ -48,8 +50,12 @@ import {
 } from "./shared/utils/localePreferences";
 import {
   getFileBaseName,
-  isMarkdownPath
+  getDefaultSaveName
 } from "./shared/utils/path";
+import {
+  getSourceLanguageForExtension,
+  isSupportedTextPath
+} from "./shared/utils/documentKind";
 import {
   readMarkdownThemePreference,
   readThemeModePreference,
@@ -63,6 +69,12 @@ import {
   writeEditorModePreference
 } from "./shared/utils/editorModePreferences";
 import {
+  readHtmlViewPreference,
+  readMarkdownViewPreference,
+  writeHtmlViewPreference,
+  writeMarkdownViewPreference
+} from "./shared/utils/documentViewPreferences";
+import {
   logOpenPerfElapsed,
   nowMs
 } from "./shared/utils/openPerformance";
@@ -75,6 +87,8 @@ import { getSampleDocResourcePath } from "./shared/utils/sampleDocs";
 
 const loadMarkdownEditor = () => import("./features/editor/MarkdownEditor");
 const MarkdownEditor = lazy(loadMarkdownEditor);
+const SourceEditor = lazy(() => import("./features/editor/SourceEditor"));
+const HtmlPreview = lazy(() => import("./features/editor/HtmlPreview"));
 const UnsavedChangesModal = lazy(
   () => import("./features/file/UnsavedChangesModal")
 );
@@ -106,6 +120,14 @@ function getInitialLocale(): AppLocale {
 
 function getInitialEditorMode(windowLabel: string): EditorMode {
   return readEditorModePreference(windowLabel, "editable");
+}
+
+function getInitialMarkdownViewMode(windowLabel: string): MarkdownViewMode {
+  return readMarkdownViewPreference(windowLabel, "wysiwyg");
+}
+
+function getInitialHtmlViewMode(windowLabel: string): HtmlViewMode {
+  return readHtmlViewPreference(windowLabel, "preview");
 }
 
 function formatError(error: unknown, fallback: string): string {
@@ -207,6 +229,12 @@ export default function App() {
   const [editorMode, setEditorMode] = useState<EditorMode>(() =>
     getInitialEditorMode(windowLabel)
   );
+  const [markdownViewMode, setMarkdownViewMode] = useState<MarkdownViewMode>(
+    () => getInitialMarkdownViewMode(windowLabel)
+  );
+  const [htmlViewMode, setHtmlViewMode] = useState<HtmlViewMode>(() =>
+    getInitialHtmlViewMode(windowLabel)
+  );
   const [markdownTheme, setMarkdownTheme] = useState<MarkdownTheme>(
     getInitialMarkdownTheme
   );
@@ -219,6 +247,8 @@ export default function App() {
   const [readOnlyIconBlinkTick, setReadOnlyIconBlinkTick] = useState(0);
 
   const docRef = useRef(doc);
+  const markdownViewModeRef = useRef(markdownViewMode);
+  const htmlViewModeRef = useRef(htmlViewMode);
   const allowCloseRef = useRef(false);
   const errorClearTimerRef = useRef<number | null>(null);
   const appBootStartRef = useRef(nowMs());
@@ -232,6 +262,14 @@ export default function App() {
   useEffect(() => {
     docRef.current = doc;
   }, [doc]);
+
+  useEffect(() => {
+    markdownViewModeRef.current = markdownViewMode;
+  }, [markdownViewMode]);
+
+  useEffect(() => {
+    htmlViewModeRef.current = htmlViewMode;
+  }, [htmlViewMode]);
 
   useEffect(() => {
     return () => {
@@ -265,6 +303,14 @@ export default function App() {
   useEffect(() => {
     writeEditorModePreference(windowLabel, editorMode);
   }, [editorMode, windowLabel]);
+
+  useEffect(() => {
+    writeMarkdownViewPreference(windowLabel, markdownViewMode);
+  }, [markdownViewMode, windowLabel]);
+
+  useEffect(() => {
+    writeHtmlViewPreference(windowLabel, htmlViewMode);
+  }, [htmlViewMode, windowLabel]);
 
   useEffect(() => {
     const preloadStart = nowMs();
@@ -368,6 +414,25 @@ export default function App() {
     return "saved";
   }, [doc.isDirty, errorMessage, isBusy]);
 
+  const canToggleDocumentView = doc.kind === "markdown" || doc.kind === "html";
+  const sourceLanguage = useMemo(
+    () => getSourceLanguageForExtension(doc.fileExtension),
+    [doc.fileExtension]
+  );
+  const documentViewToggleLabel = useMemo(() => {
+    if (doc.kind === "markdown") {
+      return markdownViewMode === "wysiwyg"
+        ? copy.topBar.switchToSourceView
+        : copy.topBar.switchToRichTextView;
+    }
+    if (doc.kind === "html") {
+      return htmlViewMode === "preview"
+        ? copy.topBar.switchToCodeView
+        : copy.topBar.switchToPreview;
+    }
+    return null;
+  }, [copy.topBar, doc.kind, htmlViewMode, markdownViewMode]);
+
   const loadFileIntoEditor = useCallback(async (path: string) => {
     const readStart = nowMs();
     const content = await readTextFile(path);
@@ -408,6 +473,17 @@ export default function App() {
     return docRef.current.content;
   }, []);
 
+  const flushVisibleDocumentContent = useCallback((): string => {
+    const current = docRef.current;
+    if (
+      current.kind === "markdown" &&
+      markdownViewModeRef.current === "wysiwyg"
+    ) {
+      return flushEditorMarkdown();
+    }
+    return current.content;
+  }, [flushEditorMarkdown]);
+
   const notifyError = useCallback((message: string) => {
     if (errorClearTimerRef.current !== null) {
       window.clearTimeout(errorClearTimerRef.current);
@@ -436,7 +512,7 @@ export default function App() {
 
   const openPathInCurrentWindow = useCallback(
     async (path: string) => {
-      if (!isMarkdownPath(path)) {
+      if (!isSupportedTextPath(path)) {
         throw new Error(copy.app.errors.onlyMarkdown);
       }
       await loadFileIntoEditor(path);
@@ -445,7 +521,7 @@ export default function App() {
   );
 
   const openPathInNewWindow = useCallback(async (path: string) => {
-    if (!isMarkdownPath(path)) {
+    if (!isSupportedTextPath(path)) {
       throw new Error(copy.app.errors.onlyMarkdown);
     }
     await createDocumentWindow(path);
@@ -453,10 +529,8 @@ export default function App() {
 
   const saveCurrentAs = useCallback(async (content?: string): Promise<boolean> => {
     const current = docRef.current;
-    const contentToSave = content ?? flushEditorMarkdown();
-    const defaultSaveName = current.currentPath
-      ? getFileBaseName(current.currentPath)
-      : copy.app.untitledBaseName;
+    const contentToSave = content ?? flushVisibleDocumentContent();
+    const defaultSaveName = getDefaultSaveName(current.currentPath);
     const targetPath = await saveFileAsDialog(defaultSaveName);
 
     if (!targetPath) {
@@ -470,11 +544,11 @@ export default function App() {
       content: contentToSave
     });
     return true;
-  }, [copy.app.untitledBaseName, flushEditorMarkdown]);
+  }, [flushVisibleDocumentContent]);
 
   const saveCurrent = useCallback(async (content?: string): Promise<boolean> => {
     const current = docRef.current;
-    const contentToSave = content ?? flushEditorMarkdown();
+    const contentToSave = content ?? flushVisibleDocumentContent();
     if (!current.currentPath) {
       return saveCurrentAs(contentToSave);
     }
@@ -485,7 +559,7 @@ export default function App() {
       content: contentToSave
     });
     return true;
-  }, [flushEditorMarkdown, saveCurrentAs]);
+  }, [flushVisibleDocumentContent, saveCurrentAs]);
 
   const executePendingAction = useCallback(
     async (action: PendingAction) => {
@@ -548,11 +622,10 @@ export default function App() {
           throw new Error(copy.app.errors.fileNameEmpty);
         }
 
-        const latestContent = flushEditorMarkdown();
-        const hasUnsavedChanges = hasUnsavedMarkdownChanges(
-          latestContent,
-          docRef.current.lastSavedContent
-        );
+        const latestContent = flushVisibleDocumentContent();
+        const hasUnsavedChanges =
+          latestContent.replace(/\r\n/g, "\n").trimEnd() !==
+          docRef.current.lastSavedContent;
 
         if (hasUnsavedChanges) {
           const saved = await saveCurrent(latestContent);
@@ -575,7 +648,7 @@ export default function App() {
       });
       return renamed;
     },
-    [copy.app.errors.fileNameEmpty, flushEditorMarkdown, runBusyTask, saveCurrent]
+    [copy.app.errors.fileNameEmpty, flushVisibleDocumentContent, runBusyTask, saveCurrent]
   );
 
   const handleUnsavedSave = useCallback(async () => {
@@ -621,16 +694,15 @@ export default function App() {
   }, []);
 
   const handleToggleLocale = useCallback(() => {
-    const flush = flushEditorMarkdownRef.current;
-    const flushedMarkdown = flush?.();
-    if (typeof flushedMarkdown === "string") {
+    const flushedContent = flushVisibleDocumentContent();
+    if (flushedContent !== docRef.current.content) {
       dispatch({
         type: "update_content",
-        content: flushedMarkdown
+        content: flushedContent
       });
     }
     setLocale((current) => (current === "zh" ? "en" : "zh"));
-  }, []);
+  }, [flushVisibleDocumentContent]);
 
   const handleToggleMarkdownTheme = useCallback(() => {
     setMarkdownTheme((current) => {
@@ -650,12 +722,36 @@ export default function App() {
     setEditorMode((current) => (current === "editable" ? "readonly" : "editable"));
   }, []);
 
+  const handleToggleDocumentView = useCallback(() => {
+    if (docRef.current.kind === "markdown") {
+      setMarkdownViewMode((current) => {
+        if (current === "wysiwyg") {
+          flushVisibleDocumentContent();
+          return "source";
+        }
+        return "wysiwyg";
+      });
+      return;
+    }
+
+    if (docRef.current.kind === "html") {
+      setHtmlViewMode((current) => (current === "preview" ? "source" : "preview"));
+    }
+  }, [flushVisibleDocumentContent]);
+
   const handleReadOnlyInteraction = useCallback(() => {
     if (editorMode !== "readonly") {
       return;
     }
     setReadOnlyIconBlinkTick((current) => current + 1);
   }, [editorMode]);
+
+  useEffect(() => {
+    if (doc.kind === "markdown" && markdownViewMode === "wysiwyg") {
+      return;
+    }
+    setCharCount(doc.content.length);
+  }, [doc.content, doc.kind, markdownViewMode]);
 
   useEffect(() => {
     const handleShortcuts = (event: KeyboardEvent) => {
@@ -735,22 +831,18 @@ export default function App() {
             return;
           }
 
-          const flushedMarkdown = flushEditorMarkdownRef.current?.();
-          if (typeof flushedMarkdown === "string") {
+          const flushedContent = flushVisibleDocumentContent();
+          if (flushedContent !== docRef.current.content) {
             dispatch({
               type: "update_content",
-              content: flushedMarkdown
+              content: flushedContent
             });
           }
 
           const currentDoc = docRef.current;
           const hasUnsavedChanges =
-            typeof flushedMarkdown === "string"
-              ? hasUnsavedMarkdownChanges(
-                  flushedMarkdown,
-                  currentDoc.lastSavedContent
-                )
-              : currentDoc.isDirty;
+            flushedContent.replace(/\r\n/g, "\n").trimEnd() !==
+            currentDoc.lastSavedContent;
 
           if (!hasUnsavedChanges) {
             return;
@@ -769,7 +861,7 @@ export default function App() {
         const maybeDropWindow = appWindow as unknown as DragDropWindow;
         if (typeof maybeDropWindow.onDragDropEvent === "function") {
           unlistenDropEvent = await maybeDropWindow.onDragDropEvent((event) => {
-            const paths = extractDropPaths(event).filter(isMarkdownPath);
+            const paths = extractDropPaths(event).filter(isSupportedTextPath);
             if (paths.length > 0) {
               void runBusyTask(async () => {
                 await openPathInNewWindow(paths[0]);
@@ -799,6 +891,7 @@ export default function App() {
     };
   }, [
     copy.app.errors.unknown,
+    flushVisibleDocumentContent,
     notifyError,
     openPathInCurrentWindow,
     openPathInNewWindow,
@@ -819,6 +912,9 @@ export default function App() {
           <TopBar
             canRename={Boolean(doc.currentPath)}
             copy={copy.topBar}
+            documentViewToggleLabel={
+              canToggleDocumentView ? documentViewToggleLabel : null
+            }
             fileName={displayFileBaseName}
             fileBaseName={displayFileBaseName}
             isBusy={isBusy}
@@ -830,6 +926,9 @@ export default function App() {
             onRename={handleRename}
             onSave={handleSave}
             onSaveAs={handleSaveAs}
+            onToggleDocumentView={
+              canToggleDocumentView ? handleToggleDocumentView : null
+            }
             onToggleEditorMode={handleToggleEditorMode}
             onToggleTheme={() =>
               setThemeMode((current) => (current === "light" ? "dark" : "light"))
@@ -840,21 +939,37 @@ export default function App() {
           <main className="app-main">
             {isStartupReady ? (
               <Suspense fallback={null}>
-                <MarkdownEditor
-                  key={locale}
-                  copy={copy.editor}
-                  documentPath={doc.currentPath}
-                  extensionCopy={copy.extensions}
-                  isEditable={editorMode === "editable"}
-                  onReadOnlyInteraction={handleReadOnlyInteraction}
-                  attachmentModalCopy={copy.attachmentModal}
-                  markdown={doc.content}
-                  openPerfStartMs={appBootStartRef.current}
-                  onEditorError={handleEditorError}
-                  onMarkdownChange={handleMarkdownChange}
-                  onRegisterFlushMarkdown={handleRegisterFlushMarkdown}
-                  onStatsChange={handleStatsChange}
-                />
+                {doc.kind === "markdown" && markdownViewMode === "wysiwyg" ? (
+                  <MarkdownEditor
+                    key={`${locale}-${doc.currentPath ?? "draft"}-${markdownViewMode}`}
+                    copy={copy.editor}
+                    documentPath={doc.currentPath}
+                    extensionCopy={copy.extensions}
+                    isEditable={editorMode === "editable"}
+                    onReadOnlyInteraction={handleReadOnlyInteraction}
+                    attachmentModalCopy={copy.attachmentModal}
+                    markdown={doc.content}
+                    openPerfStartMs={appBootStartRef.current}
+                    onEditorError={handleEditorError}
+                    onMarkdownChange={handleMarkdownChange}
+                    onRegisterFlushMarkdown={handleRegisterFlushMarkdown}
+                    onStatsChange={handleStatsChange}
+                  />
+                ) : doc.kind === "html" && htmlViewMode === "preview" ? (
+                  <HtmlPreview
+                    documentPath={doc.currentPath}
+                    html={doc.content}
+                  />
+                ) : (
+                  <SourceEditor
+                    isEditable={editorMode === "editable"}
+                    language={sourceLanguage}
+                    onChange={handleMarkdownChange}
+                    onReadOnlyInteraction={handleReadOnlyInteraction}
+                    onStatsChange={handleStatsChange}
+                    value={doc.content}
+                  />
+                )}
               </Suspense>
             ) : null}
           </main>
