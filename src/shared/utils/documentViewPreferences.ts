@@ -26,67 +26,32 @@ export function readMarkdownViewPreference(
   windowLabel: string,
   fallback: MarkdownViewMode
 ): MarkdownViewMode {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-
-  try {
-    const stored = localStorage.getItem(
-      buildDocumentViewStorageKey(windowLabel, "markdown")
-    );
-    return isMarkdownViewMode(stored) ? stored : fallback;
-  } catch {
-    return fallback;
-  }
+  // Product policy: each app launch starts in the default rich-text-oriented view.
+  void windowLabel;
+  return fallback;
 }
 
 export function writeMarkdownViewPreference(
   windowLabel: string,
   mode: MarkdownViewMode
 ): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    localStorage.setItem(
-      buildDocumentViewStorageKey(windowLabel, "markdown"),
-      mode
-    );
-  } catch {
-    // Ignore storage failures and keep runtime behavior unchanged.
-  }
+  void windowLabel;
+  void mode;
 }
 
 export function readHtmlViewPreference(
   windowLabel: string,
   fallback: HtmlViewMode
 ): HtmlViewMode {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-
-  try {
-    const stored = localStorage.getItem(
-      buildDocumentViewStorageKey(windowLabel, "html")
-    );
-    return isHtmlViewMode(stored) ? stored : fallback;
-  } catch {
-    return fallback;
-  }
+  // Product policy: each app launch starts in the default rich-text-oriented view.
+  void windowLabel;
+  return fallback;
 }
 
 export function writeHtmlViewPreference(
   windowLabel: string,
   mode: HtmlViewMode
 ): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    localStorage.setItem(buildDocumentViewStorageKey(windowLabel, "html"), mode);
-  } catch {
-    // Ignore storage failures and keep runtime behavior unchanged.
-  }
+  void windowLabel;
+  void mode;
 }

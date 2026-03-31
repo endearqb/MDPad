@@ -38,6 +38,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.38.6
         version: 6.40.0
+      '@lezer/highlight':
+        specifier: ^1.2.3
+        version: 1.2.3
       '@tauri-apps/api':
         specifier: 2.10.1
         version: 2.10.1

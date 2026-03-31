@@ -66,25 +66,27 @@ describe("documentViewPreferences", () => {
     });
   });
 
-  it("persists markdown view mode by window label", () => {
+  it("always falls back to markdown rich text view on open", () => {
     writeMarkdownViewPreference("doc-1", "source");
 
     const key = `${DOCUMENT_VIEW_STORAGE_KEY_PREFIX}.doc-1.markdown`;
-    expect(localStorage.getItem(key)).toBe("source");
-    expect(readMarkdownViewPreference("doc-1", "wysiwyg")).toBe("source");
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(readMarkdownViewPreference("doc-1", "wysiwyg")).toBe("wysiwyg");
   });
 
-  it("persists html view mode by window label", () => {
+  it("always falls back to html preview view on open", () => {
     writeHtmlViewPreference("doc-2", "source");
 
     const key = `${DOCUMENT_VIEW_STORAGE_KEY_PREFIX}.doc-2.html`;
-    expect(localStorage.getItem(key)).toBe("source");
-    expect(readHtmlViewPreference("doc-2", "preview")).toBe("source");
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(readHtmlViewPreference("doc-2", "preview")).toBe("preview");
   });
 
-  it("falls back for invalid stored values", () => {
+  it("ignores stored values and keeps defaults", () => {
     localStorage.setItem(`${DOCUMENT_VIEW_STORAGE_KEY_PREFIX}.main.markdown`, "bad");
+    localStorage.setItem(`${DOCUMENT_VIEW_STORAGE_KEY_PREFIX}.main.markdown`, "source");
     localStorage.setItem(`${DOCUMENT_VIEW_STORAGE_KEY_PREFIX}.main.html`, "bad");
+    localStorage.setItem(`${DOCUMENT_VIEW_STORAGE_KEY_PREFIX}.main.html`, "source");
 
     expect(readMarkdownViewPreference("main", "wysiwyg")).toBe("wysiwyg");
     expect(readHtmlViewPreference("main", "preview")).toBe("preview");

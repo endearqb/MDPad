@@ -11,11 +11,13 @@ import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
 import { python as pythonLanguage } from "@codemirror/lang-python";
 import {
   bracketMatching,
+  HighlightStyle,
   defaultHighlightStyle,
   foldGutter,
   indentOnInput,
   syntaxHighlighting
 } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { Compartment, EditorState } from "@codemirror/state";
 import { searchKeymap } from "@codemirror/search";
 import {
@@ -98,6 +100,56 @@ function getEditableExtension(
   ];
 }
 
+const markdownHighlightStyle = HighlightStyle.define([
+  {
+    tag: tags.meta,
+    color: "color-mix(in srgb, var(--accent) 52%, var(--text-secondary))",
+    fontWeight: "700"
+  },
+  {
+    tag: [tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6],
+    color: "var(--text-primary)",
+    fontWeight: "800"
+  },
+  {
+    tag: tags.heading,
+    color: "var(--text-primary)",
+    fontWeight: "700"
+  },
+  {
+    tag: [tags.quote, tags.list, tags.contentSeparator],
+    color: "color-mix(in srgb, var(--warning) 58%, var(--text-secondary))",
+    fontWeight: "600"
+  },
+  {
+    tag: tags.emphasis,
+    color: "color-mix(in srgb, var(--link-color) 72%, var(--text-primary))",
+    fontStyle: "italic"
+  },
+  {
+    tag: tags.strong,
+    color: "var(--text-primary)",
+    fontWeight: "800"
+  },
+  {
+    tag: [tags.link, tags.url],
+    color: "var(--link-color)",
+    textDecoration: "underline"
+  },
+  {
+    tag: [tags.monospace, tags.string, tags.special(tags.string)],
+    color: "color-mix(in srgb, var(--code-inline-fg) 88%, var(--text-primary))"
+  }
+]);
+
+function getHighlightExtension(language: SourceLanguage) {
+  if (language !== "markdown") {
+    return [];
+  }
+
+  return syntaxHighlighting(markdownHighlightStyle);
+}
+
 const editorTheme = EditorView.theme({
   "&": {
     height: "100%",
@@ -163,6 +215,7 @@ export default function SourceEditor({
   const viewRef = useRef<EditorView | null>(null);
   const languageCompartmentRef = useRef(new Compartment());
   const editableCompartmentRef = useRef(new Compartment());
+  const highlightCompartmentRef = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onReadOnlyInteractionRef = useRef(onReadOnlyInteraction);
   const onStatsChangeRef = useRef(onStatsChange);
@@ -189,7 +242,7 @@ export default function SourceEditor({
       indentOnInput(),
       bracketMatching(),
       highlightActiveLine(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      syntaxHighlighting(defaultHighlightStyle),
       keymap.of([
         indentWithTab,
         ...defaultKeymap,
@@ -198,6 +251,7 @@ export default function SourceEditor({
       ]),
       editorTheme,
       languageCompartmentRef.current.of(getLanguageExtension(language)),
+      highlightCompartmentRef.current.of(getHighlightExtension(language)),
       editableCompartmentRef.current.of(
         getEditableExtension(isEditable, () => {
           onReadOnlyInteractionRef.current?.();
@@ -235,7 +289,7 @@ export default function SourceEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [initialExtensions, value]);
+  }, [initialExtensions]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -246,6 +300,12 @@ export default function SourceEditor({
     view.dispatch({
       effects: languageCompartmentRef.current.reconfigure(
         getLanguageExtension(language)
+      )
+    });
+
+    view.dispatch({
+      effects: highlightCompartmentRef.current.reconfigure(
+        getHighlightExtension(language)
       )
     });
   }, [language]);

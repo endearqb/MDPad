@@ -7,6 +7,8 @@ Lightweight Markdown editor for Windows, built with Tauri + React + TipTap.
 ## Table of Contents
 
 -   [Overview](#overview)
+
+-   [What's New in v0.2.0](#whats-new-in-v020)
     
 -   [Highlights](#highlights)
     
@@ -38,13 +40,48 @@ MDPad is designed for fast, single-document writing with a desktop-native workfl
 -   Preserve practical note-taking syntax from real-world usage (including some Obsidian-style image embeds).
     
 
+## What's New in v0.2.0
+
+### Multi-format source workspace
+
+-   MDPad now opens and edits not only Markdown, but also `.html`, `.htm`, `.py`, `.js`, `.ts`, and `.json`.
+    
+-   Markdown documents still default to rich text, but can switch to a dedicated CodeMirror 6 source view when you need exact Markdown control.
+    
+-   HTML documents now have a two-mode workflow: preview by default, source view on demand.
+    
+-   Code files open directly in the source editor with language-aware highlighting, undo/redo history, search shortcuts, and stable cursor/scroll behavior during external content sync.
+    
+
+### Controlled HTML dynamic preview
+
+-   HTML preview is no longer static. Local scripts can run inside a sandboxed iframe, so document TOC buttons, collapsible sections, and common chart libraries can work during preview.
+    
+-   Relative script, stylesheet, image, audio, and video paths are resolved against the current document, so local HTML files can keep their neighboring assets.
+    
+-   External links and `window.open(...)` calls are intercepted and opened in the system browser instead of navigating the in-app preview away from the current file.
+    
+-   The preview intentionally stays controlled: same-document `#hash` navigation works, but MDPad does not turn into a full multi-page website browser.
+    
+
+### Windows integration and editor polish
+
+-   Windows file association metadata now covers `.md`, `.markdown`, `.html`, `.htm`, `.py`, `.js`, `.ts`, and `.json`, so MDPad can appear in **Open with** / default-app choices for all supported text formats.
+    
+-   The theme toggle moved into the right-side window controls, alongside minimize/maximize/close, for a more native frameless desktop layout.
+    
+-   Dark-mode source editing received dedicated scrollbar styling for both vertical and horizontal scrolling, tuned specifically for the code editor instead of reusing the rich-text surface scrollbar.
+    
+-   Each fresh app launch now starts from the rich-text-oriented default view again: Markdown opens in rich text, HTML opens in preview.
+    
+
 ## Highlights
 
 -   Native desktop app for Windows (Tauri v2).
     
 -   Multi-window workflow (`Ctrl+N` for a new empty window).
     
--   Open/save/save-as/rename for `.md` and `.markdown`.
+-   Open/save/save-as/rename for `.md`, `.markdown`, `.html`, `.htm`, `.py`, `.js`, `.ts`, and `.json`.
     
 -   Unsaved-change protection on close.
     
@@ -53,6 +90,12 @@ MDPad is designed for fast, single-document writing with a desktop-native workfl
 -   Bubble menu for quick inline/block formatting.
     
 -   Right-side table of contents rail (H1-H3, collapsed/expanded behavior).
+
+-   Dual-view workflow for Markdown and HTML: rich text/source for Markdown, preview/source for HTML.
+
+-   CodeMirror 6 source editor for Markdown, HTML, and code files.
+
+-   Controlled HTML dynamic preview with local asset resolution and script execution.
     
 -   Built-in dark/light mode, UI theme switch (Classic/Modern), and markdown theme switch.
     
@@ -93,6 +136,14 @@ MDPad is designed for fast, single-document writing with a desktop-native workfl
         
     -   Flush before save/rename/close to reduce data-loss risk.
         
+-   Document views:
+    
+    -   Markdown: rich text or source.
+        
+    -   HTML: preview or source.
+        
+    -   Code files: source editor.
+        
 
 ## How to Use
 
@@ -110,7 +161,13 @@ MDPad is designed for fast, single-document writing with a desktop-native workfl
     
 -   Double-click file title to rename (when current doc has a file path).
     
--   Drag and drop `.md` / `.markdown` file into window to open in a new window.
+-   Drag and drop any supported text file into the window to open it in a new window:
+    
+    -   `.md` / `.markdown`
+        
+    -   `.html` / `.htm`
+        
+    -   `.py` / `.js` / `.ts` / `.json`
     
 
 ### Theme and language
@@ -128,6 +185,12 @@ MDPad is designed for fast, single-document writing with a desktop-native workfl
 
 ### Editing workflow
 
+-   Markdown opens in rich text by default on every fresh launch.
+    
+-   HTML opens in preview by default on every fresh launch.
+    
+-   Use the document-view toggle in the top bar to switch between rich text / source / preview where applicable.
+    
 -   Type `/` on an empty line to open slash command menu.
     
 -   Press `Ctrl+/` anywhere to force open slash command menu.
@@ -256,7 +319,7 @@ vitest.e2e.config.ts
         
 -   If app cannot open markdown via association:
     
-    -   Confirm `.md`/`.markdown` associations in `src-tauri/tauri.conf.json` bundle config.
+    -   Confirm the supported file associations in `src-tauri/tauri.conf.json` bundle config for `.md`, `.markdown`, `.html`, `.htm`, `.py`, `.js`, `.ts`, and `.json`.
         
 -   If pasted media does not save:
     

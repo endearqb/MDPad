@@ -81,6 +81,9 @@ body {
   --scrollbar-track: rgba(203, 213, 225, 0.84);
   --scrollbar-thumb: rgba(100, 116, 139, 0.45);
   --scrollbar-thumb-hover: rgba(71, 85, 105, 0.62);
+  --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 78%, var(--slate-200));
+  --code-scrollbar-thumb: rgba(100, 116, 139, 0.42);
+  --code-scrollbar-thumb-hover: rgba(71, 85, 105, 0.58);
   --shadow-elev: 0 18px 40px rgba(15, 23, 42, 0.14);
   --shadow-surface: 0 18px 36px rgba(15, 23, 42, 0.12);
 }
@@ -109,6 +112,9 @@ body {
   --scrollbar-track: rgba(15, 23, 42, 0.95);
   --scrollbar-thumb: rgba(100, 116, 139, 0.76);
   --scrollbar-thumb-hover: rgba(148, 163, 184, 0.85);
+  --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 88%, var(--slate-950));
+  --code-scrollbar-thumb: color-mix(in srgb, var(--slate-400) 62%, transparent);
+  --code-scrollbar-thumb-hover: color-mix(in srgb, var(--slate-300) 74%, transparent);
   --shadow-elev: 0 22px 46px rgba(0, 0, 0, 0.42);
   --shadow-surface: 0 18px 36px rgba(0, 0, 0, 0.45);
 }
@@ -134,6 +140,9 @@ body {
   --scrollbar-track: var(--slate-200);
   --scrollbar-thumb: var(--slate-400);
   --scrollbar-thumb-hover: var(--slate-500);
+  --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 88%, var(--slate-200));
+  --code-scrollbar-thumb: rgba(100, 116, 139, 0.46);
+  --code-scrollbar-thumb-hover: rgba(71, 85, 105, 0.62);
   --shadow-elev: 0 10px 24px rgba(0, 0, 0, 0.18);
   --shadow-surface: 0 2px 8px rgba(0, 0, 0, 0.08);
   --editor-container-border: var(--slate-200);
@@ -160,6 +169,9 @@ body {
   --scrollbar-track: var(--slate-800);
   --scrollbar-thumb: var(--slate-500);
   --scrollbar-thumb-hover: var(--slate-400);
+  --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 86%, var(--slate-900));
+  --code-scrollbar-thumb: color-mix(in srgb, var(--slate-400) 58%, transparent);
+  --code-scrollbar-thumb-hover: color-mix(in srgb, var(--slate-300) 70%, transparent);
   --shadow-elev: 0 14px 30px rgba(0, 0, 0, 0.5);
   --shadow-surface: 0 6px 14px rgba(0, 0, 0, 0.4);
   --editor-container-border: var(--slate-700);
@@ -402,7 +414,7 @@ body {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  max-width: min(520px, calc(100% - 320px));
+  max-width: min(520px, calc(100% - 352px));
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -469,6 +481,19 @@ body {
   justify-content: flex-end;
 }
 
+.win-btn.utility {
+  color: var(--text-secondary);
+}
+
+.win-btn.utility:hover {
+  background: var(--hover-soft);
+  color: var(--text-primary);
+}
+
+.win-btn.utility:active {
+  background: var(--hover-strong);
+}
+
 .win-btn {
   width: 44px;
   height: 100%;
@@ -520,6 +545,48 @@ body {
 
 .source-editor-host {
   height: 100%;
+}
+
+.source-editor-shell .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--code-scrollbar-thumb) var(--code-scrollbar-track);
+}
+
+.source-editor-shell .cm-scroller::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.source-editor-shell .cm-scroller::-webkit-scrollbar-track {
+  background: var(--code-scrollbar-track);
+}
+
+.source-editor-shell .cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--code-scrollbar-thumb);
+  border-radius: 999px;
+  border: 3px solid var(--code-scrollbar-track);
+  min-height: 32px;
+}
+
+.source-editor-shell .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--code-scrollbar-thumb-hover);
+}
+
+.source-editor-shell .cm-scroller::-webkit-scrollbar-corner {
+  background: var(--code-scrollbar-track);
+}
+
+.source-editor-shell .cm-scroller::-webkit-scrollbar-button,
+.source-editor-shell .cm-scroller::-webkit-scrollbar-button:single-button,
+.source-editor-shell .cm-scroller::-webkit-scrollbar-button:vertical:decrement,
+.source-editor-shell .cm-scroller::-webkit-scrollbar-button:vertical:increment,
+.source-editor-shell .cm-scroller::-webkit-scrollbar-button:horizontal:decrement,
+.source-editor-shell .cm-scroller::-webkit-scrollbar-button:horizontal:increment {
+  width: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
+  display: none;
 }
 
 .html-preview-frame {
@@ -3698,7 +3765,7 @@ body {
   }
 
   .titlebar-center {
-    max-width: calc(100% - 280px);
+    max-width: calc(100% - 320px);
   }
 
   .win-btn {

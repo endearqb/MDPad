@@ -471,16 +471,6 @@ export default function TopBar({
             )}
           </IconButton>
         ) : null}
-        <IconButton
-          label={themeMode === "light" ? copy.switchToDarkTheme : copy.switchToLightTheme}
-          onClick={onToggleTheme}
-        >
-          {themeMode === "light" ? (
-            <Moon className="titlebar-icon" />
-          ) : (
-            <SunMedium className="titlebar-icon" />
-          )}
-        </IconButton>
       </section>
 
       <section className="titlebar-center">
@@ -525,6 +515,17 @@ export default function TopBar({
       </section>
 
       <section className="win-controls">
+        <WindowControlButton
+          className="utility"
+          label={themeMode === "light" ? copy.switchToDarkTheme : copy.switchToLightTheme}
+          onClick={onToggleTheme}
+        >
+          {themeMode === "light" ? (
+            <Moon className="win-icon" />
+          ) : (
+            <SunMedium className="win-icon" />
+          )}
+        </WindowControlButton>
         <WindowControlButton
           label={copy.minimize}
           onClick={() => {
