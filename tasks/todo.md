@@ -377,3 +377,19 @@
   4. CLI 相对路径被错误解析到 worker 资源目录
 - 验证：`pnpm test` 通过 30 个测试文件 / 202 个测试；`cargo test --manifest-path src-tauri/Cargo.toml` 通过；`pnpm release:no-bump` 通过；安装版 [mdpad-cli.exe](/C:/Users/endea/AppData/Local/MDPad/mdpad-cli.exe) 已在 [llm-wiki-report](/D:/BaiduSyncdisk/Skill-workspace/outputs/llm-wiki-report) 目录成功导出 [report960.pdf](/D:/BaiduSyncdisk/Skill-workspace/outputs/llm-wiki-report/report960.pdf)。
 - 安装包：最新验证通过的安装包仍为 [MDPad_0.2.4_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.4_x64-setup.exe)；要消除你机器上的旧错误，需要用这个新包重新安装。
+
+# CLI 文档与 v0.2.4 发布
+
+## Plan
+- [x] 将当前 `mdpad-cli` 的实际可用选项写入中英文 README
+- [x] 在 `main` 上提交并推送本轮导出与 CLI 改动
+- [x] 将现成的 `MDPad_0.2.4_x64-setup.exe` 上传到 GitHub Releases
+
+## Progress Notes
+- 在 [README.md](/D:/MyProject/MDPad/README.md) 和 [README_zh.md](/D:/MyProject/MDPad/README_zh.md) 中新增了 `CLI Export / CLI 导出` 章节，明确写清 `pdf/png/svg` 三个命令、支持输入类型、参数说明、相对路径解析规则与常见示例。
+- 当前工作区的完整导出能力改动已在 `main` 上提交为 commit `5cad4ec`，提交信息为 `Add PDF export workflow and packaged CLI support`，并已推送到 `origin/main`。
+- GitHub 上原先不存在 `v0.2.4` release；现已基于 `main` 创建新的 [v0.2.4 release](https://github.com/endearqb/MDPad/releases/tag/v0.2.4)，并上传安装包资产 [MDPad_0.2.4_x64-setup.exe](https://github.com/endearqb/MDPad/releases/download/v0.2.4/MDPad_0.2.4_x64-setup.exe)。
+
+## Review
+- 结果：CLI 使用说明已经同步到中英文 README，代码与文档已进入远端 `main`，`v0.2.4` release 也已对外可下载。
+- 验证：`git status` 当前为 clean；`git push origin main` 已完成；`gh release view v0.2.4 --json url,assets` 已确认 release 页面存在且安装包资产状态为 `uploaded`。
