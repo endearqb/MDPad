@@ -35,6 +35,40 @@ export interface AppUiCopy {
     onlyMarkdown: string;
     fileNameEmpty: string;
   };
+  export: {
+    selectionEmpty: string;
+    documentEmpty: string;
+    successSingle: string;
+    successMultiple: string;
+    pdfSuccess: string;
+    complexTableSvgUnsupported: string;
+  };
+  exportDialog: {
+    title: string;
+    subtitle: string;
+    pdfTitle: string;
+    pdfSubtitle: string;
+    baseNameLabel: string;
+    baseNamePlaceholder: string;
+    outputDirRequired: string;
+    outputDirLabel: string;
+    outputDirPlaceholder: string;
+    chooseFolder: string;
+    cancel: string;
+    confirm: string;
+    progressTitle: string;
+    pdfRenderWidthTitle: string;
+    pdfRenderWidthHint: string;
+    pdfPaperHint: string;
+    pdfCustomWidthPlaceholder: string;
+    pdfCustomWidthRequired: string;
+    pdfCustomWidthInvalid: string;
+    pdfScaleWarning: string;
+    respectPageCssSizeLabel: string;
+    respectPageCssSizeHint: string;
+    widthOptions: Record<"mobile" | "tablet" | "desktop" | "wide" | "custom", string>;
+    phases: Record<"preparing" | "rendering" | "saving", string>;
+  };
 }
 
 export interface TopBarCopy {
@@ -219,6 +253,15 @@ export interface EditorCopy {
     mathBlock: string;
     link: string;
   };
+  contextMenu: {
+    ariaLabel: string;
+    exportSelectionPng: string;
+    exportSelectionSvg: string;
+    exportSelectionPdf: string;
+    exportDocumentPng: string;
+    exportDocumentSvg: string;
+    exportDocumentPdf: string;
+  };
 }
 
 export interface CodeBlockActionsCopy {
@@ -272,6 +315,54 @@ const enCopy: AppCopy = {
       onlyMarkdown:
         "Only supported text files (.md, .markdown, .html, .htm, .py, .js, .ts, .json) are supported.",
       fileNameEmpty: "File name cannot be empty."
+    },
+    export: {
+      selectionEmpty: "Please select some markdown content before exporting a selection.",
+      documentEmpty: "There is no markdown content to export.",
+      successSingle: "Exported 1 page to {outputDir}",
+      successMultiple: "Exported {count} pages to {outputDir}",
+      pdfSuccess: "Exported PDF to {file}",
+      complexTableSvgUnsupported:
+        "SVG export does not support merged table cells yet. Export PNG or PDF instead."
+    },
+    exportDialog: {
+      title: "Export image",
+      subtitle: "Choose an output folder and base name for the exported pages.",
+      pdfTitle: "PDF render width",
+      pdfSubtitle: "Choose the screen emulation used before the page is printed to PDF.",
+      baseNameLabel: "Base name",
+      baseNamePlaceholder: "note",
+      outputDirRequired: "Please choose an output folder.",
+      outputDirLabel: "Output folder",
+      outputDirPlaceholder: "Choose a folder",
+      chooseFolder: "Choose Folder",
+      cancel: "Cancel",
+      confirm: "Export",
+      progressTitle: "Exporting",
+      pdfRenderWidthTitle: "Choose page render width",
+      pdfRenderWidthHint: "These presets emulate page breakpoints before printing to PDF.",
+      pdfPaperHint:
+        "PDF still defaults to A4 portrait. Wider layouts may be scaled down to fit the page.",
+      pdfCustomWidthPlaceholder: "Enter custom width in px",
+      pdfCustomWidthRequired: "Please enter a custom width.",
+      pdfCustomWidthInvalid: "Custom width must be between 240 and 3840 px.",
+      pdfScaleWarning:
+        "This width may be scaled down to fit A4 portrait, which can reduce readability.",
+      respectPageCssSizeLabel: "Respect page CSS @page size",
+      respectPageCssSizeHint:
+        "When enabled, the page's own @page size can override the default A4 output.",
+      widthOptions: {
+        mobile: "Mobile breakpoint   375px",
+        tablet: "Tablet breakpoint   768px",
+        desktop: "Desktop breakpoint  1280px  ← Recommended",
+        wide: "Wide breakpoint     1440px",
+        custom: "Custom"
+      },
+      phases: {
+        preparing: "Preparing export…",
+        rendering: "Rendering pages…",
+        saving: "Saving files…"
+      }
     }
   },
   topBar: {
@@ -487,6 +578,15 @@ const enCopy: AppCopy = {
       inlineFormula: "Inline Formula",
       mathBlock: "Math Block",
       link: "Link"
+    },
+    contextMenu: {
+      ariaLabel: "Export menu",
+      exportSelectionPng: "Export selection as PNG",
+      exportSelectionSvg: "Export selection as SVG",
+      exportSelectionPdf: "Export selection as PDF",
+      exportDocumentPng: "Export document as PNG",
+      exportDocumentSvg: "Export document as SVG",
+      exportDocumentPdf: "Export document as PDF"
     }
   },
   extensions: {
@@ -527,6 +627,52 @@ const zhCopy: AppCopy = {
       onlyMarkdown:
         "仅支持 .md、.markdown、.html、.htm、.py、.js、.ts、.json 文本文件。",
       fileNameEmpty: "文件名不能为空。"
+    },
+    export: {
+      selectionEmpty: "请先选中需要导出的 Markdown 内容。",
+      documentEmpty: "当前没有可导出的 Markdown 正文内容。",
+      successSingle: "已导出 1 页到 {outputDir}",
+      successMultiple: "已导出 {count} 页到 {outputDir}",
+      pdfSuccess: "已导出 PDF 到 {file}",
+      complexTableSvgUnsupported:
+        "当前 SVG 导出暂不支持带合并单元格的复杂表格，请改用 PNG 或 PDF。"
+    },
+    exportDialog: {
+      title: "导出图片",
+      subtitle: "设置导出目录和文件基名，图片页会按顺序落盘。",
+      pdfTitle: "PDF 渲染宽度",
+      pdfSubtitle: "选择页面在导出为 PDF 前使用的屏幕仿真方式。",
+      baseNameLabel: "文件基名",
+      baseNamePlaceholder: "note",
+      outputDirRequired: "请先选择输出目录。",
+      outputDirLabel: "输出目录",
+      outputDirPlaceholder: "请选择目录",
+      chooseFolder: "选择目录",
+      cancel: "取消",
+      confirm: "开始导出",
+      progressTitle: "正在导出",
+      pdfRenderWidthTitle: "请选择页面渲染宽度",
+      pdfRenderWidthHint: "这些预设用于在导出前模拟网页断点，而不是 PDF 的最终物理宽度。",
+      pdfPaperHint: "PDF 默认仍会输出为 A4 纵向。较宽的布局会为了适配纸张而缩放。",
+      pdfCustomWidthPlaceholder: "请输入自定义宽度（px）",
+      pdfCustomWidthRequired: "请输入自定义宽度。",
+      pdfCustomWidthInvalid: "自定义宽度需在 240 到 3840 px 之间。",
+      pdfScaleWarning: "当前宽度在 A4 纵向下可能会被缩小，阅读性可能下降。",
+      respectPageCssSizeLabel: "尊重页面 CSS 中的 @page 尺寸",
+      respectPageCssSizeHint:
+        "开启后，页面自带的 @page size 可以覆盖默认的 A4 输出。",
+      widthOptions: {
+        mobile: "手机端断点   375px",
+        tablet: "平板端断点   768px",
+        desktop: "桌面端断点  1280px  ← 推荐",
+        wide: "宽屏端断点  1440px",
+        custom: "自定义"
+      },
+      phases: {
+        preparing: "正在准备导出…",
+        rendering: "正在渲染页面…",
+        saving: "正在保存文件…"
+      }
     }
   },
   topBar: {
@@ -740,6 +886,15 @@ const zhCopy: AppCopy = {
       inlineFormula: "行内公式",
       mathBlock: "公式块",
       link: "链接"
+    },
+    contextMenu: {
+      ariaLabel: "导出菜单",
+      exportSelectionPng: "导出选区为 PNG",
+      exportSelectionSvg: "导出选区为 SVG",
+      exportSelectionPdf: "导出选区为 PDF",
+      exportDocumentPng: "导出全文为 PNG",
+      exportDocumentSvg: "导出全文为 SVG",
+      exportDocumentPdf: "导出全文为 PDF"
     }
   },
   extensions: {

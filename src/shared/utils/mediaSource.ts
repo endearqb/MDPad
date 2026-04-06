@@ -172,6 +172,14 @@ function normalizeFileUrlForRendering(value: string): string {
   return toRenderableLocalUrl(localPath);
 }
 
+function normalizeFileUrlForExport(value: string): string {
+  const localPath = tryFileUrlToLocalPath(value);
+  if (!localPath) {
+    return value;
+  }
+  return toFileUrl(stripWindowsVerbatimPrefix(localPath));
+}
+
 export function toFileUrl(path: string): string {
   const normalized = path.replace(/\\/g, "/");
 
@@ -196,9 +204,10 @@ export function toFileUrl(path: string): string {
   return `file:///${encodePath(normalized)}`;
 }
 
-export function resolveMediaSource(
+function resolveMediaSourceInternal(
   rawSource: string,
-  documentPath: string | null
+  documentPath: string | null,
+  mode: "preview" | "export"
 ): string {
   const normalized = normalizeInput(rawSource);
   if (!normalized) {
@@ -207,18 +216,24 @@ export function resolveMediaSource(
 
   const normalizedLegacyPath = tryNormalizeLegacyVerbatimFileUrl(normalized);
   if (normalizedLegacyPath) {
-    return toRenderableLocalUrl(normalizedLegacyPath);
+    return mode === "export"
+      ? toFileUrl(stripWindowsVerbatimPrefix(normalizedLegacyPath))
+      : toRenderableLocalUrl(normalizedLegacyPath);
   }
 
   const normalizedLocalPath = stripWindowsVerbatimPrefix(normalized);
 
   if (isAbsoluteLocalPath(normalizedLocalPath)) {
-    return toRenderableLocalUrl(normalizedLocalPath);
+    return mode === "export"
+      ? toFileUrl(normalizedLocalPath)
+      : toRenderableLocalUrl(normalizedLocalPath);
   }
 
   if (isLikelyUrl(normalizedLocalPath)) {
     if (normalizedLocalPath.toLowerCase().startsWith("file://")) {
-      return normalizeFileUrlForRendering(normalizedLocalPath);
+      return mode === "export"
+        ? normalizeFileUrlForExport(normalizedLocalPath)
+        : normalizeFileUrlForRendering(normalizedLocalPath);
     }
     return normalizedLocalPath;
   }
@@ -237,14 +252,15 @@ export function resolveMediaSource(
       return normalizedSource;
     }
 
-    try {
-      const baseUrl = toFileUrl(`${baseDirectory}/`);
-      return normalizeFileUrlForRendering(
-        new URL(rootRelativeSource, baseUrl).toString()
-      );
-    } catch {
-      return normalizedSource;
-    }
+  try {
+    const baseUrl = toFileUrl(`${baseDirectory}/`);
+    const resolvedUrl = new URL(rootRelativeSource, baseUrl).toString();
+    return mode === "export"
+      ? normalizeFileUrlForExport(resolvedUrl)
+      : normalizeFileUrlForRendering(resolvedUrl);
+  } catch {
+    return normalizedSource;
+  }
   }
 
   const relativeSource = normalizedSource;
@@ -259,8 +275,25 @@ export function resolveMediaSource(
 
   try {
     const baseUrl = toFileUrl(`${baseDirectory}/`);
-    return normalizeFileUrlForRendering(new URL(relativeSource, baseUrl).toString());
+    const resolvedUrl = new URL(relativeSource, baseUrl).toString();
+    return mode === "export"
+      ? normalizeFileUrlForExport(resolvedUrl)
+      : normalizeFileUrlForRendering(resolvedUrl);
   } catch {
     return relativeSource;
   }
+}
+
+export function resolveMediaSource(
+  rawSource: string,
+  documentPath: string | null
+): string {
+  return resolveMediaSourceInternal(rawSource, documentPath, "preview");
+}
+
+export function resolveMediaSourceForExport(
+  rawSource: string,
+  documentPath: string | null
+): string {
+  return resolveMediaSourceInternal(rawSource, documentPath, "export");
 }

@@ -274,3 +274,26 @@
 - 编辑器内嵌 metadata/front matter 面板必须与 `.mdpad-editor` 共享同一个内容宽度变量；不要让属性区比正文更宽或更窄。
 - 当用户要求“极简、编辑器原生”的视觉方向时，优先移除独立 head 栏和文字 tab，改用与 Mermaid/代码块一致的 hover icon toolbar。
 - front matter 属性行默认收敛为 `key | value | inline actions`，按钮优先使用 icon-only 和极小间距；除非用户明确要求更强分组，否则不要回到多层卡片式布局。
+
+## 2026-04-03 PDF Export Render Width
+- PDF 导出的“渲染宽度”不能只传给 Playwright `viewport`；如果打印 HTML/CSS 仍按统一纸宽布局，最终 PDF 会看起来没有差别。
+- 对这类需求，必须让选定宽度同时进入导出文档本身（例如 `meta viewport`、导出态 CSS 宽度变量、打印容器宽度），并在 PDF worker 再做一次强制锁定。
+- 涉及安装包内 sidecar/worker 的修复，要优先确认 `pnpm build` 或资源准备脚本已把最新 worker 同步进 `src-tauri/resources`，否则容易出现“界面更新了，打包态行为还是旧的”错觉。
+
+## 2026-04-05 Export Runtime + NSIS CLI Packaging
+- `tauri.conf.json` 里的 `bundle.resources` 会在普通 `cargo test/build` 阶段就被校验，不能把资源路径直接指到“只在正式打包时才会出现”的 `target/release/...` 文件；要改成稳定的资源落点，再由打包前脚本复制真实产物过去。
+- Windows NSIS hook 里若只是做当前用户 PATH 的增删，优先直接调用 PowerShell 修改环境变量；比在卸载段继续拼 `StrFunc`/`un.` 宏链路更稳，也更容易调试。
+- 安装包体积异常膨胀时，先按资源目录逐项量体积；这次真正的大头是重复打包的 `node.exe`，先做共享 runtime 往往比继续优化业务代码收益大得多。
+- 给 Tauri 工程新增额外 `src/bin/*.rs` 后，必须显式固定 GUI 主程序；至少在 `Cargo.toml` 里设置 `default-run = "mdpad"`，并显式声明 `[[bin]]`，否则 NSIS 可能把 CLI 误认成 `MAINBINARYNAME`，导致安装后的快捷方式和文件关联都指向错误可执行文件。
+- `bundle.resources` 的 target 路径会直接映射到安装目录根下的相对路径，不会自动再包一层 `resources\`。这次 CLI 资源实际落在 `$INSTDIR\cli\mdpad-cli.exe`，如果 hook 误写成 `$INSTDIR\resources\cli\mdpad-cli.exe`，就会导致“复制根目录 CLI”和“写 PATH”整段逻辑被跳过。
+- 验证安装器是否成功写入用户级 `PATH` 时，不能只看当前已经运行着的宿主进程里 `Get-Command` 的结果；安装前启动的终端/应用不会自动刷新自己的进程环境。要么直接检查用户环境变量注册表值，要么在重开的新终端里验证 `mdpad-cli` 是否能被解析。
+- Windows 上如果把带 `\\?\` 或 `\\?\UNC\` 前缀的扩展路径直接传给 Node 25 作为入口脚本，Node 会在 `resolveMainPath` 阶段把主脚本错误解析成 `C:` 或网络根，报 `EISDIR ... lstat 'C:'` 这类启动前错误。给 Node sidecar 传路径前要先去掉 verbatim 前缀。
+- 共享导出服务同时服务 GUI 和 CLI 时，进程模式不能只假设资源在 `exe_dir\\resources`；要兼容安装包把资源直接落到 `exe_dir` 根下的布局，否则安装版 CLI 很容易错误回退到开发工作区脚本。
+- PDF 导出的“宽度数值”和“仿真语义”必须分开传递。`custom 375px` 和 `mobile preset 375px` 在数值上相同，但前者应保持 desktop 语义，后者需要 `isMobile/meta viewport/hasTouch/deviceScaleFactor` 一起切换；只传一个 `renderWidth` 会让后端无法做出正确仿真。
+- 做网页到 PDF 的宽度优化时，要把 3 层职责分清：Playwright `browser.newContext` 负责设备/视口仿真，`page.emulateMedia({ media: "screen" })` 负责保留屏幕布局，`page.pdf()` 负责最终纸张尺寸。不要再把 `@page size` 和 `page.pdf({ format })` 默认同时当作权威。
+
+## 2026-04-06 CLI Export Sidecar on Node 25
+- 只把 `jsdom` 从 ESM bundle 中 external 出来还不够；像 `punycode` 这种“与 Node 内建模块同名、但此处实际依赖的是 npm 包”的依赖，资源复制脚本必须优先解析 `<pkg>/package.json`，不能先按 builtin 直接跳过。
+- Node 25 自带的 `globalThis.navigator` 是带 getter 的只读属性。给 JSDOM 注入浏览器全局时，不要再用 `Object.assign(globalThis, { navigator, ... })`；应改为 `Object.defineProperty(..., { configurable: true, writable: true, value })`，并在清理阶段恢复原始 descriptor。
+- 如果 sidecar 会把一部分前端导出逻辑一起打进 Node 入口，优先评估 CommonJS 产物。此类入口继续打成单文件 ESM 时，容易在 Node 25 下命中 `Dynamic require of "process"` / `Dynamic require of "path"` 这类兼容问题。
+- CLI 的 `--input`、`--output`、`--output-dir` 不能直接把用户传入的相对路径原样交给后端 worker；worker 往往会把 `current_dir` 切到资源目录，导致相对路径被解析到安装目录。命令行入口应先按“用户当前终端工作目录”绝对化，再进入共享导出服务。

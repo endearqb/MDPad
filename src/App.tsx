@@ -20,10 +20,15 @@ import {
 } from "./features/file/fileReducer";
 import {
   createDocumentWindow,
+  exportDocumentImage,
+  exportDocumentPdf,
+  exportMarkdownPages,
   getInitialFile,
   openFileDialog,
+  pickExportDirectory,
   readTextFile,
   renameFile,
+  saveExportPdfDialog,
   saveFileAsDialog,
   writeTextFile
 } from "./features/file/fileService";
@@ -31,13 +36,20 @@ import TopBar from "./features/window/TopBar";
 import StatusBar from "./features/window/StatusBar";
 import type {
   AppLocale,
+  DocumentExportRequest,
   DocumentKind,
   EditorMode,
+  ExportDialogState,
+  ExportScope,
+  ImageExportFormat,
+  MarkdownExportSnapshot,
+  MarkdownSelectionExport,
   HtmlViewMode,
   MarkdownTheme,
   MarkdownViewMode,
   OpenFilePayload,
   PendingAction,
+  PdfRenderWidthPreset,
   SaveState,
   ThemeMode,
   UiTheme
@@ -84,11 +96,22 @@ import {
   computePseudoMaximizeBounds
 } from "./shared/utils/windowPreset";
 import { getSampleDocResourcePath } from "./shared/utils/sampleDocs";
+import { stripFrontMatterForExport } from "./features/editor/markdownExport";
+import {
+  htmlToMarkdownWithDiagnostics,
+  markdownToHtml
+} from "./features/editor/markdownCodec";
+import {
+  buildMarkdownImageSnapshotDocument,
+  buildHtmlPdfExportDocument,
+  buildMarkdownPdfExportDocument
+} from "./features/editor/pdfExportDocument";
 
 const loadMarkdownEditor = () => import("./features/editor/MarkdownEditor");
 const MarkdownEditor = lazy(loadMarkdownEditor);
 const SourceEditor = lazy(() => import("./features/editor/SourceEditor"));
 const HtmlPreview = lazy(() => import("./features/editor/HtmlPreview"));
+const ExportDialog = lazy(() => import("./features/file/ExportDialog"));
 const UnsavedChangesModal = lazy(
   () => import("./features/file/UnsavedChangesModal")
 );
@@ -140,6 +163,16 @@ function formatError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function interpolateTemplate(
+  template: string,
+  values: Record<string, string>
+): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(value),
+    template
+  );
+}
+
 function extractDropPaths(event: unknown): string[] {
   if (!event || typeof event !== "object") {
     return [];
@@ -171,6 +204,77 @@ const MARKDOWN_THEME_ORDER: MarkdownTheme[] = [
   "github",
   "academic"
 ];
+const PDF_RENDER_WIDTH_PRESET_VALUES: Record<
+  Exclude<PdfRenderWidthPreset, "custom">,
+  number
+> = {
+  mobile: 375,
+  tablet: 768,
+  desktop: 1280,
+  wide: 1440
+};
+
+function buildScopedExportBaseName(baseName: string, scope: ExportScope): string {
+  return scope === "selection" ? `${baseName}-selection` : baseName;
+}
+
+function buildSuggestedExportFileName(
+  baseName: string,
+  scope: ExportScope,
+  extension: string
+): string {
+  return `${buildScopedExportBaseName(baseName, scope)}.${extension}`;
+}
+
+function getPathSeparator(path: string): "\\" | "/" {
+  return path.includes("\\") ? "\\" : "/";
+}
+
+function joinPath(directory: string, fileName: string): string {
+  const separator = getPathSeparator(directory);
+  const normalizedDirectory = directory.replace(/[\\/]+$/u, "");
+  return `${normalizedDirectory}${separator}${fileName}`;
+}
+
+function getParentDirectory(path: string): string {
+  const normalized = path.replace(/[\\/]+$/u, "");
+  const separator = getPathSeparator(normalized);
+  const lastSeparatorIndex = normalized.lastIndexOf(separator);
+  return lastSeparatorIndex > 0 ? normalized.slice(0, lastSeparatorIndex) : normalized;
+}
+
+function buildFirstPageExportFileName(
+  baseName: string,
+  scope: ExportScope,
+  extension: "png"
+): string {
+  return `${buildScopedExportBaseName(baseName, scope)}-page-01.${extension}`;
+}
+
+function resolvePdfRenderWidth(
+  preset: PdfRenderWidthPreset,
+  customValue: string
+): number | null {
+  if (preset !== "custom") {
+    return PDF_RENDER_WIDTH_PRESET_VALUES[preset];
+  }
+
+  const parsed = Number.parseInt(customValue.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 240 || parsed > 3840) {
+    return null;
+  }
+
+  return parsed;
+}
+
+type ExportDialogResolution =
+  | { outputDir: string; baseName: string }
+  | {
+      renderWidth: number;
+      emulationProfile: PdfRenderWidthPreset;
+      respectPageCssSize: boolean;
+    }
+  | null;
 
 type PersistedWindowSize = {
   width: number;
@@ -243,6 +347,9 @@ export default function App() {
   const [isBusy, setIsBusy] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [exportDialogState, setExportDialogState] = useState<ExportDialogState | null>(
+    null
+  );
   const [charCount, setCharCount] = useState(0);
   const [readOnlyIconBlinkTick, setReadOnlyIconBlinkTick] = useState(0);
 
@@ -253,6 +360,15 @@ export default function App() {
   const errorClearTimerRef = useRef<number | null>(null);
   const appBootStartRef = useRef(nowMs());
   const flushEditorMarkdownRef = useRef<(() => string | null) | null>(null);
+  const selectionExportRef = useRef<(() => MarkdownSelectionExport | null) | null>(
+    null
+  );
+  const exportSnapshotRef = useRef<(() => MarkdownExportSnapshot | null) | null>(
+    null
+  );
+  const exportDialogResolverRef = useRef<
+    ((value: ExportDialogResolution) => void) | null
+  >(null);
   const copy = useMemo(() => getAppCopy(locale), [locale]);
   const displayFileBaseName = useMemo(
     () => (doc.currentPath ? getFileBaseName(doc.currentPath) : copy.app.untitledBaseName),
@@ -689,6 +805,303 @@ export default function App() {
     notifyError(message);
   }, [notifyError]);
 
+  const handleRegisterSelectionExport = useCallback(
+    (resolver: (() => MarkdownSelectionExport | null) | null) => {
+      selectionExportRef.current = resolver;
+    },
+    []
+  );
+
+  const handleRegisterExportSnapshot = useCallback(
+    (resolver: (() => MarkdownExportSnapshot | null) | null) => {
+      exportSnapshotRef.current = resolver;
+    },
+    []
+  );
+
+  const resolveExportDialog = useCallback((value: ExportDialogResolution) => {
+      const resolver = exportDialogResolverRef.current;
+      exportDialogResolverRef.current = null;
+      setExportDialogState(null);
+      resolver?.(value);
+    }, []);
+
+  const promptImageExportOptions = useCallback(
+    (
+      request: DocumentExportRequest,
+      baseName: string
+    ): Promise<{ outputDir: string; baseName: string } | null> => {
+      if (exportDialogResolverRef.current) {
+        exportDialogResolverRef.current(null);
+      }
+
+      setExportDialogState({
+        format: request.format,
+        scope: request.scope,
+        baseName,
+        outputDir: "",
+        phase: null,
+        error: null,
+        renderWidthPreset: "desktop",
+        customRenderWidth: "",
+        respectPageCssSize: false
+      });
+
+      return new Promise((resolve) => {
+        exportDialogResolverRef.current = resolve as typeof exportDialogResolverRef.current;
+      });
+    },
+    []
+  );
+
+  const promptPdfExportOptions = useCallback(
+    (
+      request: DocumentExportRequest
+    ): Promise<{
+      renderWidth: number;
+      emulationProfile: PdfRenderWidthPreset;
+      respectPageCssSize: boolean;
+    } | null> => {
+      if (exportDialogResolverRef.current) {
+        exportDialogResolverRef.current(null);
+      }
+
+      setExportDialogState({
+        format: request.format,
+        scope: request.scope,
+        baseName: "",
+        outputDir: "",
+        phase: null,
+        error: null,
+        renderWidthPreset: "desktop",
+        customRenderWidth: "",
+        respectPageCssSize: false
+      });
+
+      return new Promise((resolve) => {
+        exportDialogResolverRef.current = resolve as typeof exportDialogResolverRef.current;
+      });
+    },
+    []
+  );
+
+  const setExportProgress = useCallback(
+    (
+      request: DocumentExportRequest,
+      baseName: string,
+      outputDir: string,
+      phase: ExportDialogState["phase"]
+    ) => {
+      setExportDialogState({
+        format: request.format,
+        scope: request.scope,
+        baseName,
+        outputDir,
+        phase,
+        error: null,
+        renderWidthPreset: "desktop",
+        customRenderWidth: "",
+        respectPageCssSize: false
+      });
+    },
+    []
+  );
+
+  const handleExportDialogBaseNameChange = useCallback((value: string) => {
+    setExportDialogState((current) =>
+      current
+        ? {
+            ...current,
+            baseName: value,
+            error: null
+          }
+        : current
+    );
+  }, []);
+
+  const handleExportDialogRenderWidthPresetChange = useCallback(
+    (value: ExportDialogState["renderWidthPreset"]) => {
+      setExportDialogState((current) =>
+        current
+          ? {
+              ...current,
+              renderWidthPreset: value,
+              error: null
+            }
+          : current
+      );
+    },
+    []
+  );
+
+  const handleExportDialogCustomRenderWidthChange = useCallback((value: string) => {
+    setExportDialogState((current) =>
+      current
+        ? {
+            ...current,
+            customRenderWidth: value.replace(/[^\d]/gu, ""),
+            error: null
+          }
+        : current
+    );
+  }, []);
+
+  const handleExportDialogRespectPageCssSizeChange = useCallback((value: boolean) => {
+    setExportDialogState((current) =>
+      current
+        ? {
+            ...current,
+            respectPageCssSize: value,
+            error: null
+          }
+        : current
+    );
+  }, []);
+
+  const handleExportDialogBrowse = useCallback(async () => {
+    try {
+      const outputDir = await pickExportDirectory();
+      if (!outputDir) {
+        return;
+      }
+
+      setExportDialogState((current) =>
+        current
+          ? {
+              ...current,
+              outputDir,
+              error: null
+            }
+          : current
+      );
+    } catch (error) {
+      notifyError(formatError(error, copy.app.errors.unknown));
+    }
+  }, [copy.app.errors.unknown, notifyError]);
+
+  const handleExportDialogCancel = useCallback(() => {
+    resolveExportDialog(null);
+  }, [resolveExportDialog]);
+
+  const handleExportDialogConfirm = useCallback(() => {
+    if (!exportDialogState || exportDialogState.phase) {
+      return;
+    }
+
+    if (exportDialogState.format === "pdf") {
+      const renderWidth = resolvePdfRenderWidth(
+        exportDialogState.renderWidthPreset,
+        exportDialogState.customRenderWidth
+      );
+      if (exportDialogState.renderWidthPreset === "custom") {
+        if (!exportDialogState.customRenderWidth.trim()) {
+          setExportDialogState({
+            ...exportDialogState,
+            error: copy.app.exportDialog.pdfCustomWidthRequired
+          });
+          return;
+        }
+        if (renderWidth === null) {
+          setExportDialogState({
+            ...exportDialogState,
+            error: copy.app.exportDialog.pdfCustomWidthInvalid
+          });
+          return;
+        }
+      }
+
+      resolveExportDialog({
+        renderWidth: renderWidth ?? PDF_RENDER_WIDTH_PRESET_VALUES.desktop,
+        emulationProfile: exportDialogState.renderWidthPreset,
+        respectPageCssSize: exportDialogState.respectPageCssSize
+      });
+      return;
+    }
+
+    const baseName = exportDialogState.baseName.trim();
+    if (!baseName) {
+      setExportDialogState({
+        ...exportDialogState,
+        error: copy.app.errors.fileNameEmpty
+      });
+      return;
+    }
+
+    const outputDir = exportDialogState.outputDir.trim();
+    if (!outputDir) {
+      setExportDialogState({
+        ...exportDialogState,
+        error: copy.app.exportDialog.outputDirRequired
+      });
+      return;
+    }
+
+    resolveExportDialog({
+      outputDir,
+      baseName
+    });
+  }, [
+    copy.app.errors.fileNameEmpty,
+    copy.app.exportDialog.pdfCustomWidthInvalid,
+    copy.app.exportDialog.pdfCustomWidthRequired,
+    copy.app.exportDialog.outputDirRequired,
+    exportDialogState,
+    resolveExportDialog
+  ]);
+
+  const resolveMarkdownExportPayload = useCallback(
+    (scope: ExportScope) => {
+      const currentDoc = docRef.current;
+      const flushedMarkdown = flushVisibleDocumentContent();
+      if (flushedMarkdown !== currentDoc.content) {
+        dispatch({
+          type: "update_content",
+          content: flushedMarkdown
+        });
+      }
+
+      if (scope === "selection") {
+        const selectionExport = selectionExportRef.current?.();
+        const markdown = selectionExport?.markdown?.trim() ?? "";
+        if (!markdown) {
+          throw new Error(copy.app.export.selectionEmpty);
+        }
+
+        return {
+          markdown,
+          html: selectionExport?.html ?? markdownToHtml(markdown),
+          hasComplexTables: selectionExport?.hasComplexTables ?? false
+        };
+      }
+
+      const snapshot = exportSnapshotRef.current?.();
+      if (snapshot?.markdown.trim()) {
+        return {
+          markdown: snapshot.markdown.trim(),
+          html: snapshot.html,
+          hasComplexTables: snapshot.hasComplexTables
+        };
+      }
+
+      const markdown = stripFrontMatterForExport(flushedMarkdown);
+      if (!markdown.trim()) {
+        throw new Error(copy.app.export.documentEmpty);
+      }
+
+      const html = markdownToHtml(markdown);
+      return {
+        markdown,
+        html,
+        hasComplexTables: htmlToMarkdownWithDiagnostics(html).hasComplexTables
+      };
+    },
+    [
+      copy.app.export.documentEmpty,
+      copy.app.export.selectionEmpty,
+      flushVisibleDocumentContent
+    ]
+  );
+
   const handleToggleUiTheme = useCallback(() => {
     setUiTheme((current) => (current === "modern" ? "classic" : "modern"));
   }, []);
@@ -721,6 +1134,209 @@ export default function App() {
   const handleToggleEditorMode = useCallback(() => {
     setEditorMode((current) => (current === "editable" ? "readonly" : "editable"));
   }, []);
+
+  const handleDocumentExportRequest = useCallback(
+    (request: DocumentExportRequest) => {
+      void (async () => {
+        const exportBaseName = displayFileBaseName || copy.app.untitledBaseName;
+
+        if (request.format === "pdf") {
+          const pdfConfig = await promptPdfExportOptions(request);
+          if (!pdfConfig) {
+            return;
+          }
+
+          const outputFilePath = await saveExportPdfDialog(
+            buildSuggestedExportFileName(exportBaseName, request.scope, "pdf")
+          );
+          if (!outputFilePath) {
+            return;
+          }
+
+          await runBusyTask(async () => {
+            const currentDoc = docRef.current;
+            const outputDir = getParentDirectory(outputFilePath);
+            setExportProgress(request, exportBaseName, outputDir, "preparing");
+
+            try {
+              if (currentDoc.kind === "markdown") {
+                const markdownPayload = resolveMarkdownExportPayload(request.scope);
+                const html = await buildMarkdownPdfExportDocument(markdownPayload.markdown, {
+                  title: exportBaseName,
+                  theme: markdownTheme,
+                  documentPath: currentDoc.currentPath,
+                  renderWidth: pdfConfig.renderWidth
+                });
+                setExportProgress(request, exportBaseName, outputDir, "rendering");
+                const result = await exportDocumentPdf({
+                  html,
+                  outputFilePath,
+                  scope: request.scope,
+                  renderWidth: pdfConfig.renderWidth,
+                  emulationProfile: pdfConfig.emulationProfile,
+                  respectPageCssSize: pdfConfig.respectPageCssSize
+                });
+                setExportProgress(request, exportBaseName, outputDir, "saving");
+                toaster.positive(
+                  interpolateTemplate(copy.app.export.pdfSuccess, {
+                    file: result.file,
+                    outputDir: result.outputDir
+                  }),
+                  {
+                    autoHideDuration: TOAST_AUTO_HIDE_MS
+                  }
+                );
+                return;
+              }
+
+              if (currentDoc.kind === "html") {
+                if (!currentDoc.content.trim()) {
+                  throw new Error(copy.app.export.documentEmpty);
+                }
+
+                const html = buildHtmlPdfExportDocument(currentDoc.content, {
+                  title: exportBaseName,
+                  documentPath: currentDoc.currentPath,
+                  renderWidth: pdfConfig.renderWidth
+                });
+                setExportProgress(request, exportBaseName, outputDir, "rendering");
+                const result = await exportDocumentPdf({
+                  html,
+                  outputFilePath,
+                  scope: "document",
+                  renderWidth: pdfConfig.renderWidth,
+                  emulationProfile: pdfConfig.emulationProfile,
+                  respectPageCssSize: pdfConfig.respectPageCssSize
+                });
+                setExportProgress(request, exportBaseName, outputDir, "saving");
+                toaster.positive(
+                  interpolateTemplate(copy.app.export.pdfSuccess, {
+                    file: result.file,
+                    outputDir: result.outputDir
+                  }),
+                  {
+                    autoHideDuration: TOAST_AUTO_HIDE_MS
+                  }
+                );
+              }
+            } finally {
+              setExportDialogState(null);
+            }
+          });
+
+          return;
+        }
+
+        if (docRef.current.kind !== "markdown") {
+          return;
+        }
+
+        const imageConfig = await promptImageExportOptions(request, exportBaseName);
+        if (!imageConfig) {
+          return;
+        }
+
+        await runBusyTask(async () => {
+          const currentDoc = docRef.current;
+          const markdownPayload = resolveMarkdownExportPayload(request.scope);
+          setExportProgress(request, imageConfig.baseName, imageConfig.outputDir, "preparing");
+
+          try {
+            if (markdownPayload.hasComplexTables) {
+              if (request.format === "svg") {
+                throw new Error(copy.app.export.complexTableSvgUnsupported);
+              }
+
+              const html = await buildMarkdownImageSnapshotDocument(markdownPayload.html, {
+                title: imageConfig.baseName,
+                theme: markdownTheme,
+                documentPath: currentDoc.currentPath
+              });
+              const outputFilePath = joinPath(
+                imageConfig.outputDir,
+                buildFirstPageExportFileName(imageConfig.baseName, request.scope, "png")
+              );
+              setExportProgress(
+                request,
+                imageConfig.baseName,
+                imageConfig.outputDir,
+                "rendering"
+              );
+              const result = await exportDocumentImage({
+                html,
+                outputFilePath
+              });
+              setExportProgress(request, imageConfig.baseName, imageConfig.outputDir, "saving");
+              toaster.positive(
+                interpolateTemplate(copy.app.export.successSingle, {
+                  count: "1",
+                  outputDir: result.outputDir
+                }),
+                {
+                  autoHideDuration: TOAST_AUTO_HIDE_MS
+                }
+              );
+              return;
+            }
+
+            setExportProgress(
+              request,
+              imageConfig.baseName,
+              imageConfig.outputDir,
+              "rendering"
+            );
+            const result = await exportMarkdownPages({
+              markdown: markdownPayload.markdown,
+              outputDir: imageConfig.outputDir,
+              format: request.format as ImageExportFormat,
+              scope: request.scope,
+              theme: markdownTheme,
+              baseName: imageConfig.baseName
+            });
+            setExportProgress(request, imageConfig.baseName, imageConfig.outputDir, "saving");
+
+            const template =
+              result.pageCount === 1
+                ? copy.app.export.successSingle
+                : copy.app.export.successMultiple;
+            toaster.positive(
+              interpolateTemplate(template, {
+                count: String(result.pageCount),
+                outputDir: result.outputDir
+              }),
+              {
+                autoHideDuration: TOAST_AUTO_HIDE_MS
+              }
+            );
+          } finally {
+            setExportDialogState(null);
+          }
+        });
+      })().catch((error) => {
+        setExportDialogState(null);
+        notifyError(formatError(error, copy.app.errors.unknown));
+      });
+    },
+    [
+      copy.app.errors.unknown,
+      copy.app.export.complexTableSvgUnsupported,
+      copy.app.export.documentEmpty,
+      copy.app.export.pdfSuccess,
+      copy.app.export.selectionEmpty,
+      copy.app.export.successMultiple,
+      copy.app.export.successSingle,
+      copy.app.untitledBaseName,
+      displayFileBaseName,
+      markdownTheme,
+      promptImageExportOptions,
+      promptPdfExportOptions,
+      resolveMarkdownExportPayload,
+      runBusyTask,
+      saveExportPdfDialog,
+      setExportProgress,
+      notifyError
+    ]
+  );
 
   const handleToggleDocumentView = useCallback(() => {
     if (docRef.current.kind === "markdown") {
@@ -952,13 +1568,18 @@ export default function App() {
                     openPerfStartMs={appBootStartRef.current}
                     onEditorError={handleEditorError}
                     onMarkdownChange={handleMarkdownChange}
+                    onRequestExport={handleDocumentExportRequest}
+                    onRegisterExportSnapshot={handleRegisterExportSnapshot}
                     onRegisterFlushMarkdown={handleRegisterFlushMarkdown}
+                    onRegisterSelectionExport={handleRegisterSelectionExport}
                     onStatsChange={handleStatsChange}
                   />
                 ) : doc.kind === "html" && htmlViewMode === "preview" ? (
                   <HtmlPreview
+                    copy={copy.editor.contextMenu}
                     documentPath={doc.currentPath}
                     html={doc.content}
+                    onRequestExport={handleDocumentExportRequest}
                   />
                 ) : (
                   <SourceEditor
@@ -990,6 +1611,20 @@ export default function App() {
         </div>
 
         <Suspense fallback={null}>
+          <ExportDialog
+            copy={copy.app.exportDialog}
+            isBusy={isBusy}
+            onBaseNameChange={handleExportDialogBaseNameChange}
+            onCustomRenderWidthChange={handleExportDialogCustomRenderWidthChange}
+            onBrowse={() => {
+              void handleExportDialogBrowse();
+            }}
+            onCancel={handleExportDialogCancel}
+            onConfirm={handleExportDialogConfirm}
+            onRenderWidthPresetChange={handleExportDialogRenderWidthPresetChange}
+            onRespectPageCssSizeChange={handleExportDialogRespectPageCssSizeChange}
+            state={exportDialogState}
+          />
           <UnsavedChangesModal
             copy={copy.unsavedModal}
             isBusy={isBusy}

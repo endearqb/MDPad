@@ -15,6 +15,8 @@ Lightweight Markdown editor for Windows, built with Tauri + React + TipTap.
 -   [Supported Markdown and Features](#supported-markdown-and-features)
     
 -   [How to Use](#how-to-use)
+
+-   [CLI Export](#cli-export)
     
 -   [Keyboard Shortcuts](#keyboard-shortcuts)
     
@@ -199,6 +201,63 @@ MDPad is designed for fast, single-document writing with a desktop-native workfl
     
 -   For markdown table text, pressing `Enter` can convert it into a real table node.
     
+
+## CLI Export
+
+The Windows installer also ships with `mdpad-cli`, and the installer adds it to the current user's `PATH`.
+
+### Supported commands
+
+```bash
+mdpad-cli export pdf --input <file> --output <file> [--render-width <px>] [--theme <theme>]
+mdpad-cli export png --input <file> --output-dir <dir> [--base-name <name>] [--scope <scope>] [--theme <theme>]
+mdpad-cli export svg --input <file> --output-dir <dir> [--base-name <name>] [--scope <scope>] [--theme <theme>]
+```
+
+### Supported input types
+
+-   Markdown: `.md`, `.markdown`
+-   HTML: `.html`, `.htm`
+
+### Available options
+
+-   `--input <file>`: required for all export commands.
+-   `--output <file>`: required for PDF export.
+-   `--output-dir <dir>`: required for PNG and SVG export.
+-   `--render-width <px>`: used by PDF export and HTML-to-PNG export. Default: `1280`. Valid range: `240` to `3840`.
+-   `--theme <theme>`: Markdown export theme. One of `default`, `github`, `notionish`, `academic`.
+-   `--scope <scope>`: Markdown export scope. One of `document`, `selection`. Default: `document`.
+-   `--base-name <name>`: output file base name for PNG/SVG export.
+
+### Notes
+
+-   HTML currently supports `pdf` and `png`, but not `svg`.
+-   Relative `--input`, `--output`, and `--output-dir` paths are resolved against the current terminal working directory.
+-   PNG/SVG export may generate multiple files depending on pagination.
+
+### Examples
+
+```bash
+mdpad-cli export pdf --input report.html --output report960.pdf --render-width 960
+```
+
+```bash
+mdpad-cli export pdf --input notes.md --output notes.pdf --render-width 1280 --theme github
+```
+
+```bash
+mdpad-cli export png --input notes.md --output-dir ./out --base-name notes --theme notionish
+```
+
+```bash
+mdpad-cli export svg --input notes.md --output-dir ./out --base-name notes --scope selection
+```
+
+### Help
+
+```bash
+mdpad-cli --help
+```
 
 ## Keyboard Shortcuts
 

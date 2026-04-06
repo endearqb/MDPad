@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildControlledHtmlPreviewDocument,
+  extractContextMenuPositionFromPreviewMessage,
   extractExternalOpenUrlFromPreviewMessage,
+  HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
   HTML_PREVIEW_MESSAGE_SOURCE,
   HTML_PREVIEW_OPEN_EXTERNAL_MESSAGE_TYPE
 } from "./htmlPreviewDocument";
@@ -128,6 +130,46 @@ describe("htmlPreviewDocument", () => {
         expectedToken,
         {},
         frameWindow
+      )
+    ).toBeNull();
+  });
+
+  it("extracts preview context-menu coordinates relative to the iframe frame", () => {
+    const frameWindow = {} as WindowProxy;
+    const expectedToken = "token-4";
+
+    expect(
+      extractContextMenuPositionFromPreviewMessage(
+        {
+          type: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: expectedToken,
+          x: 24,
+          y: 36
+        },
+        expectedToken,
+        frameWindow,
+        frameWindow,
+        { left: 200, top: 120 }
+      )
+    ).toEqual({
+      x: 224,
+      y: 156
+    });
+
+    expect(
+      extractContextMenuPositionFromPreviewMessage(
+        {
+          type: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: expectedToken,
+          x: "24",
+          y: 36
+        },
+        expectedToken,
+        frameWindow,
+        frameWindow,
+        { left: 200, top: 120 }
       )
     ).toBeNull();
   });

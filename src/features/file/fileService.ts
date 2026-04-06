@@ -1,6 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
+import type {
+  ExportDocumentImageInput,
+  ExportDocumentImageResult,
+  ExportDocumentPdfInput,
+  ExportDocumentPdfResult,
+  ExportMarkdownPagesInput,
+  ExportResult
+} from "../../shared/types/doc";
+
 export async function getInitialFile(): Promise<string | null> {
   return invoke<string | null>("get_initial_file");
 }
@@ -67,6 +76,42 @@ export async function saveAttachmentBytesToLibrary(
   return invoke<string>("save_attachment_bytes_to_library", {
     fileName,
     bytes
+  });
+}
+
+export async function saveExportPdfDialog(
+  defaultName: string
+): Promise<string | null> {
+  return invoke<string | null>("save_export_pdf_dialog", {
+    defaultName
+  });
+}
+
+export async function pickExportDirectory(): Promise<string | null> {
+  return invoke<string | null>("pick_export_directory");
+}
+
+export async function exportMarkdownPages(
+  input: ExportMarkdownPagesInput
+): Promise<ExportResult> {
+  return invoke<ExportResult>("export_markdown_pages", {
+    input
+  });
+}
+
+export async function exportDocumentPdf(
+  input: ExportDocumentPdfInput
+): Promise<ExportDocumentPdfResult> {
+  return invoke<ExportDocumentPdfResult>("export_document_pdf", {
+    input
+  });
+}
+
+export async function exportDocumentImage(
+  input: ExportDocumentImageInput
+): Promise<ExportDocumentImageResult> {
+  return invoke<ExportDocumentImageResult>("export_document_image", {
+    input
   });
 }
 

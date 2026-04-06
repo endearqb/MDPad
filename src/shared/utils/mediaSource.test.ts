@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveMediaSource, toFileUrl } from "./mediaSource";
+import {
+  resolveMediaSource,
+  resolveMediaSourceForExport,
+  toFileUrl
+} from "./mediaSource";
 
 describe("mediaSource", () => {
   it("converts absolute Windows path to file url", () => {
@@ -99,5 +103,42 @@ describe("mediaSource", () => {
 
   it("builds file urls from helper", () => {
     expect(toFileUrl("/tmp/a b.png")).toBe("file:///tmp/a%20b.png");
+  });
+
+  it("keeps file urls as file urls for export mode even when tauri runtime is available", () => {
+    const globalWithWindow = globalThis as { window?: unknown };
+    const originalWindow = globalWithWindow.window;
+
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        __TAURI_INTERNALS__: {
+          convertFileSrc: (filePath: string) => `asset://converted/${filePath}`
+        }
+      },
+      writable: true
+    });
+
+    try {
+      expect(resolveMediaSourceForExport("file:///C:/pics/a%201.png", null)).toBe(
+        "file:///C:/pics/a%201.png"
+      );
+    } finally {
+      if (typeof originalWindow === "undefined") {
+        delete globalWithWindow.window;
+      } else {
+        Object.defineProperty(globalThis, "window", {
+          configurable: true,
+          value: originalWindow,
+          writable: true
+        });
+      }
+    }
+  });
+
+  it("resolves relative paths to file urls for export mode", () => {
+    expect(
+      resolveMediaSourceForExport("..\\images\\cover 1.png", "C:\\notes\\daily\\todo.md")
+    ).toBe("file:///C:/notes/images/cover%201.png");
   });
 });

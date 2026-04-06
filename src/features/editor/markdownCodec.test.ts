@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { htmlToMarkdown, markdownToHtml } from "./markdownCodec";
+import {
+  htmlToMarkdown,
+  htmlToMarkdownWithDiagnostics,
+  markdownToHtml
+} from "./markdownCodec";
 
 describe("markdownCodec", () => {
   it("converts markdown task list to TipTap task list html", () => {
@@ -415,6 +419,25 @@ describe("markdownCodec", () => {
 
     expect(roundTripped).toContain("| A | B |");
     expect(roundTripped).toContain("| --- | --- |");
+  });
+
+  it("normalizes tiptap table html into gfm markdown", () => {
+    const diagnostics = htmlToMarkdownWithDiagnostics(
+      '<table><colgroup><col style="min-width: 120px;"><col style="min-width: 120px;"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>A</p></th><th colspan="1" rowspan="1"><p>B</p></th></tr><tr><td colspan="1" rowspan="1"><p>1</p></td><td colspan="1" rowspan="1"><p>2</p></td></tr></tbody></table>'
+    );
+
+    expect(diagnostics.hasComplexTables).toBe(false);
+    expect(diagnostics.markdown).toContain("| A | B |");
+    expect(diagnostics.markdown).toContain("| --- | --- |");
+    expect(diagnostics.markdown).not.toContain("<table>");
+  });
+
+  it("reports merged-cell table html as complex", () => {
+    const diagnostics = htmlToMarkdownWithDiagnostics(
+      '<table><tbody><tr><th colspan="2"><p>A</p></th></tr><tr><td><p>1</p></td><td><p>2</p></td></tr></tbody></table>'
+    );
+
+    expect(diagnostics.hasComplexTables).toBe(true);
   });
 
   it("keeps markdown link syntax in round trip", () => {

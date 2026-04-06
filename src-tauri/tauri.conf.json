@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MDPad",
-  "version": "0.2.0",
+  "version": "0.2.4",
   "identifier": "com.mdpad.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build:tauri-assets",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
@@ -36,11 +36,19 @@
   "bundle": {
     "active": true,
     "targets": "nsis",
-    "resources": [
-      "resources/samples"
-    ],
+    "resources": {
+      "resources/samples": "samples",
+      "resources/node-runtime": "node-runtime",
+      "resources/marknative-renderer": "marknative-renderer",
+      "resources/playwright-pdf": "playwright-pdf",
+      "resources/export-doc-builder": "export-doc-builder",
+      "resources/cli/mdpad-cli.exe": "cli/mdpad-cli.exe",
+      "windows/add-user-path.ps1": "installer-scripts/add-user-path.ps1",
+      "windows/remove-user-path.ps1": "installer-scripts/remove-user-path.ps1"
+    },
     "windows": {
       "nsis": {
+        "installerHooks": "windows/nsis-hooks.nsh",
         "languages": [
           "SimpChinese",
           "English"

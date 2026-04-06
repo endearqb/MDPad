@@ -5,7 +5,8 @@ import {
   useRef,
   useState,
   type FormEvent as ReactFormEvent,
-  type KeyboardEvent as ReactKeyboardEvent
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent
 } from "react";
 import { isTextSelection } from "@tiptap/core";
 import Link from "@tiptap/extension-link";
@@ -124,6 +125,11 @@ import { isCellSelection } from "./extensions/tableKit/tableSelection";
 import { NeighborColumnResize } from "./extensions/tableNeighborResize";
 import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
+import {
+  canExportCurrentSelection,
+  getMarkdownExportSnapshot,
+  getMarkdownSelectionExport
+} from "./markdownExport";
 import { normalizeMarkdown } from "../../shared/utils/markdown";
 import { resolveMediaSource } from "../../shared/utils/mediaSource";
 import { getFileBaseName } from "../../shared/utils/path";
@@ -132,6 +138,11 @@ import type {
   AttachmentModalCopy,
   EditorCopy
 } from "../../shared/i18n/appI18n";
+import type {
+  DocumentExportRequest,
+  MarkdownExportSnapshot,
+  MarkdownSelectionExport
+} from "../../shared/types/doc";
 import {
   logOpenPerfDuration,
   logOpenPerfElapsed,
@@ -186,7 +197,14 @@ interface MarkdownEditorProps {
   isEditable: boolean;
   openPerfStartMs?: number;
   onMarkdownChange: (markdown: string) => void;
+  onRequestExport?: (request: DocumentExportRequest) => void;
   onRegisterFlushMarkdown?: (flush: (() => string | null) | null) => void;
+  onRegisterSelectionExport?: (
+    resolver: (() => MarkdownSelectionExport | null) | null
+  ) => void;
+  onRegisterExportSnapshot?: (
+    resolver: (() => MarkdownExportSnapshot | null) | null
+  ) => void;
   onEditorError?: (message: string) => void;
   onReadOnlyInteraction?: () => void;
   onStatsChange?: (stats: EditorStats) => void;
@@ -215,6 +233,12 @@ interface CachedTextSelectionSnapshot {
 
 interface FrontMatterState extends FrontMatterComposeInput {
   panelMode: FrontMatterPanelMode;
+}
+
+interface EditorContextMenuState {
+  x: number;
+  y: number;
+  canExportSelection: boolean;
 }
 
 type TextStyleValue = "paragraph" | 1 | 2 | 3 | 4;
@@ -554,7 +578,10 @@ export default function MarkdownEditor({
   isEditable,
   openPerfStartMs,
   onMarkdownChange,
+  onRequestExport,
   onRegisterFlushMarkdown,
+  onRegisterSelectionExport,
+  onRegisterExportSnapshot,
   onEditorError,
   onReadOnlyInteraction,
   onStatsChange
@@ -600,6 +627,9 @@ export default function MarkdownEditor({
   const [bubbleShellNode, setBubbleShellNode] = useState<HTMLDivElement | null>(null);
   const [tableOfContentsItems, setTableOfContentsItems] = useState<TableOfContentDataItem[]>([]);
   const [frontMatterState, setFrontMatterState] = useState<FrontMatterState>(initialMarkdownState.state);
+  const [contextMenuState, setContextMenuState] = useState<EditorContextMenuState | null>(
+    null
+  );
   const firstEditableLoggedRef = useRef(false);
 
   const emitStats = useCallback(
@@ -659,6 +689,54 @@ export default function MarkdownEditor({
       }
     };
   }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenuState(null);
+  }, []);
+
+  useEffect(() => {
+    if (!contextMenuState) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+
+      const menu = document.querySelector(".editor-context-menu");
+      if (menu?.contains(target)) {
+        return;
+      }
+
+      closeContextMenu();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    };
+
+    const handleLayoutChange = () => {
+      closeContextMenu();
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", handleLayoutChange);
+    editorSurfaceRef.current?.addEventListener("scroll", handleLayoutChange, {
+      passive: true
+    });
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleLayoutChange);
+      editorSurfaceRef.current?.removeEventListener("scroll", handleLayoutChange);
+    };
+  }, [closeContextMenu, contextMenuState]);
 
   const reportEditorError = useCallback((message: string) => {
     const handler = onEditorErrorRef.current;
@@ -2264,9 +2342,72 @@ export default function MarkdownEditor({
     [editorPromptValue, resolveEditorPrompt]
   );
 
+  const handleEditorContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (!editor || !onRequestExport) {
+        return;
+      }
+
+      const target = event.target as Node | null;
+      if (!target || !editorSurfaceRef.current?.contains(target)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      setIsStyleMenuOpen(false);
+      setIsStyleMenuDropUp(false);
+      setContextMenuState({
+        x: event.clientX,
+        y: event.clientY,
+        canExportSelection: canExportCurrentSelection(editor)
+      });
+    },
+    [editor, onRequestExport]
+  );
+
+  const handleExportAction = useCallback(
+    (request: DocumentExportRequest) => {
+      closeContextMenu();
+      onRequestExport?.(request);
+    },
+    [closeContextMenu, onRequestExport]
+  );
+
+  const selectionExportResolver = useCallback(() => {
+    return getMarkdownSelectionExport(editor);
+  }, [editor]);
+
+  useEffect(() => {
+    if (!onRegisterSelectionExport) {
+      return;
+    }
+
+    onRegisterSelectionExport(selectionExportResolver);
+    return () => {
+      onRegisterSelectionExport(null);
+    };
+  }, [onRegisterSelectionExport, selectionExportResolver]);
+
+  const exportSnapshotResolver = useCallback(() => {
+    return getMarkdownExportSnapshot(editor);
+  }, [editor]);
+
+  useEffect(() => {
+    if (!onRegisterExportSnapshot) {
+      return;
+    }
+
+    onRegisterExportSnapshot(exportSnapshotResolver);
+    return () => {
+      onRegisterExportSnapshot(null);
+    };
+  }, [exportSnapshotResolver, onRegisterExportSnapshot]);
+
   return (
     <div
       className="editor-frame"
+      onContextMenuCapture={handleEditorContextMenu}
       onKeyDownCapture={handleKeyDown}
     >
       {/* Menus are built from Tiptap primitives with MDPad custom UI. */}
@@ -2557,6 +2698,100 @@ export default function MarkdownEditor({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {contextMenuState && onRequestExport && (
+        <div
+          aria-label={copy.contextMenu.ariaLabel}
+          className="editor-context-menu"
+          role="menu"
+          style={{
+            left: `${contextMenuState.x}px`,
+            top: `${contextMenuState.y}px`
+          }}
+        >
+          <button
+            className="editor-context-menu-item"
+            disabled={!contextMenuState.canExportSelection}
+            onClick={() =>
+              handleExportAction({
+                scope: "selection",
+                format: "png"
+              })
+            }
+            role="menuitem"
+            type="button"
+          >
+            {copy.contextMenu.exportSelectionPng}
+          </button>
+          <button
+            className="editor-context-menu-item"
+            disabled={!contextMenuState.canExportSelection}
+            onClick={() =>
+              handleExportAction({
+                scope: "selection",
+                format: "svg"
+              })
+            }
+            role="menuitem"
+            type="button"
+          >
+            {copy.contextMenu.exportSelectionSvg}
+          </button>
+          <button
+            className="editor-context-menu-item"
+            disabled={!contextMenuState.canExportSelection}
+            onClick={() =>
+              handleExportAction({
+                scope: "selection",
+                format: "pdf"
+              })
+            }
+            role="menuitem"
+            type="button"
+          >
+            {copy.contextMenu.exportSelectionPdf}
+          </button>
+          <button
+            className="editor-context-menu-item"
+            onClick={() =>
+              handleExportAction({
+                scope: "document",
+                format: "png"
+              })
+            }
+            role="menuitem"
+            type="button"
+          >
+            {copy.contextMenu.exportDocumentPng}
+          </button>
+          <button
+            className="editor-context-menu-item"
+            onClick={() =>
+              handleExportAction({
+                scope: "document",
+                format: "svg"
+              })
+            }
+            role="menuitem"
+            type="button"
+          >
+            {copy.contextMenu.exportDocumentSvg}
+          </button>
+          <button
+            className="editor-context-menu-item"
+            onClick={() =>
+              handleExportAction({
+                scope: "document",
+                format: "pdf"
+              })
+            }
+            role="menuitem"
+            type="button"
+          >
+            {copy.contextMenu.exportDocumentPdf}
+          </button>
         </div>
       )}
 

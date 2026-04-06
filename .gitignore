@@ -14,6 +14,11 @@ src/**/*.js.map
 
 # Tauri / Rust build artifacts
 src-tauri/target/
+src-tauri/resources/cli/
+src-tauri/resources/export-doc-builder/
+src-tauri/resources/marknative-renderer/
+src-tauri/resources/node-runtime/
+src-tauri/resources/playwright-pdf/
 
 # Logs
 *.log

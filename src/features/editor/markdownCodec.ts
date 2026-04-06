@@ -1088,8 +1088,118 @@ function createMarkdownHookRegistry(): MarkdownHookRegistry {
 const markdownHookRegistry = createMarkdownHookRegistry();
 markdownHookRegistry.installTurndownHooks(turndown);
 
+export interface HtmlToMarkdownDiagnostics {
+  markdown: string;
+  hasComplexTables: boolean;
+}
+
 function preprocessMarkdown(markdown: string): string {
   return markdownHookRegistry.runPreprocess(markdown);
+}
+
+function createHtmlNormalizationDocument(html: string): Document | null {
+  if (typeof DOMParser !== "undefined") {
+    return new DOMParser().parseFromString(html, "text/html");
+  }
+
+  if (typeof document !== "undefined" && document.implementation) {
+    const fallbackDocument = document.implementation.createHTMLDocument("MDPad");
+    fallbackDocument.body.innerHTML = html;
+    return fallbackDocument;
+  }
+
+  return null;
+}
+
+function isComplexTableSpanValue(value: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 1;
+}
+
+function sanitizeTableCellChildren(cell: Element): void {
+  const childElements = Array.from(cell.children);
+  if (childElements.length === 0) {
+    return;
+  }
+
+  const blockWrappers = childElements.filter((child) =>
+    child.tagName === "P" || child.tagName === "DIV"
+  );
+  if (blockWrappers.length !== childElements.length) {
+    return;
+  }
+
+  const html = blockWrappers
+    .map((child) => child.innerHTML.trim())
+    .filter((value) => value !== "")
+    .join("<br>");
+  cell.innerHTML = html;
+}
+
+function normalizeHtmlTablesForMarkdownExport(html: string): {
+  html: string;
+  hasComplexTables: boolean;
+} {
+  const doc = createHtmlNormalizationDocument(html);
+  if (!doc) {
+    const hasComplexTables =
+      /<(?:td|th)\b[^>]*\b(?:colspan|rowspan)\s*=\s*["']?(?:[2-9]|\d{2,})/iu.test(
+        html
+      );
+    const normalizedHtml = html
+      .replace(/<colgroup\b[\s\S]*?<\/colgroup>/giu, "")
+      .replace(/\s(?:colspan|rowspan)=["']?1["']?/giu, "")
+      .replace(/\s(?:style|class|data-colwidth)=["'][^"']*["']/giu, "")
+      .replace(
+        /<(td|th)([^>]*)>\s*<p>([\s\S]*?)<\/p>\s*<\/\1>/giu,
+        "<$1$2>$3</$1>"
+      );
+
+    return {
+      html: normalizedHtml,
+      hasComplexTables
+    };
+  }
+
+  let hasComplexTables = false;
+  doc.querySelectorAll("table").forEach((table) => {
+    if (table.querySelector("table")) {
+      hasComplexTables = true;
+    }
+
+    table.querySelectorAll("colgroup").forEach((colgroup) => {
+      colgroup.remove();
+    });
+
+    table.querySelectorAll("th, td").forEach((cell) => {
+      const colspan = cell.getAttribute("colspan");
+      const rowspan = cell.getAttribute("rowspan");
+      if (isComplexTableSpanValue(colspan) || isComplexTableSpanValue(rowspan)) {
+        hasComplexTables = true;
+      }
+
+      if (colspan === "1") {
+        cell.removeAttribute("colspan");
+      }
+      if (rowspan === "1") {
+        cell.removeAttribute("rowspan");
+      }
+
+      cell.removeAttribute("style");
+      cell.removeAttribute("class");
+      cell.removeAttribute("data-colwidth");
+      sanitizeTableCellChildren(cell);
+    });
+  });
+
+  return {
+    html: doc.body.innerHTML,
+    hasComplexTables
+  };
 }
 
 export function markdownToHtml(markdown: string): string {
@@ -1099,5 +1209,15 @@ export function markdownToHtml(markdown: string): string {
 }
 
 export function htmlToMarkdown(html: string): string {
-  return turndown.turndown(html).trimEnd();
+  return htmlToMarkdownWithDiagnostics(html).markdown;
+}
+
+export function htmlToMarkdownWithDiagnostics(
+  html: string
+): HtmlToMarkdownDiagnostics {
+  const normalized = normalizeHtmlTablesForMarkdownExport(html);
+  return {
+    markdown: turndown.turndown(normalized.html).trimEnd(),
+    hasComplexTables: normalized.hasComplexTables
+  };
 }

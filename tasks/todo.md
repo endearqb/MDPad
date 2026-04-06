@@ -151,3 +151,229 @@
 - 结果：README.md 与 README_zh.md 现在都包含 0.2.0 新增功能的详细说明，并且修正了旧版对支持格式、HTML 预览与默认视图行为的遗漏。
 - 验证：已完成中英文只读校对与 diff 检查；本次仅更新文档，没有运行 `pnpm test` / `pnpm build`。
 - 说明：工作区内仍有此前功能改动留下的未提交文件，本次只增量修改了两份 README 和 `tasks/todo.md` 的记录。
+
+# Markdown 图片导出（marknative）
+
+## Plan
+- [x] 梳理并接入 marknative 渲染脚本、主题映射与打包资源准备链路
+- [x] 扩展前端共享类型与文件服务，增加导出目录选择和导出命令接口
+- [x] 在 Markdown 富文本编辑区增加右键导出菜单与选区导出能力
+- [x] 在 App 层接入导出编排、正文/选区 Markdown 提取、成功与失败反馈
+- [x] 在 Tauri 后端增加目录选择、渲染进程调用、文件命名与结果清单返回
+- [x] 补充前端/Rust 测试并运行 `pnpm test`、`pnpm build`、`cargo test`
+
+## Progress Notes
+- 新增 `scripts/marknative-renderer-src` 与 `scripts/prepare-marknative-renderer.mjs`，把 `marknative` 渲染器打包为 Tauri 资源；开发态使用本机 Node，打包态随应用携带独立 `node.exe` 与 `skia-canvas` 依赖树。
+- 前端共享类型与 `fileService` 已扩展出 Markdown 导出请求/结果模型，并新增 `pickExportDirectory`、`exportMarkdownPages` 两个 Tauri 调用入口。
+- Markdown 富文本编辑区新增自定义右键导出菜单，提供“选区/全文 x PNG/SVG”四个动作；无选区或表格单元格选区时会禁用选区导出。
+- `App` 层已接管导出编排：导出前先 flush 当前 Markdown，再按作用域提取正文或选区 Markdown，弹出目录选择，统一处理 busy 状态、错误提示与成功 toast。
+- Tauri 后端新增目录选择与批量导出命令，负责主题映射、文件名规范化、防覆盖命名、调用独立渲染进程并返回 manifest。
+- bundled renderer 已完成真实冒烟：使用打包资源中的 `node.exe + renderer.mjs` 成功导出 PNG 与 SVG 页面。
+
+## Review
+- 结果：Markdown 文档现在支持从编辑区右键直接导出选区或全文为 PNG/SVG，多页输出可落盘到指定目录；导出能力由 Tauri 后端拉起的独立 `marknative` 渲染进程提供，未侵入 WebView 运行时。
+- 验证：`pnpm test` 通过 29 个测试文件 / 189 个测试；`pnpm build` 通过；`cargo test` 通过；另外已分别用源码态与打包资源态渲染器完成 PNG/SVG 冒烟导出。
+- 手工验收提示：仍建议在 GUI 中实际点验右键菜单位置、禁用态、长文档分页命名和 4 套主题映射的视觉效果；本次终端内未直接驱动 WebView 做交互回归。
+- 说明：`pnpm build` 仍保留既有的 chunk size 警告（`SourceEditor` / `vendor-tiptap` 超过 500 kB）；这是历史技术债，本次未扩大其影响面。
+
+# PDF 导出入口放到页面右键菜单
+
+## Plan
+- [x] 扩展共享导出类型与文案，补齐 PDF 请求/结果模型
+- [x] 在 Markdown 富文本右键菜单中新增 PDF 导出入口，并保持选区禁用态逻辑
+- [x] 为 HTML 预览增加右键菜单壳和“导出当前文档为 PDF”入口
+- [x] 在 App 层统一收口 Markdown/HTML 的 PDF 导出编排
+- [x] 新增 Playwright PDF worker 与打包准备脚本，复用现有独立渲染进程模式
+- [x] 在 Tauri 后端增加 PDF 导出命令、文件命名与资源清理逻辑
+- [x] 补充前端/后端测试，并运行 `pnpm test`、`pnpm build`、`cargo test`
+
+## Progress Notes
+- 共享导出协议已扩展到 `pdf`，并补齐文案、前端服务与 PDF 导出结果模型；Markdown 和 HTML 现在都能走统一的文档级导出请求。
+- Markdown 富文本右键菜单新增“导出选区为 PDF”“导出全文为 PDF”，继续沿用现有菜单样式和选区禁用逻辑；HTML 预览则通过 iframe `postMessage` 桥接补上宿主右键菜单，只提供“导出当前文档为 PDF”。
+- `App` 层已统一收口图片导出与 PDF 导出编排：Markdown 导出会先 flush 文本，再按选区或全文构造打印 HTML；HTML 导出则复用预览文档构造链路并重写本地资源为 `file://` 可打印地址。
+- 新增 `pdfExportDocument` 构造器与 Playwright PDF worker，开发态/打包态都沿用独立进程模式；Windows 下优先复用系统 Edge/Chrome，并支持 `MDPAD_PLAYWRIGHT_EXECUTABLE` 显式指定浏览器。
+- Tauri 后端新增 `export_document_pdf` 命令，负责写入临时 HTML、调用 Playwright worker、生成防覆盖文件名并返回导出结果；`tauri.conf.json` 和资源准备脚本也已补齐 PDF worker 资源打包。
+
+## Review
+- 结果：Markdown 富文本页和 HTML 预览页现在都支持通过右键菜单一键导出 PDF，且导出逻辑继续走应用内独立渲染进程，不依赖系统打印对话框。
+- 验证：`pnpm test` 通过 30 个测试文件 / 195 个测试；`pnpm build` 通过；`cargo test` 通过。
+- 手工验收提示：本次没有在 GUI 中实际点击右键菜单或手工打开生成的 PDF，因此仍建议你在桌面端点验右键位置、HTML 预览菜单弹出、以及 PDF 分页和本地资源加载效果。
+- 说明：PDF worker 目前默认复用系统 Chromium 内核浏览器以控制安装包体积；如果目标机器缺少 Edge/Chrome，需要通过环境变量指定可用浏览器路径，或在后续版本改为随应用一起分发浏览器。
+
+# 导出链路第二轮修复
+
+## Plan
+- [x] 调整导出接口与命名流程，支持 PDF 原生另存为和图片导出弹窗状态
+- [x] 增加应用内导出小窗，覆盖图片导出配置和导出中的忙碌提示
+- [x] 升级 HTML/PDF 快照导出稳定化与 PDF 性能优化脚本
+- [x] 隐藏 Windows 下导出 worker 的终端窗口
+- [x] 修复 Markdown 表格导出：普通表格转 GFM，复杂表格 PNG 回退、SVG 拦截
+- [x] 补充测试并运行 `pnpm test`、`pnpm build`、`cargo test`
+
+## Progress Notes
+- PDF 导出改为系统 `Save As` 流程，前端通过新命令拿到完整输出文件路径；PNG/SVG 则改成应用内导出弹窗，允许先设置输出目录和文件基名，再开始渲染。
+- 新增 `ExportDialog`，在图片导出前承担目录/基名配置，在 PDF/PNG/SVG 实际导出阶段统一显示“准备中 / 渲染中 / 保存中”的应用内忙碌态，不再只依赖 toast。
+- Playwright worker 现在支持 `pdf/png` 两种输出模式，并在导出 HTML 中注入 `mdpad export` 快照上下文、DOM 静默等待、可选 `window.__MDPAD_PREPARE_EXPORT__()` 钩子、`canvas` 静态化和重型 `svg` 扁平化逻辑，用来提高动态 HTML 导出的稳定性并减轻 PDF 阅读器翻页负担。
+- Rust 后端在拉起 `node/node.exe` worker 时加入了 Windows `CREATE_NO_WINDOW`，去掉导出时闪出的终端窗口；同时新增 `save_export_pdf_dialog` 与 `export_document_image` 命令。
+- Markdown 表格导出链路新增 TipTap 表格规范化：会先移除 `colgroup`、冗余 `colspan/rowspan=1`、单元格里的 `p` 包裹，让普通表格回到 GFM；遇到真正的合并单元格表格时，PNG 自动回退到 Playwright 截图，SVG 明确报不支持，避免再把 `<table>` 源码画进图片。
+
+## Review
+- 结果：5 个导出问题已一起收口，导出体验从“目录选择 + 后台终端 + 表格偶发坏图”升级为“PDF 可改名、图片可配置基名、应用内进度提示、复杂表格自动兜底”。
+- 验证：`pnpm test` 通过 30 个测试文件 / 200 个测试；`pnpm build` 通过；`cargo test` 通过。
+- 手工验收提示：仍建议在 GUI 中重点点验 4 条链路：
+  1. HTML 动态页实现 `__MDPAD_PREPARE_EXPORT__` 后的真实导出效果
+  2. PDF 在系统阅读器中翻页的体感改善
+  3. 导出时是否彻底不再闪终端窗口
+  4. Markdown 富文本复杂表格在 PNG/SVG 下分别走回退和报错的实际表现
+
+# PDF 导出渲染宽度选择
+
+## Plan
+- [x] 为 PDF 导出弹窗增加渲染宽度预设与自定义宽度输入
+- [x] 将所选宽度接入前端导出编排、共享类型与后端导出命令
+- [x] 让 Playwright PDF worker 按选定宽度创建视口并生成 PDF
+- [x] 补充测试并运行 `pnpm test`、`pnpm build`、`cargo test`
+
+## Progress Notes
+- PDF 导出现在会先弹出应用内配置窗，提供“手机端 375px / 平板端 768px / 桌面端 1280px / 宽屏端 1440px / 自定义”五种渲染宽度选择，其中桌面端被标成推荐值。
+- `ExportDialog` 已针对 PDF 导出分支出独立表单，不再复用 PNG/SVG 的目录和基名输入；自定义宽度会在前端先做必填和数值范围校验，再进入系统另存为。
+- `App` 层把 PDF 宽度选择编排进了导出流程，前端确认后会把 `renderWidth` 传给 Tauri；Rust 后端继续做 240px 到 3840px 的兜底校验。
+- Playwright worker 新增 `viewportWidth` 输入，创建页面时按选定宽度设置视口，让响应式 HTML/PDF 能按手机、平板、桌面或宽屏版式导出。
+- 相关测试已补到 `fileService`，保证 PDF 导出命令会携带渲染宽度参数。
+
+## Review
+- 结果：PDF 导出前现在可以显式选择页面渲染宽度，导出结果会按对应响应式断点生成，不再只能固定用单一桌面宽度。
+- 验证：`pnpm test` 通过 30 个测试文件 / 200 个测试；`pnpm build` 通过；`cargo test` 通过。
+- 手工验收提示：仍建议在 GUI 中实际导出同一份 HTML 到手机端、桌面端和自定义宽度各一份，重点确认断点切换、分页变化和图表/表格在窄宽度下的版式是否符合预期。
+
+# PDF 导出渲染宽度实际生效修复
+
+## Plan
+- [x] 复盘安装版 PDF 导出时不同宽度无差别的根因
+- [x] 让选定宽度进入 PDF 打印版式本身，而不只停留在浏览器视口
+- [x] 补充导出文档测试并重新运行 `pnpm test`、`pnpm build`、`cargo test`
+- [x] 更新任务回顾与经验沉淀
+
+## Progress Notes
+- 根因确认是“宽度只进入了 Playwright 视口，没有进入 PDF 打印版式”。页面在打印阶段仍按统一纸宽排版，导致手机端、桌面端、宽屏端最终看起来几乎一样。
+- `pdfExportDocument` 现在会把所选宽度写进导出 HTML：补了 `meta viewport`、`data-mdpad-render-width` 和导出态宽度 CSS，让 Markdown/HTML 两条 PDF 导出链都带着明确的渲染宽度进入打印。
+- Playwright PDF worker 也增加了二次锁定逻辑，会在真正 `page.pdf()` 前再次注入宽度样式并同步 `meta viewport`，避免安装包里的 sidecar 仅靠浏览器视口而被打印流程抹平。
+- 前端调用点已经把 `renderWidth` 传到 Markdown 与 HTML 的导出文档构造器，相关单测也补到了 `pdfExportDocument.test.ts`。
+- 本次同时把经验写入 `tasks/lessons.md`，明确后续做 PDF 响应式导出时必须同时覆盖“视口 + 打印 HTML/CSS + 打包 worker 资源”三层。
+
+## Review
+- 结果：PDF 导出时选择的手机端、平板端、桌面端、宽屏端和自定义宽度现在会真正影响最终导出版式，不再只是弹窗里看起来可选。
+- 验证：`pnpm test` 通过 30 个测试文件 / 200 个测试；`pnpm build` 通过；`cargo test` 通过。
+- 手工验收提示：由于已安装的旧版本应用携带的是旧 worker，这个修复需要重新打包并安装新版本后才会生效；建议重点对比同一份响应式 HTML 在 `375px`、`1280px`、`1440px` 三档下的分页和组件折行变化。
+
+# PDF 居中修复与共享运行时 CLI
+
+## Plan
+- [x] 修复 PDF 在 1280/1440 宽度导出时的居中偏移问题
+- [x] 抽出 GUI/CLI 共用的导出服务与共享 Node runtime
+- [x] 增加 `mdpad-cli` 二进制与导出命令入口
+- [x] 更新资源准备脚本，去重 runtime 并裁剪 Playwright/Skia 资源
+- [x] 增加安装器 PATH 集成与 CLI 安装资源
+- [x] 补充测试并运行 `pnpm test`、`pnpm build`、`cargo test`
+
+## Progress Notes
+- `pdfExportDocument` 和 Playwright PDF worker 都改成了“视口只负责断点、导出壳负责居中”的模型：Markdown 导出始终包裹稳定的 `.mdpad-export-layout-root`，HTML 导出则优先尊重 `data-mdpad-export-root`，否则自动挑单根节点或在克隆文档里生成 `#mdpad-export-root`，解决了 `1280/1440` 宽度下多页内容偏移的问题。
+- 导出核心逻辑已从 Tauri command 下沉到新的 Rust 共享服务 [src-tauri/src/export_service.rs](/D:/MyProject/MDPad/src-tauri/src/export_service.rs)，GUI command 和新的 [mdpad-cli.rs](/D:/MyProject/MDPad/src-tauri/src/bin/mdpad-cli.rs) 共用同一套 Node worker 调用、文件命名和错误处理。
+- 资源准备脚本现在只保留一份 `src-tauri/resources/node-runtime/node.exe`，并把 `marknative-renderer`、`playwright-pdf`、`export-doc-builder` 拆成独立 app 目录；同时裁剪掉 `playwright-core`/`skia-canvas` 中的大量 README、测试、类型和 source map，实际构建后 `playwright-pdf` 约 `5.09 MB`、`marknative-renderer` 约 `25.07 MB`。
+- Tauri 打包链路新增 `build:tauri-assets` 与 `prepare-cli-resource.mjs`，会在正式打包前编译 release 版 `mdpad-cli.exe` 并复制到稳定资源目录；NSIS 安装器通过 [nsis-hooks.nsh](/D:/MyProject/MDPad/src-tauri/windows/nsis-hooks.nsh) 把 CLI 复制到安装目录根部并写入/清理当前用户 `PATH`。
+- `.gitignore` 已补齐新生成资源目录，避免共享 runtime、CLI 资源和导出 worker 产物被误当成源码变更提交。
+
+## Review
+- 结果：PDF 宽屏导出居中问题已修复；GUI 和 CLI 现在共用一套导出服务与一份 Node runtime；安装版会同时安装 `mdpad-cli.exe` 并把应用目录加入当前用户 `PATH`，卸载时也会清理。
+- 验证：`cargo test --manifest-path src-tauri/Cargo.toml` 通过；`pnpm test` 通过 30 个测试文件 / 202 个测试；`pnpm build` 通过；`pnpm build:tauri-assets` 通过；`pnpm release:no-bump` 成功生成 [MDPad_0.2.4_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.4_x64-setup.exe)。
+- 体积观察：共享 runtime 生效后，打包资源从“双份 `node.exe` + 双 worker app”收敛为“一份 `node.exe` + 三个裁剪后的 worker app”；仅去掉重复 runtime 就节省了约 `90 MB` 级别空间。
+- 手工验收提示：仍建议在真实安装环境里补点验 3 件事：
+  1. `1280/1440` PDF 多页内容是否在你常见文档上都水平居中
+  2. 安装完成后新终端里 `mdpad-cli --help` 是否可直接执行
+  3. 卸载后当前用户 `PATH` 里的安装目录是否被移除
+
+## Follow-up Fix
+- 用户在安装后反馈“应用打不开”，复盘发现根因不是导出运行时，而是 Tauri/NSIS 把新增的 `mdpad-cli.exe` 误识别成了主程序。
+- 当时生成的 [installer.nsi](/D:/MyProject/MDPad/src-tauri/target/release/nsis/x64/installer.nsi) 中 `MAINBINARYNAME` 实际是 `mdpad-cli`，所以安装后的快捷方式、文件关联和首次启动都指向了 CLI。
+- 现已在 [Cargo.toml](/D:/MyProject/MDPad/src-tauri/Cargo.toml) 里显式固定 `default-run = "mdpad"`，并声明 `[[bin]] mdpad` 与 `[[bin]] mdpad-cli`，重新打包后安装脚本中的 `MAINBINARYNAME` 已恢复为 `mdpad`。
+- 追加验证：重新运行 `pnpm release:no-bump` 成功，且新生成的 [installer.nsi](/D:/MyProject/MDPad/src-tauri/target/release/nsis/x64/installer.nsi) 明确指向 `mdpad.exe`；修复后的安装包仍为 [MDPad_0.2.4_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.4_x64-setup.exe)。
+
+## Follow-up Fix 2
+- 用户随后反馈“安装后 `PATH` 里没有 MDPad”，继续复盘发现不是管理员权限问题，而是 NSIS hook 里把 CLI 资源路径写错了。
+- 安装器实际把 CLI 资源放到 `$INSTDIR\cli\mdpad-cli.exe`，但 hook 之前错误检查的是 `$INSTDIR\resources\cli\mdpad-cli.exe`，导致复制到根目录和写入当前用户 `PATH` 两步都被跳过。
+- 现已在 [nsis-hooks.nsh](/D:/MyProject/MDPad/src-tauri/windows/nsis-hooks.nsh) 中把路径修正为 `$INSTDIR\cli\mdpad-cli.exe`，并重新运行 `pnpm release:no-bump` 生成新的安装包 [MDPad_0.2.4_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.4_x64-setup.exe)。
+
+# 安装器与 PATH 自检
+
+## Plan
+- [x] 校验最新 NSIS 产物是否包含 installer script 资源与正确的 hook 调用
+- [x] 用最新安装包执行一次真实卸载/重装并验证 GUI 可启动
+- [x] 验证当前用户 PATH、`mdpad-cli --help` 与卸载清理行为
+- [x] 记录本轮自检结论与经验
+
+## Progress Notes
+- 检查了生成的 [installer.nsi](/D:/MyProject/MDPad/src-tauri/target/release/nsis/x64/installer.nsi)，确认主程序仍是 `mdpad.exe`，并且 `installer-scripts/add-user-path.ps1`、`installer-scripts/remove-user-path.ps1`、`cli/mdpad-cli.exe` 和根目录 `mdpad-cli.exe` 都已被写入安装脚本。
+- 用最新安装包 [MDPad_0.2.4_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.4_x64-setup.exe) 做了一次真实卸载、静默重装、再次卸载、再次重装的闭环验证；安装和卸载返回码均为 `0`。
+- GUI 自检已通过：直接启动安装目录下的 [mdpad.exe](/C:/Users/endea/AppData/Local/MDPad/mdpad.exe) 后，进程能稳定存活至少 4 秒，没有再出现“安装后应用打不开”的问题。
+- PATH 自检已通过：用户级 `Path` 中已出现 `C:\Users\endea\AppData\Local\MDPad`；在按“新终端环境”重建 `PATH` 后，`mdpad-cli --help` 能正常解析并输出帮助信息。
+- 卸载清理也已通过：卸载后安装目录、卸载注册表项和用户级 `Path` 中的 MDPad 条目都被删除，重新安装后会再次写回。
+
+## Review
+- 结果：安装器目前已经同时修复了 3 条链路：
+  1. 主程序正确指向 `mdpad.exe`
+  2. CLI 会落到安装目录根部
+  3. 当前用户 `PATH` 会在安装/卸载时正确增删
+- 验证：已实际运行 `uninstall.exe /S`、`MDPad_0.2.4_x64-setup.exe /S`、启动安装版 GUI、读取用户级 `Path`、以及在模拟“新终端环境”的进程里执行 `mdpad-cli --help`。
+- 说明：在当前这个 Codex 会话里直接运行 `Get-Command mdpad-cli` 仍可能失败，因为它继承的是安装前启动的父进程环境；这不代表注册表里的用户级 `Path` 没写成功。真正的新终端或重开的 PowerShell 会拿到更新后的 `PATH`。
+
+## Follow-up Fix 3
+- 用户反馈安装版导出 PDF 时出现 `Error: EISDIR ... lstat 'C:'`，继续定位后确认这不是 HTML 内容问题，而是 Windows 下传给 `node.exe` 的 worker 入口脚本路径带了扩展前缀 `\\?\`。
+- 已用安装版共享 runtime 做最小复现：当 `node.exe` 直接执行 `\\?\C:\...\playwright-pdf\app\runner.mjs` 时，Node 25 会在 `resolveMainPath` 阶段把主脚本错误解析成 `C:`，与用户报错完全一致；改成普通 `C:\...\runner.mjs` 则不会触发这类启动前崩溃。
+- 现已在 [export_service.rs](/D:/MyProject/MDPad/src-tauri/src/export_service.rs) 中增加运行时路径归一化，统一去掉 Windows `\\?\` / `\\?\UNC\` 前缀，再把脚本路径、临时 HTML 路径和输出路径传给 Node worker。
+- 同时补了安装版 CLI 的资源探测：进程模式现在会同时检查“可执行文件同级目录”和 `resources` 子目录两种布局，不再错误回退到开发工作区脚本。
+- 验证：`cargo test --manifest-path src-tauri/Cargo.toml` 已通过，且重新执行 `pnpm release:no-bump` 成功生成新的 [MDPad_0.2.4_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.4_x64-setup.exe)。
+- 追加说明：在安装版 CLI 的端到端冒烟里又发现一个独立问题，`export-doc-builder` sidecar 目前还会触发 `Dynamic require of "path" is not supported`；这属于 CLI/文档构建链的另一处打包问题，不是这次 GUI PDF 报错的根因。
+
+# Playwright PDF 宽度语义优化
+
+## Plan
+- [x] 扩展 PDF 导出配置类型与前端弹窗状态，支持设备仿真语义和 `respectPageCssSize`
+- [x] 调整前端 PDF 导出编排与文案提示，区分网页断点仿真和 A4 纸张输出
+- [x] 重构 Playwright PDF runner，改用 `browser.newContext(emulationProfile)` 并固定 A4 纵向默认策略
+- [x] 补充前后端/文档构造测试并运行 `pnpm test`、`pnpm build`、`cargo test`
+
+## Progress Notes
+- PDF 导出请求现在不再只传一个 `renderWidth`，而是同时携带 `emulationProfile` 和 `respectPageCssSize`。这样前端可以明确区分“mobile 375 断点仿真”和“custom 375 的窄桌面宽度”，避免宽度数值相同却需要不同 Playwright 行为的歧义。
+- `ExportDialog` 已增加“尊重页面 CSS 中的 @page 尺寸”高级开关，并把 PDF 文案改成“屏幕仿真 + A4 输出”的语义；`1440` 和更大的自定义宽度在默认 A4 纵向模式下会显示轻提示，提醒页面可能被缩放。
+- `pdfExportDocument` 不再在导出 HTML 里硬编码 `@page size: A4`，只保留页面级 margin 和断点稳定化逻辑；真正的纸张尺寸控制改由 Playwright `page.pdf()` 统一承担。
+- Playwright runner 已改为 `browser.newContext(emulationProfile) -> context.newPage() -> page.emulateMedia({ media: "screen" }) -> page.pdf()`，并为 `375/768/1280/1440/custom` 映射到明确的 `viewport/screen/isMobile/hasTouch/deviceScaleFactor` 组合。
+- 默认 PDF 导出策略现为 `format: "A4"`、`landscape: false`、`preferCSSPageSize: false`；只有显式开启 `respectPageCssSize` 时，才会让页面自带 `@page size` 接管纸张尺寸。
+- 除了单测和构建验证，我还直接用 [runner.mjs](/D:/MyProject/MDPad/scripts/playwright-pdf-src/runner.mjs) 做了一次最小冒烟，成功生成了临时 PDF 文件 [mdpad-pdf-width-smoke.pdf](/C:/Users/endea/AppData/Local/Temp/mdpad-pdf-width-smoke.pdf)。
+
+## Review
+- 结果：PDF 导出宽度现在采用“设备/断点仿真”和“纸张输出”分层模型，`375/768` 不再只是窄桌面视口，`1280/1440` 也明确属于桌面断点仿真，最终默认统一落到 A4 纵向 PDF。
+- 验证：`pnpm test` 通过 30 个测试文件 / 202 个测试；`cargo test --manifest-path src-tauri/Cargo.toml` 通过；`pnpm build` 通过；Playwright runner 最小冒烟成功产出 PDF；`pnpm release:no-bump` 也已通过并重新生成安装包。
+- 安装包：最新安装包为 [MDPad_0.2.4_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.4_x64-setup.exe)，如果你要验证安装版的 PDF 宽度语义，需要重新安装这个新包。
+
+# CLI HTML/PDF 导出 sidecar 打包修复
+
+## Plan
+- [x] 复盘 `export-doc-builder` 安装版 sidecar 的打包产物，确认 `Dynamic require of "path"` 根因
+- [x] 修正资源准备链路并重新生成安装包资源
+- [x] 用安装后的 `mdpad-cli export pdf --input report.html --output report960.pdf --render-width 960` 做端到端验证
+- [x] 记录本轮回顾与经验
+
+## Progress Notes
+- 先定位到安装版 `export-doc-builder` 被错误打成单文件 ESM，`jsdom` 及其链路里的 CommonJS 依赖在 Node 25 下触发了 `Dynamic require of "path"`；随后把 `jsdom` 改成 external 包复制，并修正了“与 Node 内建模块同名”的依赖解析逻辑，让 `punycode` 这类 npm 包不会再被误判成 builtin 而漏打进 sidecar。
+- `export-doc-builder` 还暴露了两个 Node 25 兼容点：`globalThis.navigator` 是只读 getter，不能再用 `Object.assign` 覆盖；另外把前端导出构造链整包成 ESM 仍会命中 `Dynamic require of "process"`。现已将 DOM 全局注入改成 `defineProperty` + 还原描述符，并把 sidecar 入口从 `runner.mjs` 切到 CommonJS 的 [runner.cjs](/D:/MyProject/MDPad/src-tauri/resources/export-doc-builder/app/runner.cjs)。
+- CLI 端补了相对路径绝对化处理：`--input`、`--output`、`--output-dir` 现在都会先相对“用户当前终端工作目录”解析，再交给共享导出服务，避免 worker 因自身 `current_dir` 指向资源目录而把 `report.html` 错认成 `...\\marknative-renderer\\app\\report.html`。
+- 验证分三层完成：先直接运行仓库内 sidecar 的 `runner.cjs`，确认能把 [report.html](/D:/BaiduSyncdisk/Skill-workspace/outputs/llm-wiki-report/report.html) 构造成导出 HTML；再跑 `cargo test --manifest-path src-tauri/Cargo.toml` 与 `pnpm test`；最后重新执行 `pnpm release:no-bump`、静默重装安装包，并在真实安装目录下用 `mdpad-cli` 跑用户原命令。
+
+## Review
+- 结果：安装版 `mdpad-cli export pdf --input report.html --output report960.pdf --render-width 960` 已恢复可用，原先链路上的 4 个独立问题都已收口：
+  1. `jsdom` ESM 打包导致 `Dynamic require of "path"`
+  2. `punycode` 被误判为 builtin 而缺包
+  3. Node 25 只读 `navigator` 导致 DOM 全局注入失败
+  4. CLI 相对路径被错误解析到 worker 资源目录
+- 验证：`pnpm test` 通过 30 个测试文件 / 202 个测试；`cargo test --manifest-path src-tauri/Cargo.toml` 通过；`pnpm release:no-bump` 通过；安装版 [mdpad-cli.exe](/C:/Users/endea/AppData/Local/MDPad/mdpad-cli.exe) 已在 [llm-wiki-report](/D:/BaiduSyncdisk/Skill-workspace/outputs/llm-wiki-report) 目录成功导出 [report960.pdf](/D:/BaiduSyncdisk/Skill-workspace/outputs/llm-wiki-report/report960.pdf)。
+- 安装包：最新验证通过的安装包仍为 [MDPad_0.2.4_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.4_x64-setup.exe)；要消除你机器上的旧错误，需要用这个新包重新安装。
