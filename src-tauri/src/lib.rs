@@ -1,16 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::path::BaseDirectory;
 use tauri::{Manager, WebviewWindowBuilder, Window};
-
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 
 pub mod export_service;
 
@@ -26,23 +20,6 @@ struct ExportMarkdownPagesInput {
     scope: String,
     theme: String,
     base_name: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RendererRequest {
-    markdown: String,
-    temp_dir: String,
-    format: String,
-    theme: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RendererResult {
-    files: Vec<String>,
-    page_count: usize,
-    format: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,21 +41,6 @@ struct ExportDocumentPdfInput {
     respect_page_css_size: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PdfRendererRequest {
-    kind: String,
-    html_path: String,
-    output_path: String,
-    viewport_width: u32,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PdfRendererResult {
-    file: String,
-}
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ExportDocumentPdfResult {
@@ -98,6 +60,20 @@ struct ExportDocumentImageInput {
 struct ExportDocumentImageResult {
     file: String,
     output_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileSnapshot {
+    modified_ms: u64,
+    size: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadTextFileSnapshotResult {
+    content: String,
+    snapshot: FileSnapshot,
 }
 
 fn is_supported_text_file(path: &Path) -> bool {
@@ -136,6 +112,22 @@ fn normalize_path(path: PathBuf) -> String {
     };
 
     strip_windows_verbatim_prefix(normalized)
+}
+
+fn snapshot_for_path(path: &Path) -> Result<FileSnapshot, String> {
+    let metadata = fs::metadata(path).map_err(|error| format!("Failed to read file metadata: {error}"))?;
+    let modified = metadata
+        .modified()
+        .map_err(|error| format!("Failed to read file modification time: {error}"))?;
+    let modified_ms = modified
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("Failed to normalize file modification time: {error}"))?
+        .as_millis() as u64;
+
+    Ok(FileSnapshot {
+        modified_ms,
+        size: metadata.len(),
+    })
 }
 
 fn extract_supported_text_path(args: &[String]) -> Option<String> {
@@ -273,375 +265,6 @@ fn next_available_file_path(directory: &Path, file_name: &str) -> PathBuf {
         format!("{base_name}-{timestamp}.{extension}")
     };
     directory.join(fallback_name)
-}
-
-fn sanitize_export_base_name(base_name: &str) -> String {
-    let trimmed = base_name.trim();
-    if trimmed.is_empty() {
-        return "untitled".to_string();
-    }
-
-    let sanitized: String = trimmed
-        .chars()
-        .map(|char| {
-            if char.is_ascii_control()
-                || matches!(char, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
-            {
-                '_'
-            } else {
-                char
-            }
-        })
-        .collect();
-
-    let normalized = sanitized
-        .trim_matches(|char| char == '.' || char == ' ')
-        .trim()
-        .to_string();
-    if normalized.is_empty() {
-        "untitled".to_string()
-    } else {
-        normalized
-    }
-}
-
-fn normalize_image_export_format(format: &str) -> Result<&'static str, String> {
-    match format.trim().to_ascii_lowercase().as_str() {
-        "png" => Ok("png"),
-        "svg" => Ok("svg"),
-        _ => Err("Image export format must be png or svg.".to_string()),
-    }
-}
-
-fn normalize_export_scope(scope: &str) -> Result<&'static str, String> {
-    match scope.trim().to_ascii_lowercase().as_str() {
-        "selection" => Ok("selection"),
-        "document" => Ok("document"),
-        _ => Err("Export scope must be selection or document.".to_string()),
-    }
-}
-
-fn normalize_markdown_theme(theme: &str) -> &'static str {
-    match theme.trim() {
-        "github" => "github",
-        "academic" => "academic",
-        "notionish" => "notionish",
-        _ => "default",
-    }
-}
-
-fn build_export_batch_base_name(base_name: &str, scope: &str) -> String {
-    if scope == "selection" {
-        format!("{base_name}-selection")
-    } else {
-        base_name.to_string()
-    }
-}
-
-#[cfg(test)]
-fn build_export_file_name(base_name: &str, scope: &str, extension: &str) -> String {
-    let scoped_base_name = build_export_batch_base_name(base_name, scope);
-    format!("{scoped_base_name}.{extension}")
-}
-
-fn build_export_page_file_name(base_name: &str, extension: &str, page_index: usize) -> String {
-    format!("{base_name}-page-{:02}.{extension}", page_index + 1)
-}
-
-fn is_export_batch_available(
-    directory: &Path,
-    base_name: &str,
-    extension: &str,
-    page_count: usize,
-) -> bool {
-    !(0..page_count).any(|page_index| {
-        directory
-            .join(build_export_page_file_name(
-                base_name, extension, page_index,
-            ))
-            .exists()
-    })
-}
-
-fn find_available_export_batch_base_name(
-    directory: &Path,
-    base_name: &str,
-    extension: &str,
-    page_count: usize,
-) -> String {
-    if is_export_batch_available(directory, base_name, extension, page_count) {
-        return base_name.to_string();
-    }
-
-    for index in 1..=9_999 {
-        let candidate = format!("{base_name}-{index}");
-        if is_export_batch_available(directory, &candidate, extension, page_count) {
-            return candidate;
-        }
-    }
-
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0);
-    format!("{base_name}-{timestamp}")
-}
-
-fn create_temp_directory(prefix: &str) -> Result<PathBuf, String> {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0);
-    let directory =
-        std::env::temp_dir().join(format!("{prefix}-{}-{timestamp}", std::process::id()));
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("Failed to create export temp directory: {error}"))?;
-    Ok(directory)
-}
-
-fn create_temp_export_directory() -> Result<PathBuf, String> {
-    create_temp_directory("mdpad-marknative")
-}
-
-struct RendererPaths {
-    node_path: PathBuf,
-    script_path: PathBuf,
-    working_dir: PathBuf,
-}
-
-struct PdfRendererPaths {
-    node_path: PathBuf,
-    script_path: PathBuf,
-    working_dir: PathBuf,
-}
-
-fn resolve_renderer_paths(app: &tauri::AppHandle) -> Result<RendererPaths, String> {
-    let bundled_node = app
-        .path()
-        .resolve(
-            "marknative-renderer/runtime/node.exe",
-            BaseDirectory::Resource,
-        )
-        .map_err(|error| format!("Failed to resolve bundled renderer runtime: {error}"))?;
-    let bundled_script = app
-        .path()
-        .resolve(
-            "marknative-renderer/app/renderer.mjs",
-            BaseDirectory::Resource,
-        )
-        .map_err(|error| format!("Failed to resolve bundled renderer script: {error}"))?;
-
-    if bundled_node.exists() && bundled_script.exists() {
-        let working_dir = bundled_script
-            .parent()
-            .ok_or_else(|| "Bundled renderer script directory is invalid.".to_string())?
-            .to_path_buf();
-        return Ok(RendererPaths {
-            node_path: bundled_node,
-            script_path: bundled_script,
-            working_dir,
-        });
-    }
-
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| "Failed to resolve workspace root.".to_string())?
-        .to_path_buf();
-    let dev_script = workspace_root
-        .join("scripts")
-        .join("marknative-renderer-src")
-        .join("runner.mjs");
-    if !dev_script.exists() {
-        return Err("Markdown renderer script was not found.".to_string());
-    }
-
-    Ok(RendererPaths {
-        node_path: PathBuf::from("node"),
-        script_path: dev_script,
-        working_dir: workspace_root,
-    })
-}
-
-fn resolve_pdf_renderer_paths(app: &tauri::AppHandle) -> Result<PdfRendererPaths, String> {
-    let bundled_node = app
-        .path()
-        .resolve("playwright-pdf/runtime/node.exe", BaseDirectory::Resource)
-        .map_err(|error| format!("Failed to resolve bundled PDF runtime: {error}"))?;
-    let bundled_script = app
-        .path()
-        .resolve("playwright-pdf/app/runner.mjs", BaseDirectory::Resource)
-        .map_err(|error| format!("Failed to resolve bundled PDF renderer script: {error}"))?;
-
-    if bundled_node.exists() && bundled_script.exists() {
-        let working_dir = bundled_script
-            .parent()
-            .ok_or_else(|| "Bundled PDF renderer script directory is invalid.".to_string())?
-            .to_path_buf();
-        return Ok(PdfRendererPaths {
-            node_path: bundled_node,
-            script_path: bundled_script,
-            working_dir,
-        });
-    }
-
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| "Failed to resolve workspace root.".to_string())?
-        .to_path_buf();
-    let dev_script = workspace_root
-        .join("scripts")
-        .join("playwright-pdf-src")
-        .join("runner.mjs");
-    if !dev_script.exists() {
-        return Err("PDF renderer script was not found.".to_string());
-    }
-
-    Ok(PdfRendererPaths {
-        node_path: PathBuf::from("node"),
-        script_path: dev_script,
-        working_dir: workspace_root,
-    })
-}
-
-#[cfg(target_os = "windows")]
-fn configure_hidden_child_window(command: &mut Command) {
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-    command.creation_flags(CREATE_NO_WINDOW);
-}
-
-#[cfg(not(target_os = "windows"))]
-fn configure_hidden_child_window(_command: &mut Command) {}
-
-fn run_renderer(
-    app: &tauri::AppHandle,
-    request: RendererRequest,
-) -> Result<RendererResult, String> {
-    let renderer_paths = resolve_renderer_paths(app)?;
-    let request_json = serde_json::to_vec(&request)
-        .map_err(|error| format!("Failed to encode renderer request: {error}"))?;
-
-    let mut command = Command::new(&renderer_paths.node_path);
-    command
-        .arg(&renderer_paths.script_path)
-        .current_dir(&renderer_paths.working_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    configure_hidden_child_window(&mut command);
-
-    let mut child = command.spawn().map_err(|error| {
-            format!(
-                "Failed to start markdown renderer. Rebuild MDPad or install Node.js for development. {error}"
-            )
-        })?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(&request_json)
-            .map_err(|error| format!("Failed to send renderer request: {error}"))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|error| format!("Failed to wait for markdown renderer: {error}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let detail = if stderr.is_empty() {
-            "Markdown renderer exited with a non-zero status.".to_string()
-        } else {
-            stderr
-        };
-        return Err(format!("Markdown export failed: {detail}"));
-    }
-
-    serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("Failed to decode renderer response: {error}"))
-}
-
-fn run_pdf_renderer(
-    app: &tauri::AppHandle,
-    request: PdfRendererRequest,
-) -> Result<PdfRendererResult, String> {
-    let renderer_paths = resolve_pdf_renderer_paths(app)?;
-    let request_json = serde_json::to_vec(&request)
-        .map_err(|error| format!("Failed to encode PDF renderer request: {error}"))?;
-
-    let mut command = Command::new(&renderer_paths.node_path);
-    command
-        .arg(&renderer_paths.script_path)
-        .current_dir(&renderer_paths.working_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    configure_hidden_child_window(&mut command);
-
-    let mut child = command.spawn().map_err(|error| {
-            format!(
-                "Failed to start PDF renderer. Rebuild MDPad or install Node.js for development. {error}"
-            )
-        })?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(&request_json)
-            .map_err(|error| format!("Failed to send PDF renderer request: {error}"))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|error| format!("Failed to wait for PDF renderer: {error}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let detail = if stderr.is_empty() {
-            "PDF renderer exited with a non-zero status.".to_string()
-        } else {
-            stderr
-        };
-        return Err(format!("PDF export failed: {detail}"));
-    }
-
-    serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("Failed to decode PDF renderer response: {error}"))
-}
-
-fn move_renderer_outputs(
-    source_files: &[String],
-    output_dir: &Path,
-    base_name: &str,
-    extension: &str,
-    scope: &str,
-) -> Result<Vec<String>, String> {
-    let scoped_base_name = build_export_batch_base_name(base_name, scope);
-    let final_base_name = find_available_export_batch_base_name(
-        output_dir,
-        &scoped_base_name,
-        extension,
-        source_files.len(),
-    );
-
-    source_files
-        .iter()
-        .enumerate()
-        .map(|(page_index, source_path)| {
-            let source_path_buf = PathBuf::from(source_path);
-            if !source_path_buf.exists() {
-                return Err("Markdown renderer output file is missing.".to_string());
-            }
-
-            let destination_path = output_dir.join(build_export_page_file_name(
-                &final_base_name,
-                extension,
-                page_index,
-            ));
-            fs::copy(&source_path_buf, &destination_path)
-                .map_err(|error| format!("Failed to save exported page: {error}"))?;
-            let _ = fs::remove_file(&source_path_buf);
-
-            Ok(normalize_path(destination_path))
-        })
-        .collect()
 }
 
 #[tauri::command]
@@ -829,8 +452,23 @@ fn read_text_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn write_text_file(path: String, content: String) -> Result<(), String> {
-    fs::write(path, content).map_err(|error| format!("Failed to write file: {error}"))
+fn read_text_file_snapshot(path: String) -> Result<ReadTextFileSnapshotResult, String> {
+    let content =
+        fs::read_to_string(&path).map_err(|error| format!("Failed to read file: {error}"))?;
+    let snapshot = snapshot_for_path(Path::new(&path))?;
+
+    Ok(ReadTextFileSnapshotResult { content, snapshot })
+}
+
+#[tauri::command]
+fn stat_text_file(path: String) -> Result<FileSnapshot, String> {
+    snapshot_for_path(Path::new(&path))
+}
+
+#[tauri::command]
+fn write_text_file(path: String, content: String) -> Result<FileSnapshot, String> {
+    fs::write(&path, content).map_err(|error| format!("Failed to write file: {error}"))?;
+    snapshot_for_path(Path::new(&path))
 }
 
 fn normalize_supported_text_path(path: String) -> Result<String, String> {
@@ -992,6 +630,8 @@ pub fn run() {
             save_file_as_dialog,
             save_export_pdf_dialog,
             read_text_file,
+            read_text_file_snapshot,
+            stat_text_file,
             write_text_file,
             rename_file,
             create_document_window,
@@ -1006,67 +646,4 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running MDPad");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        build_export_batch_base_name, build_export_file_name, build_export_page_file_name,
-        find_available_export_batch_base_name, sanitize_export_base_name,
-    };
-    use std::fs;
-
-    #[test]
-    fn sanitize_export_base_name_replaces_invalid_characters() {
-        assert_eq!(sanitize_export_base_name(" report:Q2* "), "report_Q2_");
-        assert_eq!(sanitize_export_base_name("   "), "untitled");
-    }
-
-    #[test]
-    fn build_export_batch_base_name_adds_selection_suffix() {
-        assert_eq!(build_export_batch_base_name("note", "document"), "note");
-        assert_eq!(
-            build_export_batch_base_name("note", "selection"),
-            "note-selection"
-        );
-    }
-
-    #[test]
-    fn build_export_page_file_name_is_zero_padded() {
-        assert_eq!(
-            build_export_page_file_name("note-selection", "png", 0),
-            "note-selection-page-01.png"
-        );
-        assert_eq!(
-            build_export_page_file_name("note-selection", "svg", 11),
-            "note-selection-page-12.svg"
-        );
-    }
-
-    #[test]
-    fn find_available_export_batch_base_name_advances_suffix_when_needed() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("mdpad-export-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&temp_dir);
-        fs::create_dir_all(&temp_dir).unwrap();
-        fs::write(temp_dir.join("note-page-01.png"), b"one").unwrap();
-        fs::write(temp_dir.join("note-page-02.png"), b"two").unwrap();
-
-        let result = find_available_export_batch_base_name(&temp_dir, "note", "png", 2);
-
-        assert_eq!(result, "note-1");
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn build_export_file_name_adds_selection_suffix_for_pdf() {
-        assert_eq!(
-            build_export_file_name("note", "document", "pdf"),
-            "note.pdf"
-        );
-        assert_eq!(
-            build_export_file_name("note", "selection", "pdf"),
-            "note-selection.pdf"
-        );
-    }
 }

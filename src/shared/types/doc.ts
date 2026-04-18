@@ -8,6 +8,7 @@ export type DocumentKind = "markdown" | "html" | "code";
 export type MarkdownViewMode = "wysiwyg" | "source";
 export type HtmlViewMode = "preview" | "source";
 export type DocumentViewMode = MarkdownViewMode | HtmlViewMode;
+export type ExternalChangeMode = "prompt" | "auto";
 export type ExportScope = "selection" | "document";
 export type ExportFormat = "png" | "svg" | "pdf";
 export type ImageExportFormat = "png" | "svg";
@@ -22,6 +23,16 @@ export type PdfRenderWidthPreset =
 export interface DocumentExportRequest {
   scope: ExportScope;
   format: ExportFormat;
+}
+
+export interface FileSnapshot {
+  modifiedMs: number;
+  size: number;
+}
+
+export interface ReadTextFileSnapshotResult {
+  content: string;
+  snapshot: FileSnapshot;
 }
 
 export type MarkdownExportRequest = DocumentExportRequest;
@@ -93,10 +104,20 @@ export type PendingAction =
   | { kind: "close" }
   | null;
 
+export interface ReloadSessionState {
+  currentPath: string | null;
+  content: string;
+  lastSavedContent: string;
+  isDirty: boolean;
+  markdownViewMode: MarkdownViewMode;
+  htmlViewMode: HtmlViewMode;
+}
+
 export interface DocState {
   currentPath: string | null;
   kind: DocumentKind;
   fileExtension: string | null;
+  revision: number;
   content: string;
   lastSavedContent: string;
   isDirty: boolean;

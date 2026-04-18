@@ -6,7 +6,8 @@ import {
   useMemo,
   useReducer,
   useRef,
-  useState
+  useState,
+  type Key
 } from "react";
 import { BaseProvider, DarkTheme, LightTheme } from "baseui";
 import { PLACEMENT, ToasterContainer, toaster } from "baseui/toast";
@@ -26,10 +27,11 @@ import {
   getInitialFile,
   openFileDialog,
   pickExportDirectory,
-  readTextFile,
+  readTextFileSnapshot,
   renameFile,
   saveExportPdfDialog,
   saveFileAsDialog,
+  statTextFile,
   writeTextFile
 } from "./features/file/fileService";
 import TopBar from "./features/window/TopBar";
@@ -39,8 +41,10 @@ import type {
   DocumentExportRequest,
   DocumentKind,
   EditorMode,
+  ExternalChangeMode,
   ExportDialogState,
   ExportScope,
+  FileSnapshot,
   ImageExportFormat,
   MarkdownExportSnapshot,
   MarkdownSelectionExport,
@@ -81,19 +85,34 @@ import {
   writeEditorModePreference
 } from "./shared/utils/editorModePreferences";
 import {
+  readExternalChangeModePreference,
+  writeExternalChangeModePreference
+} from "./shared/utils/externalChangePreferences";
+import {
   readHtmlViewPreference,
   readMarkdownViewPreference,
   writeHtmlViewPreference,
   writeMarkdownViewPreference
 } from "./shared/utils/documentViewPreferences";
 import {
+  clearReloadSession,
+  isReloadNavigation,
+  readReloadSession,
+  writeReloadSession
+} from "./shared/utils/reloadSession";
+import { APP_TOASTER_OVERRIDES } from "./shared/utils/appToastOverrides";
+import {
   logOpenPerfElapsed,
   nowMs
 } from "./shared/utils/openPerformance";
 import {
+  enforceMinimumWindowSize,
+  isWindowSizeBelowMinimum,
   MIN_WINDOW_HEIGHT,
   MIN_WINDOW_WIDTH,
-  computePseudoMaximizeBounds
+  computePseudoMaximizeBounds,
+  normalizeWindowSize,
+  sanitizePersistedWindowSize
 } from "./shared/utils/windowPreset";
 import { getSampleDocResourcePath } from "./shared/utils/sampleDocs";
 import { stripFrontMatterForExport } from "./features/editor/markdownExport";
@@ -198,6 +217,8 @@ function extractDropPaths(event: unknown): string[] {
 
 const WINDOW_SIZE_STORAGE_KEY = "mdpad.window-size.v1";
 const TOAST_AUTO_HIDE_MS = 3200;
+const FILE_WATCH_INTERVAL_MS = 2000;
+const DEFAULT_EXTERNAL_CHANGE_MODE: ExternalChangeMode = "prompt";
 const MARKDOWN_THEME_ORDER: MarkdownTheme[] = [
   "default",
   "notionish",
@@ -267,6 +288,17 @@ function resolvePdfRenderWidth(
   return parsed;
 }
 
+function areFileSnapshotsEqual(
+  left: FileSnapshot | null,
+  right: FileSnapshot | null
+): boolean {
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.modifiedMs === right.modifiedMs && left.size === right.size;
+}
+
 type ExportDialogResolution =
   | { outputDir: string; baseName: string }
   | {
@@ -276,41 +308,22 @@ type ExportDialogResolution =
     }
   | null;
 
-type PersistedWindowSize = {
-  width: number;
-  height: number;
-};
-
-function sanitizeWindowSize(value: unknown): PersistedWindowSize | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const width = Number((value as { width?: unknown }).width);
-  const height = Number((value as { height?: unknown }).height);
-  if (!Number.isFinite(width) || !Number.isFinite(height)) {
-    return null;
-  }
-
-  return {
-    width: Math.max(MIN_WINDOW_WIDTH, Math.round(width)),
-    height: Math.max(MIN_WINDOW_HEIGHT, Math.round(height))
-  };
-}
-
-function readPersistedWindowSize(): PersistedWindowSize | null {
+function readPersistedWindowSize() {
   try {
     const raw = localStorage.getItem(WINDOW_SIZE_STORAGE_KEY);
     if (!raw) {
       return null;
     }
-    return sanitizeWindowSize(JSON.parse(raw));
+    return sanitizePersistedWindowSize(JSON.parse(raw));
   } catch {
     return null;
   }
 }
 
-function writePersistedWindowSize(size: PersistedWindowSize): void {
+function writePersistedWindowSize(size: {
+  width: number;
+  height: number;
+}): void {
   try {
     localStorage.setItem(WINDOW_SIZE_STORAGE_KEY, JSON.stringify(size));
   } catch {
@@ -330,6 +343,9 @@ export default function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialThemeMode);
   const [uiTheme, setUiTheme] = useState<UiTheme>(getInitialUiTheme);
   const [locale, setLocale] = useState<AppLocale>(getInitialLocale);
+  const [externalChangeMode, setExternalChangeMode] = useState<ExternalChangeMode>(() =>
+    readExternalChangeModePreference(DEFAULT_EXTERNAL_CHANGE_MODE)
+  );
   const [editorMode, setEditorMode] = useState<EditorMode>(() =>
     getInitialEditorMode(windowLabel)
   );
@@ -356,9 +372,15 @@ export default function App() {
   const docRef = useRef(doc);
   const markdownViewModeRef = useRef(markdownViewMode);
   const htmlViewModeRef = useRef(htmlViewMode);
+  const externalChangeModeRef = useRef(externalChangeMode);
   const allowCloseRef = useRef(false);
   const errorClearTimerRef = useRef<number | null>(null);
   const appBootStartRef = useRef(nowMs());
+  const fileSnapshotRef = useRef<FileSnapshot | null>(null);
+  const pendingExternalSnapshotRef = useRef<FileSnapshot | null>(null);
+  const pendingExternalPathRef = useRef<string | null>(null);
+  const isReloadingFromDiskRef = useRef(false);
+  const externalChangeToastKeyRef = useRef<Key | null>(null);
   const flushEditorMarkdownRef = useRef<(() => string | null) | null>(null);
   const selectionExportRef = useRef<(() => MarkdownSelectionExport | null) | null>(
     null
@@ -388,12 +410,8 @@ export default function App() {
   }, [htmlViewMode]);
 
   useEffect(() => {
-    return () => {
-      if (errorClearTimerRef.current !== null) {
-        window.clearTimeout(errorClearTimerRef.current);
-      }
-    };
-  }, []);
+    externalChangeModeRef.current = externalChangeMode;
+  }, [externalChangeMode]);
 
   useEffect(() => {
     const marker = doc.isDirty ? "*" : "";
@@ -415,6 +433,10 @@ export default function App() {
   useEffect(() => {
     writeAppLocalePreference(locale);
   }, [locale]);
+
+  useEffect(() => {
+    writeExternalChangeModePreference(externalChangeMode);
+  }, [externalChangeMode]);
 
   useEffect(() => {
     writeEditorModePreference(windowLabel, editorMode);
@@ -461,16 +483,47 @@ export default function App() {
         if (isDisposed) {
           return;
         }
-        const normalized = sanitizeWindowSize(size);
+        const normalized = normalizeWindowSize(size);
         if (normalized) {
-          writePersistedWindowSize(normalized);
+          writePersistedWindowSize(enforceMinimumWindowSize(normalized));
         }
       } catch {
         // Keep app usable even when window APIs are unavailable.
       }
     };
 
+    const applyMinimumWindowSizeCorrection = async () => {
+      try {
+        const size = await appWindow.innerSize();
+        if (isDisposed) {
+          return;
+        }
+
+        const normalized = normalizeWindowSize(size);
+        if (!normalized || !isWindowSizeBelowMinimum(normalized)) {
+          return;
+        }
+
+        const corrected = enforceMinimumWindowSize(normalized);
+        await appWindow.setSize(new PhysicalSize(corrected.width, corrected.height));
+        if (isDisposed) {
+          return;
+        }
+        writePersistedWindowSize(corrected);
+      } catch {
+        // Ignore runtime failures and keep default window behavior.
+      }
+    };
+
     void (async () => {
+      try {
+        await appWindow.setMinSize(
+          new PhysicalSize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
+        );
+      } catch {
+        // Ignore and rely on static Tauri window config when unavailable.
+      }
+
       const persisted = readPersistedWindowSize();
       if (persisted) {
         try {
@@ -499,6 +552,11 @@ export default function App() {
         }
       }
 
+      if (isDisposed) {
+        return;
+      }
+
+      await applyMinimumWindowSizeCorrection();
       if (isDisposed) {
         return;
       }
@@ -549,18 +607,34 @@ export default function App() {
     return null;
   }, [copy.topBar, doc.kind, htmlViewMode, markdownViewMode]);
 
+  const clearExternalChangeToast = useCallback(() => {
+    if (externalChangeToastKeyRef.current === null) {
+      return;
+    }
+    toaster.clear(externalChangeToastKeyRef.current);
+    externalChangeToastKeyRef.current = null;
+  }, []);
+
+  const clearPendingExternalChange = useCallback(() => {
+    pendingExternalSnapshotRef.current = null;
+    pendingExternalPathRef.current = null;
+    clearExternalChangeToast();
+  }, [clearExternalChangeToast]);
+
   const loadFileIntoEditor = useCallback(async (path: string) => {
     const readStart = nowMs();
-    const content = await readTextFile(path);
+    const result = await readTextFileSnapshot(path);
     logOpenPerfElapsed("open.file_read_ms", readStart, {
-      bytes: content.length
+      bytes: result.content.length
     });
+    fileSnapshotRef.current = result.snapshot;
+    clearPendingExternalChange();
     dispatch({
       type: "load_document",
       path,
-      content
+      content: result.content
     });
-  }, []);
+  }, [clearPendingExternalChange]);
 
   const handleMarkdownChange = useCallback((content: string) => {
     dispatch({ type: "update_content", content });
@@ -614,6 +688,82 @@ export default function App() {
     }, TOAST_AUTO_HIDE_MS);
   }, []);
 
+  const notifyExternalReloadToast = useCallback(
+    (
+      message: string,
+      onReload?: (() => void) | null,
+      tone: "info" | "positive" | "warning" = "info"
+    ) => {
+      clearExternalChangeToast();
+
+      const toastBody = onReload ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px"
+          }}
+        >
+          <span>{message}</span>
+          <button
+            onClick={() => {
+              clearExternalChangeToast();
+              onReload();
+            }}
+            style={{
+              alignSelf: "flex-start",
+              border: "1px solid color-mix(in srgb, var(--accent) 42%, transparent)",
+              borderRadius: "999px",
+              background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              font: "inherit",
+              fontSize: "12px",
+              fontWeight: 600,
+              padding: "4px 10px"
+            }}
+            type="button"
+          >
+            {copy.app.externalChange.reloadAction}
+          </button>
+        </div>
+      ) : (
+        message
+      );
+
+      externalChangeToastKeyRef.current =
+        tone === "positive"
+          ? toaster.positive(toastBody, {
+              autoHideDuration: TOAST_AUTO_HIDE_MS
+            })
+          : tone === "warning"
+            ? toaster.warning(toastBody, {
+                autoHideDuration: undefined
+              })
+            : toaster.info(toastBody, {
+                autoHideDuration: undefined
+              });
+    },
+    [clearExternalChangeToast, copy.app.externalChange.reloadAction]
+  );
+
+  useEffect(() => {
+    if (doc.currentPath !== null) {
+      return;
+    }
+    fileSnapshotRef.current = null;
+    clearPendingExternalChange();
+  }, [clearPendingExternalChange, doc.currentPath]);
+
+  useEffect(() => {
+    return () => {
+      if (errorClearTimerRef.current !== null) {
+        window.clearTimeout(errorClearTimerRef.current);
+      }
+      clearExternalChangeToast();
+    };
+  }, [clearExternalChangeToast]);
+
   const runBusyTask = useCallback(async (task: () => Promise<void>) => {
     try {
       setIsBusy(true);
@@ -625,6 +775,52 @@ export default function App() {
       setIsBusy(false);
     }
   }, [copy.app.errors.unknown, notifyError]);
+
+  const reloadCurrentDocumentFromDisk = useCallback(
+    async (
+      path: string,
+      reason: "manual" | "auto"
+    ) => {
+      if (isReloadingFromDiskRef.current) {
+        return;
+      }
+
+      isReloadingFromDiskRef.current = true;
+      try {
+        flushVisibleDocumentContent();
+        const readStart = nowMs();
+        const result = await readTextFileSnapshot(path);
+        logOpenPerfElapsed("open.file_read_ms", readStart, {
+          bytes: result.content.length,
+          phase: `external_${reason}`
+        });
+
+        if (docRef.current.currentPath !== path) {
+          return;
+        }
+
+        fileSnapshotRef.current = result.snapshot;
+        clearPendingExternalChange();
+        dispatch({
+          type: "load_document",
+          path,
+          content: result.content
+        });
+
+        if (reason === "auto") {
+          notifyExternalReloadToast(copy.app.externalChange.autoReloaded, null, "positive");
+        }
+      } finally {
+        isReloadingFromDiskRef.current = false;
+      }
+    },
+    [
+      clearPendingExternalChange,
+      copy.app.externalChange.autoReloaded,
+      flushVisibleDocumentContent,
+      notifyExternalReloadToast
+    ]
+  );
 
   const openPathInCurrentWindow = useCallback(
     async (path: string) => {
@@ -653,14 +849,16 @@ export default function App() {
       return false;
     }
 
-    await writeTextFile(targetPath, contentToSave);
+    const snapshot = await writeTextFile(targetPath, contentToSave);
+    fileSnapshotRef.current = snapshot;
+    clearPendingExternalChange();
     dispatch({
       type: "mark_saved",
       path: targetPath,
       content: contentToSave
     });
     return true;
-  }, [flushVisibleDocumentContent]);
+  }, [clearPendingExternalChange, flushVisibleDocumentContent]);
 
   const saveCurrent = useCallback(async (content?: string): Promise<boolean> => {
     const current = docRef.current;
@@ -668,14 +866,44 @@ export default function App() {
     if (!current.currentPath) {
       return saveCurrentAs(contentToSave);
     }
-    await writeTextFile(current.currentPath, contentToSave);
+
+    const latestSnapshot = await statTextFile(current.currentPath);
+    if (
+      fileSnapshotRef.current &&
+      !areFileSnapshotsEqual(latestSnapshot, fileSnapshotRef.current)
+    ) {
+      pendingExternalSnapshotRef.current = latestSnapshot;
+      pendingExternalPathRef.current = current.currentPath;
+      notifyExternalReloadToast(
+        copy.app.externalChange.saveConflict,
+        () => {
+          void runBusyTask(async () => {
+            await reloadCurrentDocumentFromDisk(current.currentPath!, "manual");
+          });
+        },
+        "warning"
+      );
+      return false;
+    }
+
+    const snapshot = await writeTextFile(current.currentPath, contentToSave);
+    fileSnapshotRef.current = snapshot;
+    clearPendingExternalChange();
     dispatch({
       type: "mark_saved",
       path: current.currentPath,
       content: contentToSave
     });
     return true;
-  }, [flushVisibleDocumentContent, saveCurrentAs]);
+  }, [
+    clearPendingExternalChange,
+    copy.app.externalChange.saveConflict,
+    flushVisibleDocumentContent,
+    notifyExternalReloadToast,
+    reloadCurrentDocumentFromDisk,
+    runBusyTask,
+    saveCurrentAs
+  ]);
 
   const executePendingAction = useCallback(
     async (action: PendingAction) => {
@@ -1131,6 +1359,10 @@ export default function App() {
     setMarkdownTheme(theme);
   }, []);
 
+  const handleToggleExternalChangeMode = useCallback(() => {
+    setExternalChangeMode((current) => (current === "prompt" ? "auto" : "prompt"));
+  }, []);
+
   const handleToggleEditorMode = useCallback(() => {
     setEditorMode((current) => (current === "editable" ? "readonly" : "editable"));
   }, []);
@@ -1370,6 +1602,33 @@ export default function App() {
   }, [doc.content, doc.kind, markdownViewMode]);
 
   useEffect(() => {
+    const shouldPersistSession =
+      doc.currentPath !== null || doc.isDirty || doc.content.trim() !== "";
+
+    if (!shouldPersistSession) {
+      clearReloadSession(windowLabel);
+      return;
+    }
+
+    writeReloadSession(windowLabel, {
+      currentPath: doc.currentPath,
+      content: doc.content,
+      lastSavedContent: doc.lastSavedContent,
+      isDirty: doc.isDirty,
+      markdownViewMode,
+      htmlViewMode
+    });
+  }, [
+    doc.content,
+    doc.currentPath,
+    doc.isDirty,
+    doc.lastSavedContent,
+    htmlViewMode,
+    markdownViewMode,
+    windowLabel
+  ]);
+
+  useEffect(() => {
     const handleShortcuts = (event: KeyboardEvent) => {
       const metaPressed = event.ctrlKey || event.metaKey;
       if (!metaPressed) {
@@ -1424,6 +1683,29 @@ export default function App() {
           await runBusyTask(async () => {
             await openPathInCurrentWindow(initialPath);
           });
+        } else if (isReloadNavigation()) {
+          const session = readReloadSession(windowLabel);
+          if (session) {
+            dispatch({
+              type: "restore_session",
+              path: session.currentPath,
+              content: session.content,
+              lastSavedContent: session.lastSavedContent,
+              isDirty: session.isDirty
+            });
+            setMarkdownViewMode(session.markdownViewMode);
+            setHtmlViewMode(session.htmlViewMode);
+
+            if (session.currentPath) {
+              try {
+                fileSnapshotRef.current = await statTextFile(session.currentPath);
+              } catch {
+                fileSnapshotRef.current = null;
+              }
+            } else {
+              fileSnapshotRef.current = null;
+            }
+          }
         }
 
         if (isDisposed) {
@@ -1511,6 +1793,92 @@ export default function App() {
     notifyError,
     openPathInCurrentWindow,
     openPathInNewWindow,
+    runBusyTask,
+    windowLabel
+  ]);
+
+  useEffect(() => {
+    if (!isStartupReady || !doc.currentPath) {
+      return;
+    }
+
+    const currentPath = doc.currentPath;
+    let isDisposed = false;
+
+    const checkForExternalChanges = async () => {
+      if (isDisposed || isReloadingFromDiskRef.current) {
+        return;
+      }
+
+      try {
+        const latestSnapshot = await statTextFile(currentPath);
+        if (isDisposed || docRef.current.currentPath !== currentPath) {
+          return;
+        }
+
+        const knownSnapshot = fileSnapshotRef.current;
+        if (!knownSnapshot) {
+          fileSnapshotRef.current = latestSnapshot;
+          return;
+        }
+
+        if (areFileSnapshotsEqual(latestSnapshot, knownSnapshot)) {
+          if (
+            pendingExternalPathRef.current === currentPath &&
+            areFileSnapshotsEqual(pendingExternalSnapshotRef.current, latestSnapshot)
+          ) {
+            clearPendingExternalChange();
+          }
+          return;
+        }
+
+        if (
+          pendingExternalPathRef.current === currentPath &&
+          areFileSnapshotsEqual(pendingExternalSnapshotRef.current, latestSnapshot)
+        ) {
+          return;
+        }
+
+        pendingExternalSnapshotRef.current = latestSnapshot;
+        pendingExternalPathRef.current = currentPath;
+
+        if (!docRef.current.isDirty && externalChangeModeRef.current === "auto") {
+          await reloadCurrentDocumentFromDisk(currentPath, "auto");
+          return;
+        }
+
+        notifyExternalReloadToast(
+          docRef.current.isDirty
+            ? copy.app.externalChange.dirtyConflict
+            : copy.app.externalChange.detected,
+          () => {
+            void runBusyTask(async () => {
+              await reloadCurrentDocumentFromDisk(currentPath, "manual");
+            });
+          },
+          docRef.current.isDirty ? "warning" : "info"
+        );
+      } catch {
+        // Keep the editor usable even when stat polling temporarily fails.
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void checkForExternalChanges();
+    }, FILE_WATCH_INTERVAL_MS);
+
+    return () => {
+      isDisposed = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    clearPendingExternalChange,
+    copy.app.externalChange.detected,
+    copy.app.externalChange.dirtyConflict,
+    doc.currentPath,
+    isStartupReady,
+    notifyExternalReloadToast,
+    reloadCurrentDocumentFromDisk,
     runBusyTask
   ]);
 
@@ -1557,7 +1925,7 @@ export default function App() {
               <Suspense fallback={null}>
                 {doc.kind === "markdown" && markdownViewMode === "wysiwyg" ? (
                   <MarkdownEditor
-                    key={`${locale}-${doc.currentPath ?? "draft"}-${markdownViewMode}`}
+                    key={`${locale}-${doc.currentPath ?? "draft"}-${doc.revision}-${markdownViewMode}`}
                     copy={copy.editor}
                     documentPath={doc.currentPath}
                     extensionCopy={copy.extensions}
@@ -1598,9 +1966,11 @@ export default function App() {
           <StatusBar
             copy={copy.statusBar}
             saveState={saveState}
+            externalChangeMode={externalChangeMode}
             charCount={charCount}
             locale={locale}
             markdownTheme={markdownTheme}
+            onToggleExternalChangeMode={handleToggleExternalChangeMode}
             onOpenSamples={handleOpenSamples}
             onToggleLocale={handleToggleLocale}
             onToggleMarkdownTheme={handleToggleMarkdownTheme}
@@ -1640,44 +2010,7 @@ export default function App() {
           autoHideDuration={TOAST_AUTO_HIDE_MS}
           closeable
           placement={PLACEMENT.bottomRight}
-          overrides={{
-            Root: {
-              style: {
-                zIndex: 1400
-              }
-            },
-            ToastBody: {
-              style: {
-                borderRadius: "7px",
-                borderWidth: "0.5px",
-                borderStyle: "solid",
-                borderColor:
-                  "color-mix(in srgb, var(--text-secondary) 34%, transparent)",
-                backgroundColor:
-                  "color-mix(in srgb, var(--editor-bg) 96%, transparent)",
-                color: "var(--text-primary)",
-                boxShadow: "0 3px 10px rgba(0, 0, 0, 0.12)",
-                minWidth: "280px",
-                maxWidth: "360px"
-              }
-            },
-            ToastInnerContainer: {
-              style: {
-                fontSize: "12px",
-                fontWeight: 500,
-                lineHeight: "1.42",
-                paddingTop: "10px",
-                paddingBottom: "10px",
-                paddingLeft: "12px",
-                paddingRight: "12px"
-              }
-            },
-            ToastCloseIcon: {
-              style: {
-                color: "var(--text-secondary)"
-              }
-            }
-          }}
+          overrides={APP_TOASTER_OVERRIDES}
         />
       </div>
     </BaseProvider>

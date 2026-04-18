@@ -7,7 +7,9 @@ import type {
   ExportDocumentPdfInput,
   ExportDocumentPdfResult,
   ExportMarkdownPagesInput,
-  ExportResult
+  ExportResult,
+  FileSnapshot,
+  ReadTextFileSnapshotResult
 } from "../../shared/types/doc";
 
 export async function getInitialFile(): Promise<string | null> {
@@ -30,11 +32,21 @@ export async function readTextFile(path: string): Promise<string> {
   return invoke<string>("read_text_file", { path });
 }
 
+export async function readTextFileSnapshot(
+  path: string
+): Promise<ReadTextFileSnapshotResult> {
+  return invoke<ReadTextFileSnapshotResult>("read_text_file_snapshot", { path });
+}
+
+export async function statTextFile(path: string): Promise<FileSnapshot> {
+  return invoke<FileSnapshot>("stat_text_file", { path });
+}
+
 export async function writeTextFile(
   path: string,
   content: string
-): Promise<void> {
-  return invoke<void>("write_text_file", { path, content });
+): Promise<FileSnapshot> {
+  return invoke<FileSnapshot>("write_text_file", { path, content });
 }
 
 export async function renameFile(

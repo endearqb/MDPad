@@ -851,11 +851,18 @@ pub fn export_document_image_for_cli(
 #[cfg(test)]
 mod tests {
     use super::{
-        bundled_runtime_from_root, normalize_pdf_emulation_profile, normalize_runtime_path,
+        build_export_batch_base_name, build_export_page_file_name, bundled_runtime_from_root,
+        find_available_export_batch_base_name, normalize_pdf_emulation_profile,
+        normalize_runtime_path, sanitize_export_base_name,
     };
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn build_export_file_name(base_name: &str, scope: &str, extension: &str) -> String {
+        let scoped_base_name = build_export_batch_base_name(base_name, scope);
+        format!("{scoped_base_name}.{extension}")
+    }
 
     #[cfg(target_os = "windows")]
     #[test]
@@ -932,5 +939,59 @@ mod tests {
         );
         assert_eq!(normalize_pdf_emulation_profile("wide").unwrap(), "wide");
         assert_eq!(normalize_pdf_emulation_profile("custom").unwrap(), "custom");
+    }
+
+    #[test]
+    fn sanitize_export_base_name_replaces_invalid_characters() {
+        assert_eq!(sanitize_export_base_name(" report:Q2* "), "report_Q2_");
+        assert_eq!(sanitize_export_base_name("   "), "untitled");
+    }
+
+    #[test]
+    fn build_export_batch_base_name_adds_selection_suffix() {
+        assert_eq!(build_export_batch_base_name("note", "document"), "note");
+        assert_eq!(
+            build_export_batch_base_name("note", "selection"),
+            "note-selection"
+        );
+    }
+
+    #[test]
+    fn build_export_page_file_name_is_zero_padded() {
+        assert_eq!(
+            build_export_page_file_name("note-selection", "png", 0),
+            "note-selection-page-01.png"
+        );
+        assert_eq!(
+            build_export_page_file_name("note-selection", "svg", 11),
+            "note-selection-page-12.svg"
+        );
+    }
+
+    #[test]
+    fn find_available_export_batch_base_name_advances_suffix_when_needed() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("mdpad-export-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+        fs::write(temp_dir.join("note-page-01.png"), b"one").unwrap();
+        fs::write(temp_dir.join("note-page-02.png"), b"two").unwrap();
+
+        let result = find_available_export_batch_base_name(&temp_dir, "note", "png", 2);
+
+        assert_eq!(result, "note-1");
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn build_export_file_name_adds_selection_suffix_for_pdf() {
+        assert_eq!(
+            build_export_file_name("note", "document", "pdf"),
+            "note.pdf"
+        );
+        assert_eq!(
+            build_export_file_name("note", "selection", "pdf"),
+            "note-selection.pdf"
+        );
     }
 }

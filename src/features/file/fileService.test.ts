@@ -22,11 +22,14 @@ import {
   openExternalUrl,
   pickExportDirectory,
   pickAttachmentLibraryDir,
+  readTextFileSnapshot,
   renameFile,
   saveAttachmentBytesToLibrary,
   saveExportPdfDialog,
   saveFileAsDialog,
-  setAttachmentLibraryDir
+  statTextFile,
+  setAttachmentLibraryDir,
+  writeTextFile
 } from "./fileService";
 
 describe("fileService", () => {
@@ -67,6 +70,46 @@ describe("fileService", () => {
       newBaseName: "renamed"
     });
     expect(path).toBe("D:\\Docs\\renamed.md");
+  });
+
+  it("reads text file snapshot with content and file metadata", async () => {
+    invokeMock.mockResolvedValue({
+      content: "# Hello",
+      snapshot: {
+        modifiedMs: 1710000000000,
+        size: 7
+      }
+    });
+
+    const result = await readTextFileSnapshot("D:\\Docs\\note.md");
+
+    expect(invokeMock).toHaveBeenCalledWith("read_text_file_snapshot", {
+      path: "D:\\Docs\\note.md"
+    });
+    expect(result).toEqual({
+      content: "# Hello",
+      snapshot: {
+        modifiedMs: 1710000000000,
+        size: 7
+      }
+    });
+  });
+
+  it("reads file metadata without reloading the file body", async () => {
+    invokeMock.mockResolvedValue({
+      modifiedMs: 1710000000000,
+      size: 7
+    });
+
+    const result = await statTextFile("D:\\Docs\\note.md");
+
+    expect(invokeMock).toHaveBeenCalledWith("stat_text_file", {
+      path: "D:\\Docs\\note.md"
+    });
+    expect(result).toEqual({
+      modifiedMs: 1710000000000,
+      size: 7
+    });
   });
 
   it("invokes pick_attachment_library_dir without params", async () => {
@@ -116,6 +159,24 @@ describe("fileService", () => {
       bytes: [1, 2, 3]
     });
     expect(path).toBe("D:\\MDPadAssets\\img-20260225.png");
+  });
+
+  it("returns an updated file snapshot after writing a text file", async () => {
+    invokeMock.mockResolvedValue({
+      modifiedMs: 1710000000000,
+      size: 42
+    });
+
+    const result = await writeTextFile("D:\\Docs\\note.md", "# Updated");
+
+    expect(invokeMock).toHaveBeenCalledWith("write_text_file", {
+      path: "D:\\Docs\\note.md",
+      content: "# Updated"
+    });
+    expect(result).toEqual({
+      modifiedMs: 1710000000000,
+      size: 42
+    });
   });
 
   it("passes export input to export_markdown_pages", async () => {

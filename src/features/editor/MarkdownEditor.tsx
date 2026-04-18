@@ -156,6 +156,7 @@ import {
   runBubbleCommandAction
 } from "./bubbleCommandRunner";
 import { isUserInitiatedDocChange } from "./changeTracking";
+import { syncEditorContentSafely } from "./editorContentSync";
 import {
   createDocumentWindow,
   getAttachmentLibraryDir,
@@ -1778,36 +1779,49 @@ export default function MarkdownEditor({
       return;
     }
 
-    emitStats(editor);
+    try {
+      emitStats(editor);
 
-    if (normalizedMarkdown === lastSyncedMarkdownRef.current) {
-      return;
+      if (normalizedMarkdown === lastSyncedMarkdownRef.current) {
+        return;
+      }
+
+      const nextMarkdownState = createFrontMatterState(markdown);
+      clearMarkdownSyncTimer();
+      hasLocalDocChangesRef.current = false;
+      bodyMarkdownRef.current = nextMarkdownState.bodyMarkdown;
+      applyFrontMatterState(nextMarkdownState.state);
+      const parseStart = nowMs();
+      const nextHtml = markdownToHtml(nextMarkdownState.bodyMarkdown);
+      logOpenPerfElapsed("open.markdown_to_html_ms", parseStart, {
+        phase: "sync"
+      });
+
+      skipNextUpdate.current = true;
+      const setContentStart = nowMs();
+      syncEditorContentSafely({
+        editor,
+        html: nextHtml,
+        onBeforeSync: () => {
+          recentTextSelectionRef.current = null;
+        }
+      });
+      logOpenPerfElapsed("open.editor_set_content_ms", setContentStart);
+      lastSyncedMarkdownRef.current = normalizedMarkdown;
+      emitStats(editor);
+    } catch (error) {
+      skipNextUpdate.current = false;
+      reportEditorError(formatErrorMessage(error, copy.errors.syncContentFailed));
     }
-
-    const nextMarkdownState = createFrontMatterState(markdown);
-    clearMarkdownSyncTimer();
-    hasLocalDocChangesRef.current = false;
-    bodyMarkdownRef.current = nextMarkdownState.bodyMarkdown;
-    applyFrontMatterState(nextMarkdownState.state);
-    const parseStart = nowMs();
-    const nextHtml = markdownToHtml(nextMarkdownState.bodyMarkdown);
-    logOpenPerfElapsed("open.markdown_to_html_ms", parseStart, {
-      phase: "sync"
-    });
-
-    skipNextUpdate.current = true;
-    const setContentStart = nowMs();
-    editor.commands.setContent(nextHtml, false);
-    logOpenPerfElapsed("open.editor_set_content_ms", setContentStart);
-    lastSyncedMarkdownRef.current = normalizedMarkdown;
-    emitStats(editor);
   }, [
     applyFrontMatterState,
     clearMarkdownSyncTimer,
+    copy.errors.syncContentFailed,
     editor,
     emitStats,
     markdown,
-    normalizedMarkdown
+    normalizedMarkdown,
+    reportEditorError
   ]);
 
   const textStyleOptions = useMemo<

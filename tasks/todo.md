@@ -1,3 +1,121 @@
+# 分主题调整垂直滚动条颜色
+
+## Plan
+- [x] 按 light/dark + modern/classic 四套主题分别调整正文区滚动条 thumb 颜色
+- [x] 同步调整 SourceEditor 的代码区滚动条 thumb 颜色，保持正文区与源码区策略一致
+- [x] 保持轨道颜色、尺寸、圆角、边框与隐藏箭头实现不变，只改 thumb / hover 明度
+- [x] 完成代码级核对与一次前端构建验证
+
+## Progress Notes
+- 已先复核当前实现：正文滚动区使用 `--scrollbar-thumb` / `--scrollbar-thumb-hover`，源码滚动区使用独立的 `--code-scrollbar-thumb` / `--code-scrollbar-thumb-hover`，四套主题各自都有单独变量，因此本次可以只在主题变量层完成调整，不需要改动滚动条结构样式。
+- 浅色 modern 与 classic 现在都改为“默认态更浅、hover 仍略深”的方向，让正文区和源码区的垂直滚动条更轻一些，但仍保留清晰的悬停反馈。
+- 深色 modern 与 classic 现在都改为“默认态更深、hover 略亮”的方向，避免 dark 主题滚动条发白发浮，同时保留必要的交互层级。
+- 在执行 `pnpm build` 验证时，顺手修复了 [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 一处现有的 union type 收窄问题：保存冲突分支里对 `reaction.tone` 的访问改为显式 `\"tone\" in reaction` 判断，仅用于恢复 TypeScript 构建通过，不改变原有外部 review / toast 行为。
+- 本次没有扩展到 `pre` 的 Solarized 专用滚动条，也没有调整当前隐藏滚动条的目录、slash 菜单等区域，尽量把影响面锁定在主编辑区与源码编辑区。
+
+## Review
+- 结果：正文区和源码区的垂直滚动条现在已按主题分方向收敛，light 更轻，dark 更稳，四套主题的视觉逻辑保持一致。
+- 验证：已完成变量级代码核对，并运行 `pnpm build` 通过；构建输出仅保留项目既有的 chunk size warning，没有新增报错。
+- 手工验收建议：在 light/dark 的 modern 与 classic 四套主题下分别查看正文区与 SourceEditor 的垂直滚动条，确认浅色主题不再偏重、深色主题不再发灰发亮，同时 hover 反馈仍然清楚。
+- 说明：本次没有更新 `tasks/lessons.md`，因为这不是“用户纠正后需要沉淀规则”的场景。
+
+# 标题栏与状态栏字重向 Windows Notepad 靠拢
+
+## Plan
+- [x] 将标题栏文档标题字重从 `600` 调整为 `400`，并去掉额外字距
+- [x] 将标题栏重命名输入框字重从 `600` 调整为 `400`
+- [x] 将底部状态栏文字字重从 `600` 调整为 `400`
+- [x] 检查经典主题是否存在额外 `600` 覆盖，并同步收敛到 `400`
+- [x] 完成样式自检并记录本轮回顾
+
+## Progress Notes
+- 已先复核当前实现：现代主题下 `.titlebar-doc-name`、`.titlebar-rename-input`、`.statusbar-shell` 都使用 `font-weight: 600`，而经典主题下 `.app-root.ui-classic .titlebar-doc-name` 也单独覆盖为 `600`，这正是标题与底栏整体偏黑的直接来源。
+- 本次仅调整窗口 chrome 区域的文字重量与标题字距，没有联动正文编辑区、菜单、弹窗标题或全局字体栈，保持影响面最小。
+- 标题栏文档标题现已改为 `font-weight: 400` 且 `letter-spacing: 0`，使中文标题不再因为半粗 + 扩字距而显得发黑发挤。
+- 标题栏重命名输入框与底部状态栏也已同步改为 `font-weight: 400`，保证静态标题、编辑态标题和状态信息的观感一致。
+- 经典主题下标题的显式 `600` 覆盖已同步收敛为 `400`；状态栏经典主题没有单独的字重覆盖，因此沿用基础样式即可生效。
+
+## Review
+- 结果：标题栏文档标题、标题重命名输入框、底部状态栏文字现在都回到常规字重，整体会更接近 Windows Notepad 的系统原生观感，尤其能缓解中文比英文更显黑重的问题。
+- 验证：已完成样式代码级核对，确认修改点覆盖了现代主题基础样式和经典主题标题覆写；本次未运行 GUI 自动化或桌面端手工点验，因为任务仅涉及静态 CSS 调整且终端环境无法直接观察窗口实际视觉效果。
+- 说明：本次没有更新 `tasks/lessons.md`，因为这不是“被用户纠正后的经验沉淀”场景。
+
+# 清理 `lib.rs` 导出残留
+
+## Plan
+- [x] 删除 `src-tauri/src/lib.rs` 中已被 `export_service.rs` 替代的旧导出实现与相关 import
+- [x] 将原本依赖旧 helper 的 Rust 单测迁移到 `src-tauri/src/export_service.rs`
+- [x] 运行 `cargo test --manifest-path src-tauri/Cargo.toml` 与一次 Rust 构建，确认 `lib.rs` 相关 `dead_code` warning 消失
+
+## Progress Notes
+- 已确认 warning 来自 `lib.rs` 中未再参与正式导出链路的旧 renderer/runtime/helper 残留；`export_markdown_pages`、`export_document_pdf`、`export_document_image` 现在都只做 Tauri command 薄封装并转调 `export_service::*_from_app(...)`。
+- `src-tauri/src/lib.rs` 已删除整组旧导出实现：旧的 renderer request/result、runtime/path 解析、临时目录与批次命名 helper、Node 子进程执行函数，以及只为这些逻辑服务的 import；保留的仅是 command 入参/返回结构与对 `export_service` 的薄封装。
+- 原先位于 `lib.rs` 底部、依赖旧 helper 的导出命名测试已迁移到 `src-tauri/src/export_service.rs` 的测试模块，并在该模块内补了仅测试用的 `build_export_file_name` helper，避免为测试暴露正式私有函数。
+
+## Review
+- 结果：`lib.rs` 中这批已被 `export_service.rs` 替代的导出残留已经清理完成，当前 Rust 构建输出里不再出现你之前贴出来的那组 `lib.rs` `dead_code` warning。
+- 验证：`cargo test --manifest-path src-tauri/Cargo.toml` 通过（`export_service` 相关 9 个测试全部通过）；`cargo build --manifest-path src-tauri/Cargo.toml` 通过，且未再出现 `lib.rs` 中旧导出残留的 warning。
+- 说明：本次只清理了 `lib.rs` 里的旧导出实现与测试归属，没有改动前端协议、Tauri command 名称、CLI 行为或实际导出逻辑。
+
+# 外部文件变更同步、刷新恢复与重载差异高亮
+
+## Plan
+- [x] 扩展文件读写链路，增加磁盘快照读取、轮询检测与保存前冲突保护
+- [x] 增加按窗口的刷新恢复会话持久化，修复右键刷新后回空白页
+- [x] 实现外部修改处理模式切换、toast 提示与统一外部高亮状态
+- [x] 为 SourceEditor、MarkdownEditor、HtmlPreview 接入外部重载后的差异高亮与首处滚动
+- [x] 补充中英文文案与相关测试，并运行 `pnpm test`、`pnpm build`、`cargo test`
+
+## Progress Notes
+- 已确认当前工作区存在其他未提交修改，本次按增量方式实现，没有回退现有改动；同时明确不引入 Tiptap Collaboration / Yjs，继续采用“磁盘文件单一真相 + 快照检测 + 刷新恢复”方案。
+- `src-tauri/src/lib.rs`、`src/features/file/fileService.ts` 与共享类型现已补齐文件快照读写链路：新增 `read_text_file_snapshot` / `stat_text_file`，`write_text_file` 返回写入后的磁盘快照；前端打开文件时读取“内容 + 快照”，保存前先 `stat` 比较，若磁盘版本已变更则中止覆盖写入并提示冲突。
+- `src/App.tsx` 已接入按路径的轻量轮询检测（`2000ms`）、外部修改模式偏好、右下角 toast 提示和重载入口；`auto` 模式仅在文档干净时自动重载，`dirty` 时统一退化为提示模式，不会自动覆盖草稿。
+- 页面刷新恢复已落地到 `reloadSession` 工具：当前文档会按 `windowLabel` 维度写入 `localStorage`，启动时优先尝试 `get_initial_file()`，仅在没有初始文件且确认为 WebView reload 时恢复会话，因此修复了右键刷新回空白页，同时保留普通冷启动的空白页行为。
+- 外部重载后的差异高亮已串通三种视图：`SourceEditor` 使用 CodeMirror decorations，`MarkdownEditor` 使用 ProseMirror decorations，`HtmlPreview` 在受控 `srcDoc` 中注入 `<mark data-external-change>` 与滚动脚本；高亮会滚动到第一处变化，并保留到用户手动清除为止。
+- 已补充外部修改模式偏好、刷新恢复、diff 范围、高亮辅助和 HTML 预览注入相关测试，并同步扩展了中英文文案与状态栏交互。
+
+## Review
+- 结果：当前已经同时修复两条主问题链路。
+  1. 外部应用修改文件后，MDPad 会检测磁盘快照变化，并按“提示后重载 / 自动重载”策略处理，同时避免在本地有未保存修改时被静默覆盖。
+  2. 页面右键刷新后，不再回到空白页；如果刷新前有未保存修改，会恢复当前草稿，否则恢复当前已打开文档。
+- 结果：外部重载完成后会高亮修改位置并滚动到首处变化，且 Source、Markdown WYSIWYG、HTML Preview 三种视图都能消费同一份高亮状态。
+- 验证：`pnpm lint` 通过；`pnpm test -- --runInBand` 通过（35 个测试文件 / 231 个测试）；`pnpm build` 通过；`cargo test --manifest-path src-tauri/Cargo.toml` 通过。
+- 手工验收提示：终端内无法直接驱动桌面 WebView 完成“外部编辑器改盘文件”“右键刷新”“三视图观察高亮”的完整 GUI 回归，建议你本地补点验 5 个场景：
+  1. clean 文档 + `提示后重载`
+  2. clean 文档 + `自动重载`
+  3. dirty 文档 + 任意模式
+  4. 保存前磁盘文件已被外部修改
+  5. 页面右键刷新前后分别处于 clean / dirty
+- 说明：构建仍保留既有 chunk size 警告（`SourceEditor` / `vendor-tiptap` 超过 `500 kB`）；这是历史问题，本次未扩大影响面。
+
+# 窗口最小尺寸加固
+
+## Plan
+- [x] 为 Tauri 主窗口配置补齐 `minHeight`，并补上运行时 `setMinSize` 权限
+- [x] 抽取窗口尺寸校正纯逻辑，统一最小尺寸钳制与异常值处理
+- [x] 在 `App` 启动窗口 effect 中先下沉原生最小尺寸，再做历史尺寸恢复与启动后自愈校正
+- [x] 补充窗口尺寸纯逻辑测试，覆盖非法值、过小值与正常值场景
+- [x] 运行 `pnpm test` 与 `pnpm build` 验证修改
+
+## Progress Notes
+- `src-tauri/tauri.conf.json` 已为主窗口补齐 `minHeight: 320`，并在 `src-tauri/capabilities/default.json` 新增 `core:window:allow-set-min-size`，让 `main` 与 `doc-*` 窗口同时具备静态和运行时最小尺寸约束。
+- `src/shared/utils/windowPreset.ts` 现在统一承载窗口尺寸相关纯逻辑：新增 `normalizeWindowSize`、`enforceMinimumWindowSize`、`sanitizePersistedWindowSize`、`isWindowSizeBelowMinimum`，避免 `App` 内再散落一份尺寸钳制逻辑。
+- `src/App.tsx` 的窗口启动 effect 现已改为：先 `setMinSize(420 x 320)`，再恢复本地缓存或首次启动预设，随后补做一次启动后 `innerSize()` 自愈校正；如果实际窗口仍小于下限，会强制拉回并覆盖写回 `mdpad.window-size.v1`。
+- `persistWindowSize` 也改为复用共享窗口尺寸工具，保证运行时写回缓存时继续维持最小尺寸下限，不改变现有“全局一个窗口尺寸键”的策略。
+- `src/shared/utils/windowPreset.test.ts` 已补到 7 个用例，覆盖非法缓存值、过小缓存值、正常缓存值、运行时低于下限检测与尺寸归一化。
+
+## Review
+- 结果：窗口最小尺寸现在有两层保护。
+  1. Tauri 原生窗口层：主窗口配置已声明 `420 x 320` 下限。
+  2. 前端运行时：启动时会主动下沉 `setMinSize`，并在异常恢复后再次校正实际窗口尺寸。
+- 验证：`pnpm test` 通过（31 个测试文件 / 211 个测试）；`pnpm build` 通过。
+- 手工验收提示：本次未在 GUI 中直接拖拽或注入异常 `localStorage` 做桌面端实操，建议你本地再点验 4 个场景：
+  1. 正常启动主窗口
+  2. 新建文档窗口
+  3. 手动缩到最小后重启
+  4. 人工写入过小 `mdpad.window-size.v1` 后重启
+- 说明：工作区当前还存在其他未提交修改（如 `MarkdownEditor`、`fileReducer`、`doc` 类型相关文件）；本次只增量修改窗口尺寸相关文件与任务记录，没有回退那些现有变更。
+
 # MDPad 多格式源码视图升级（CodeMirror 6）
 
 ## Plan
@@ -393,3 +511,103 @@
 ## Review
 - 结果：CLI 使用说明已经同步到中英文 README，代码与文档已进入远端 `main`，`v0.2.4` release 也已对外可下载。
 - 验证：`git status` 当前为 clean；`git push origin main` 已完成；`gh release view v0.2.4 --json url,assets` 已确认 release 页面存在且安装包资产状态为 `uploaded`。
+
+# MarkdownEditor 选区越界防御性修复
+
+## Plan
+- [x] 扩展文档状态模型，为新文档加载引入 `revision` 边界
+- [x] 调整 `MarkdownEditor` 挂载 key，并在全量内容同步前后重置为安全选区
+- [x] 为编辑器同步异常增加本地拦截与用户可见错误提示
+- [x] 补充 `fileReducer` 与编辑器内容同步回归测试，覆盖 text/node/cell selection
+- [x] 运行 `pnpm test` 与 `pnpm build` 验证修改
+
+## Progress Notes
+- `DocState` 新增 `revision`，`load_document` 与 `reset_document` 会递增版本；`App` 里的 `MarkdownEditor` key 现在带上 revision，同路径 reload 也会触发 editor remount。
+- 抽出 `editorContentSync` 防御式同步模块，在整篇内容替换前后都重置为 `Selection.atStart(doc)`，并在同步前清空缓存文本选区，避免旧 selection/bookmark 继续落到新 fragment。
+- `MarkdownEditor` 的外部内容同步 effect 已加本地 `try/catch`，异常只走编辑器错误提示，不再穿透为全局 fatal screen；同时补了中英文 `syncContentFailed` 文案。
+- 新增 `editorContentSync.test.ts`，用真实 TipTap editor 回归 text/node/cell selection 三类全量替换；`fileReducer.test.ts` 也补了 revision 语义覆盖。
+
+## Review
+- 结果：同实例全量内容替换现在会主动切断旧选区链路；不同路径切换和同路径 reload 都有明确的新文档边界，避免旧位置继续解析到新文档。
+- 验证：`pnpm test` 通过 31 个测试文件 / 206 个测试；`pnpm test --run src/features/editor/editorContentSync.test.ts` 通过；`pnpm build` 通过。
+- 说明：构建仍保留既有的 chunk size 警告（`SourceEditor` / `vendor-tiptap` 超过 500 kB）；这是历史告警，本次未扩大其影响面。
+
+# 修复“打开示例文档”路径错误
+
+## Plan
+- [x] 将示例文档资源路径从错误的 `resources/samples/...` 修正为打包后真实存在的 `samples/...`
+- [x] 同步更新 `sampleDocs` 单测，锁定安装包资源布局
+- [x] 运行定向测试与前端构建验证本次修复
+
+## Progress Notes
+- 已确认问题根因是 [src/shared/utils/sampleDocs.ts](/D:/MyProject/MDPad/src/shared/utils/sampleDocs.ts) 返回了 `resources/samples/...`，但 [src-tauri/tauri.conf.json](/D:/MyProject/MDPad/src-tauri/tauri.conf.json) 当前资源映射会把 `resources/samples` 打包到安装目录下的 `samples`。
+- 实际安装目录与 `src-tauri/target/release` 产物中都存在 `samples/MDPad-Sample.zh-CN.md`，不存在 `resources/samples/MDPad-Sample.zh-CN.md`，因此安装版点击“打开示例文档”会在 `resolveResource(...)` 后落到不存在的路径并报 `os error 3`。
+- 本次只修改示例路径常量与对应测试，没有改动 [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 的按钮调用链，也没有调整 Tauri 打包配置或增加额外 fallback 逻辑。
+
+## Review
+- 结果：示例文档按钮现在会解析到安装包中真实存在的 `samples/MDPad-Sample.zh-CN.md` / `samples/MDPad-Sample.en-US.md`，不再额外拼出不存在的 `resources/` 目录层级。
+- 验证：`pnpm test -- --run src/shared/utils/sampleDocs.test.ts` 通过；`pnpm build` 通过。
+- 说明：当前工作区存在用户/其他任务的未提交改动，本次仅增量修改 `sampleDocs` 与任务记录，没有回退任何现有变更。
+
+# 外部变更提示文案、Toast 视觉与重载后高亮修复
+
+## Plan
+- [x] 修复重载后渲染态高亮，补齐 Markdown 富文本与 HTML 预览的 fallback 高亮逻辑
+- [x] 将全局 toast 调整为毛玻璃半透明风格，并补充可回归的样式测试
+- [x] 将“提示重载 / 自动重载”等用户可见文案改为“手动确认 / 自动更新”，同步补充 i18n 回归
+- [x] 运行定向 `vitest` 与一次 `pnpm test` 验证修改
+
+## Progress Notes
+- 为渲染态高亮新增了共享辅助层 [renderedExternalHighlight.ts](/D:/MyProject/MDPad/src/features/editor/renderedExternalHighlight.ts)，统一负责“可见文本 diff”与“无文本差异时首个可见块 fallback”判定，避免逻辑继续散落在各视图组件里。
+- `MarkdownEditor` 现在在外部更新后基于最终渲染 HTML 生成高亮计划；当结构变化但文本未变时，会退回到首个可见块级高亮，不再出现“源码有变化但富文本视图完全没提示”的情况。
+- `HtmlPreview` 与 `htmlPreviewDocument` 已接入同一份高亮计划：有文本差异时继续注入 `<mark>`，无文本差异但结构变更时会在 iframe 内高亮首个可见块并滚动到该位置。
+- 全局 toast 覆盖样式已抽到 [appToastOverrides.ts](/D:/MyProject/MDPad/src/shared/utils/appToastOverrides.ts)，并配合 [styles.css](/D:/MyProject/MDPad/src/styles.css) 新增浅/深色玻璃变量，统一改成半透明 + blur 的毛玻璃表面。
+- 中英文文案已同步替换为更面向普通用户的表达：状态栏显示“手动确认 / 自动更新”，动作按钮改为“立即更新 / Update Now”，清除按钮也改为“清除变更高亮 / Clear Change Highlight”。
+
+## Review
+- 结果：外部文件变化后，源码视图维持原有文本高亮，Markdown 富文本视图和 HTML 预览在“结构变化但无可见文本差异”场景下也会给出可见的 fallback 高亮。
+- 结果：toast 已从接近实色的面板改成毛玻璃半透明风格，同时保留现有位置、尺寸和交互，不改变现有通知类型。
+- 结果：用户可见的“重载”术语已整体降级为“更新 / 确认”语义，更贴近非技术用户理解。
+- 验证：`pnpm exec vitest run src/features/editor/externalHighlight.test.ts src/features/editor/renderedExternalHighlight.test.ts src/features/editor/htmlPreviewDocument.test.ts src/shared/i18n/appI18n.test.ts src/shared/utils/appToastOverrides.test.ts` 通过；`pnpm lint` 通过；`pnpm test` 通过（37 个测试文件 / 238 个测试）；`pnpm build` 通过。
+- 说明：这次主要用自动化测试锁住了逻辑和文案回归；真正的桌面 GUI 视觉表现仍建议你本地快速点验一次“外部改文件后在 Markdown 富文本 / HTML 预览里是否出现高亮”和“toast 毛玻璃观感是否符合预期”。
+
+# 取消“重载后高亮”，回归提示式外部变更处理
+
+## Plan
+- [x] 删除 `App` 中的外部重载高亮状态、清除入口与视图传参
+- [x] 删除 Markdown / Source / HTML Preview 三条高亮实现链路及辅助模块
+- [x] 删除状态栏“清除变更高亮”文案与相关测试断言
+- [x] 运行 `pnpm lint`、定向 `vitest`、`pnpm test` 与 `pnpm build` 验证
+
+## Progress Notes
+- `src/App.tsx` 已移除 `externalHighlight` state、token、reload 后构造 payload 的逻辑，以及状态栏上的“清除变更高亮”入口；外部文件变化现在只走既有 toast + 模式切换反馈。
+- `MarkdownEditor` 已删除基于 ProseMirror plugin 的外部高亮 decorations；`SourceEditor` 已删除 CodeMirror 外部高亮扩展；`HtmlPreview` / `htmlPreviewDocument` 已删除 `<mark>` 注入、块级 fallback 和相关脚本样式。
+- 高亮辅助文件 `externalHighlight.ts`、`renderedExternalHighlight.ts` 及对应测试已移除；`StatusBar` 和 `appI18n` 也同步删掉了 `clearExternalHighlight*` 字段与断言，避免残留死接口。
+- 这次的取舍与前面调研一致：TipTap/ProseMirror 对这类临时视觉状态通常建议走 Decoration，而不是持久化 mark；但对“自动重载后瞬时提示”这种轻交互，Decoration 维护成本高于收益，因此改回更稳定的 toast-only 方案。
+
+## Review
+- 结果：应用已不再尝试在重载后对三种视图做差异高亮，外部文件变更统一回归为提示式处理。
+- 结果：`manual` / `auto` 两种外部变更模式、toast 文案和保存前冲突保护都保持不变，没有引入新的 review/diff UI。
+- 验证：`pnpm lint` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/shared/i18n/appI18n.test.ts src/features/file/fileService.test.ts src/features/file/fileReducer.test.ts src/shared/utils/reloadSession.test.ts` 通过；`pnpm test` 通过（35 个测试文件 / 230 个测试）；`pnpm build` 通过。
+- 说明：终端内无法直接点验桌面 WebView 的真实提示体验，建议你本地再补点验 3 个场景：clean + 手动确认、clean + 自动更新、dirty + 任意模式。
+
+# v0.2.5 Release Note 文档
+
+## Plan
+- [x] 对齐现有发布说明风格，并收敛本次 `v0.2.5` 的发布范围
+- [x] 撰写 `docs/release-notes-v0.2.5.md`，覆盖用户可感知的更新重点
+- [x] 在任务记录中补充本轮回顾，说明文案口径与未纳入内容
+
+## Review
+- 结果：已新增 [docs/release-notes-v0.2.5.md](/D:/MyProject/MDPad/docs/release-notes-v0.2.5.md)，延续仓库现有“短版发布说明”风格，但内容比 `v0.1.11` 更完整，便于直接用于 release 页面或发布帖。
+- 文案口径：本次优先写“用户可感知收益”，重点覆盖外部文件同步安全、刷新恢复、Markdown 编辑器稳定性、窗口/安装版可用性与轻量 UI 打磨。
+- 有意未纳入：这段时间里用于探索的临时高亮 / compare-review 方案没有写进 release note，因为它们已经被回退，不适合出现在对外版本说明里。
+- 说明：本次任务是文档撰写，没有新增代码逻辑，也未运行构建或测试；发布前若需要补充安装包 `SHA256`，建议在实际产物生成后再回填。
+
+# 推送 main 与发布 v0.2.5
+
+## Plan
+- [ ] 核对当前工作区改动范围、GitHub 发布前置条件与 `v0.2.5` 版本状态
+- [ ] 运行发布前验证，至少覆盖 `pnpm lint`、`pnpm test`、`pnpm build` 与安装包产物生成
+- [ ] 提交并推送当前 `main` 到 `origin/main`
+- [ ] 创建 `v0.2.5` tag / GitHub release，上传安装包并回填 release note 与 SHA256

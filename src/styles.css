@@ -79,11 +79,15 @@ body {
   --code-inline-bg: rgba(203, 213, 225, 0.7);
   --code-inline-fg: #be185d;
   --scrollbar-track: rgba(203, 213, 225, 0.84);
-  --scrollbar-thumb: rgba(100, 116, 139, 0.45);
-  --scrollbar-thumb-hover: rgba(71, 85, 105, 0.62);
+  --scrollbar-thumb: rgba(148, 163, 184, 0.48);
+  --scrollbar-thumb-hover: rgba(100, 116, 139, 0.56);
   --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 78%, var(--slate-200));
-  --code-scrollbar-thumb: rgba(100, 116, 139, 0.42);
-  --code-scrollbar-thumb-hover: rgba(71, 85, 105, 0.58);
+  --code-scrollbar-thumb: rgba(148, 163, 184, 0.46);
+  --code-scrollbar-thumb-hover: rgba(100, 116, 139, 0.54);
+  --toast-glass-bg: rgba(255, 255, 255, 0.7);
+  --toast-glass-border: rgba(148, 163, 184, 0.28);
+  --toast-glass-highlight: rgba(255, 255, 255, 0.24);
+  --toast-glass-shadow: 0 16px 30px rgba(15, 23, 42, 0.14);
   --shadow-elev: 0 18px 40px rgba(15, 23, 42, 0.14);
   --shadow-surface: 0 18px 36px rgba(15, 23, 42, 0.12);
 }
@@ -110,11 +114,15 @@ body {
   --code-inline-bg: rgba(51, 65, 85, 0.72);
   --code-inline-fg: #f9a8d4;
   --scrollbar-track: rgba(15, 23, 42, 0.95);
-  --scrollbar-thumb: rgba(100, 116, 139, 0.76);
-  --scrollbar-thumb-hover: rgba(148, 163, 184, 0.85);
+  --scrollbar-thumb: rgba(71, 85, 105, 0.82);
+  --scrollbar-thumb-hover: rgba(100, 116, 139, 0.88);
   --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 88%, var(--slate-950));
-  --code-scrollbar-thumb: color-mix(in srgb, var(--slate-400) 62%, transparent);
-  --code-scrollbar-thumb-hover: color-mix(in srgb, var(--slate-300) 74%, transparent);
+  --code-scrollbar-thumb: color-mix(in srgb, var(--slate-500) 72%, transparent);
+  --code-scrollbar-thumb-hover: color-mix(in srgb, var(--slate-400) 76%, transparent);
+  --toast-glass-bg: rgba(15, 23, 42, 0.7);
+  --toast-glass-border: rgba(148, 163, 184, 0.2);
+  --toast-glass-highlight: rgba(255, 255, 255, 0.08);
+  --toast-glass-shadow: 0 20px 36px rgba(0, 0, 0, 0.32);
   --shadow-elev: 0 22px 46px rgba(0, 0, 0, 0.42);
   --shadow-surface: 0 18px 36px rgba(0, 0, 0, 0.45);
 }
@@ -138,11 +146,11 @@ body {
   --link-color: #0b63b5;
   --link-hover: #084f90;
   --scrollbar-track: var(--slate-200);
-  --scrollbar-thumb: var(--slate-400);
-  --scrollbar-thumb-hover: var(--slate-500);
+  --scrollbar-thumb: var(--slate-300);
+  --scrollbar-thumb-hover: var(--slate-400);
   --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 88%, var(--slate-200));
-  --code-scrollbar-thumb: rgba(100, 116, 139, 0.46);
-  --code-scrollbar-thumb-hover: rgba(71, 85, 105, 0.62);
+  --code-scrollbar-thumb: rgba(148, 163, 184, 0.5);
+  --code-scrollbar-thumb-hover: rgba(100, 116, 139, 0.58);
   --shadow-elev: 0 10px 24px rgba(0, 0, 0, 0.18);
   --shadow-surface: 0 2px 8px rgba(0, 0, 0, 0.08);
   --editor-container-border: var(--slate-200);
@@ -167,11 +175,11 @@ body {
   --link-color: #8fc1ff;
   --link-hover: #c8e1ff;
   --scrollbar-track: var(--slate-800);
-  --scrollbar-thumb: var(--slate-500);
-  --scrollbar-thumb-hover: var(--slate-400);
+  --scrollbar-thumb: var(--slate-600);
+  --scrollbar-thumb-hover: var(--slate-500);
   --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 86%, var(--slate-900));
-  --code-scrollbar-thumb: color-mix(in srgb, var(--slate-400) 58%, transparent);
-  --code-scrollbar-thumb-hover: color-mix(in srgb, var(--slate-300) 70%, transparent);
+  --code-scrollbar-thumb: color-mix(in srgb, var(--slate-500) 68%, transparent);
+  --code-scrollbar-thumb-hover: color-mix(in srgb, var(--slate-400) 74%, transparent);
   --shadow-elev: 0 14px 30px rgba(0, 0, 0, 0.5);
   --shadow-surface: 0 6px 14px rgba(0, 0, 0, 0.4);
   --editor-container-border: var(--slate-700);
@@ -443,8 +451,8 @@ body {
 .titlebar-doc-name {
   display: block;
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: 400;
+  letter-spacing: 0;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -459,7 +467,7 @@ body {
   background: color-mix(in srgb, var(--editor-bg) 90%, transparent);
   color: var(--text-primary);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 400;
   padding: 4px 8px;
   outline: none;
 }
@@ -1827,6 +1835,7 @@ body {
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+
 
 .mdpad-editor pre {
   margin: 1.15rem 0 1.4rem;
@@ -3594,7 +3603,7 @@ body {
   justify-content: space-between;
   padding: 0 10px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0.01em;
 }
 
@@ -3803,7 +3812,7 @@ body {
 
 .app-root.ui-classic .titlebar-doc-name {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0;
 }
 

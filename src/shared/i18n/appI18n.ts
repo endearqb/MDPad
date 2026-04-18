@@ -1,5 +1,6 @@
 import type {
   AppLocale,
+  ExternalChangeMode,
   MarkdownTheme,
   SaveState
 } from "../types/doc";
@@ -67,7 +68,14 @@ export interface AppUiCopy {
     respectPageCssSizeLabel: string;
     respectPageCssSizeHint: string;
     widthOptions: Record<"mobile" | "tablet" | "desktop" | "wide" | "custom", string>;
-    phases: Record<"preparing" | "rendering" | "saving", string>;
+      phases: Record<"preparing" | "rendering" | "saving", string>;
+    };
+  externalChange: {
+    detected: string;
+    autoReloaded: string;
+    dirtyConflict: string;
+    saveConflict: string;
+    reloadAction: string;
   };
 }
 
@@ -96,7 +104,9 @@ export interface TopBarCopy {
 
 export interface StatusBarCopy {
   saveState: Record<SaveState, string>;
+  externalChangeModeNames: Record<ExternalChangeMode, string>;
   markdownThemeNames: Record<MarkdownTheme, string>;
+  toggleExternalChangeModeTitle: string;
   cycleMarkdownThemeAria: string;
   cycleMarkdownThemeTitle: string;
   selectMarkdownThemeAria: string;
@@ -139,6 +149,7 @@ export interface EditorCopy {
     relativeLinkRequiresSavedDocument: string;
     invalidMarkdownLinkTarget: string;
     openMarkdownLinkFailed: string;
+    syncContentFailed: string;
     readOnlyBlocked: string;
   };
   toc: {
@@ -363,6 +374,17 @@ const enCopy: AppCopy = {
         rendering: "Rendering pages…",
         saving: "Saving files…"
       }
+    },
+    externalChange: {
+      detected:
+        "This file changed outside MDPad. Update it to open the latest disk version.",
+      autoReloaded:
+        "This file changed outside MDPad and was updated to the latest disk version.",
+      dirtyConflict:
+        "This file changed on disk while you still have unsaved edits. Review it and update manually if needed.",
+      saveConflict:
+        "Save stopped because this file changed on disk. Update it or use Save As to avoid overwriting external edits.",
+      reloadAction: "Update Now"
     }
   },
   topBar: {
@@ -394,12 +416,17 @@ const enCopy: AppCopy = {
       unsaved: "Unsaved",
       error: "Save failed"
     },
+    externalChangeModeNames: {
+      prompt: "Manual Review",
+      auto: "Auto Update"
+    },
     markdownThemeNames: {
       default: "Default",
       notionish: "Notion",
       github: "GitHub",
       academic: "Academic"
     },
+    toggleExternalChangeModeTitle: "Toggle how MDPad handles external file changes",
     cycleMarkdownThemeAria: "Cycle markdown theme",
     cycleMarkdownThemeTitle: "Cycle markdown style",
     selectMarkdownThemeAria: "Select markdown style",
@@ -441,6 +468,7 @@ const enCopy: AppCopy = {
         "Please save this document first before opening relative markdown links.",
       invalidMarkdownLinkTarget: "This markdown link target is invalid.",
       openMarkdownLinkFailed: "Failed to open markdown link target.",
+      syncContentFailed: "Failed to sync editor content.",
       readOnlyBlocked: "Editor is read-only. Switch to editable mode first."
     },
     toc: {
@@ -673,6 +701,15 @@ const zhCopy: AppCopy = {
         rendering: "正在渲染页面…",
         saving: "正在保存文件…"
       }
+    },
+    externalChange: {
+      detected: "文件已在 MDPad 外部发生变化。点击立即更新以打开磁盘上的最新版本。",
+      autoReloaded: "文件已在 MDPad 外部发生变化，并已自动更新为磁盘上的最新版本。",
+      dirtyConflict:
+        "磁盘上的文件已变化，而当前还有未保存修改。请先确认，再手动更新。",
+      saveConflict:
+        "已停止保存，因为磁盘上的文件已变化。请先立即更新，或使用另存为避免覆盖外部修改。",
+      reloadAction: "立即更新"
     }
   },
   topBar: {
@@ -704,12 +741,17 @@ const zhCopy: AppCopy = {
       unsaved: "未保存",
       error: "保存失败"
     },
+    externalChangeModeNames: {
+      prompt: "手动确认",
+      auto: "自动更新"
+    },
     markdownThemeNames: {
       default: "默认",
       notionish: "Notion",
       github: "GitHub",
       academic: "学术"
     },
+    toggleExternalChangeModeTitle: "切换外部文件变更处理方式",
     cycleMarkdownThemeAria: "循环切换 Markdown 样式",
     cycleMarkdownThemeTitle: "循环切换 Markdown 样式",
     selectMarkdownThemeAria: "选择 Markdown 样式",
@@ -750,6 +792,7 @@ const zhCopy: AppCopy = {
         "\u8bf7\u5148\u4fdd\u5b58\u5f53\u524d\u6587\u6863\uff0c\u518d\u6253\u5f00\u76f8\u5bf9 Markdown \u94fe\u63a5\u3002",
       invalidMarkdownLinkTarget: "Markdown \u94fe\u63a5\u76ee\u6807\u65e0\u6548\u3002",
       openMarkdownLinkFailed: "\u6253\u5f00 Markdown \u94fe\u63a5\u76ee\u6807\u5931\u8d25\u3002",
+      syncContentFailed: "\u540c\u6b65\u7f16\u8f91\u5668\u5185\u5bb9\u5931\u8d25\u3002",
       readOnlyBlocked: "\u5f53\u524d\u4e3a\u53ea\u8bfb\u6a21\u5f0f\uff0c\u8bf7\u5148\u5207\u6362\u4e3a\u53ef\u7f16\u8f91\u3002"
     },
     toc: {

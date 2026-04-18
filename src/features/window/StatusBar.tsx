@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, CircleAlert, CircleDot, Loader2 } from "lucide-react";
 import type {
   AppLocale,
+  ExternalChangeMode,
   MarkdownTheme,
   SaveState,
   UiTheme
@@ -13,8 +14,10 @@ interface StatusBarProps {
   locale: AppLocale;
   copy: StatusBarCopy;
   saveState: SaveState;
+  externalChangeMode: ExternalChangeMode;
   charCount: number;
   markdownTheme: MarkdownTheme;
+  onToggleExternalChangeMode: () => void;
   onToggleMarkdownTheme: () => void;
   onSelectMarkdownTheme: (theme: MarkdownTheme) => void;
   uiTheme: UiTheme;
@@ -71,8 +74,10 @@ export default function StatusBar({
   locale,
   copy,
   saveState,
+  externalChangeMode,
   charCount,
   markdownTheme,
+  onToggleExternalChangeMode,
   onToggleMarkdownTheme,
   onSelectMarkdownTheme,
   uiTheme,
@@ -122,6 +127,14 @@ export default function StatusBar({
           <SaveStateIcon saveState={saveState} />
           <span>{copy.saveState[saveState]}</span>
         </span>
+        <button
+          className="statusbar-theme-switch"
+          onClick={onToggleExternalChangeMode}
+          title={copy.toggleExternalChangeModeTitle}
+          type="button"
+        >
+          {copy.externalChangeModeNames[externalChangeMode]}
+        </button>
         <button
           aria-label={copy.openSamplesAria}
           className="statusbar-theme-switch statusbar-help-btn"
