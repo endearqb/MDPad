@@ -607,7 +607,13 @@
 # 推送 main 与发布 v0.2.5
 
 ## Plan
-- [ ] 核对当前工作区改动范围、GitHub 发布前置条件与 `v0.2.5` 版本状态
-- [ ] 运行发布前验证，至少覆盖 `pnpm lint`、`pnpm test`、`pnpm build` 与安装包产物生成
-- [ ] 提交并推送当前 `main` 到 `origin/main`
-- [ ] 创建 `v0.2.5` tag / GitHub release，上传安装包并回填 release note 与 SHA256
+- [x] 核对当前工作区改动范围、GitHub 发布前置条件与 `v0.2.5` 版本状态
+- [x] 运行发布前验证，至少覆盖 `pnpm lint`、`pnpm test`、`pnpm build` 与安装包产物生成
+- [x] 提交并推送当前 `main` 到 `origin/main`
+- [x] 创建 `v0.2.5` tag / GitHub release，上传安装包并回填 release note 与 SHA256
+
+## Review
+- 结果：已将当前 `main` 以 commit `39676ea` 推送到 `origin/main`，并创建 GitHub release [v0.2.5](https://github.com/endearqb/MDPad/releases/tag/v0.2.5)。
+- 验证：发布前已运行 `pnpm lint`、`pnpm test`、`pnpm build`、`pnpm release:no-bump`；其中 `pnpm test` 通过 35 个测试文件 / 230 个测试，安装包已重新生成。
+- 安装包：已上传 `MDPad_0.2.5_x64-setup.exe`，最终 SHA256 为 `DC232A701FEEB7EE0CD228598A10C168F6354D70BD186FE9A0C45381C776F00B`。
+- 说明：中途发现“边打包边算哈希”会读到旧产物，因此已以最终生成的安装包和 GitHub 下载资产双重校验 SHA256，并同步修正文档口径。
