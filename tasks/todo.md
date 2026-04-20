@@ -4,7 +4,7 @@
 - [x] 盘点当前 `main` 工作区内待提交改动，整理适合写入本轮更新说明的高层级主题
 - [x] 按仓库规范在 `update/` 下新增本轮 `updatenote_yyyymmddhh.md`
 - [x] 运行主分支提交前验证，确认当前改动可安全提交与推送
-- [ ] 提交当前工作区改动并推送 `origin/main`
+- [x] 提交当前工作区改动并推送 `origin/main`
 
 ## Progress Notes
 - 已新增 [update/updatenote_2026042017.md](/D:/MyProject/MDPad/update/updatenote_2026042017.md)，把这轮待发布改动收敛为一份新的仓库内更新说明，重点覆盖 HTML 预览右键菜单中的 `Edit SVG / Edit Chart` 入口、SVG 草稿继承加固，以及 `HtmlPreview` 相关瘦身进展。
@@ -14,7 +14,7 @@
 ## Review
 - 结果：本轮 updatenote 已按仓库规范落到 `update/` 目录，并使用新的时间戳文件名，不会覆盖已有发布说明。
 - 结果：当前 `main` 工作区已经通过类型检查、全量测试与生产构建，具备直接提交并推送 GitHub 主分支的本地条件。
-- 说明：提交与推送完成后，需要把本节最后一项补勾，以保证任务记录与实际发布状态一致。
+- 说明：本节在提交与推送完成后应保持全勾选状态，避免任务记录和实际 Git 历史脱节。
 
 # 将 HTML 预览中的 SVG / Chart 编辑入口并入右键菜单
 
