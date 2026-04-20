@@ -11,17 +11,20 @@ import {
   extractInlineTextCommitFromPreviewMessage,
   extractReadOnlyBlockedFromPreviewMessage,
   extractSvgEditorRequestFromPreviewMessage,
+  extractSvgSelectionFrameFromPreviewMessage,
   extractSvgSelectionRequestFromPreviewMessage,
   findHtmlPreviewAnchorTarget,
   HTML_PREVIEW_HIDE_CHART_ACTION_MESSAGE_TYPE,
   HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
-  HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
   HTML_PREVIEW_MESSAGE_SOURCE,
+  HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
   HTML_PREVIEW_OPEN_EXTERNAL_MESSAGE_TYPE,
-  HTML_PREVIEW_SHOW_CHART_ACTION_MESSAGE_TYPE,
   HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
+  HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE,
+  HTML_PREVIEW_SHOW_CHART_ACTION_MESSAGE_TYPE,
+  HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE,
   HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE,
-  HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE
+  HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE
 } from "./htmlPreviewDocument";
 
 function extractPreviewHostScript(documentHtml: string): string {
@@ -461,7 +464,7 @@ describe("htmlPreviewDocument", () => {
     ).toBeNull();
   });
 
-  it("extracts preview context-menu coordinates relative to the iframe frame", () => {
+  it("extracts preview context-menu requests relative to the iframe frame", () => {
     const frameWindow = {} as WindowProxy;
     const expectedToken = "token-4";
 
@@ -481,7 +484,71 @@ describe("htmlPreviewDocument", () => {
       )
     ).toEqual({
       x: 224,
-      y: 156
+      y: 156,
+      context: {
+        kind: "none"
+      }
+    });
+
+    expect(
+      extractContextMenuPositionFromPreviewMessage(
+        {
+          type: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: expectedToken,
+          x: 12,
+          y: 18,
+          context: {
+            kind: "chart",
+            request: {
+              kind: "chart",
+              chartLocator: {
+                root: "body",
+                path: [0]
+              },
+              nextBindingRequired: false,
+              model: {
+                library: "chartjs",
+                labels: ["Q1"],
+                series: [
+                  {
+                    name: "Revenue",
+                    data: [12]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        expectedToken,
+        frameWindow,
+        frameWindow,
+        { left: 200, top: 120 }
+      )
+    ).toEqual({
+      x: 212,
+      y: 138,
+      context: {
+        kind: "chart",
+        request: {
+          kind: "chart",
+          chartLocator: {
+            root: "body",
+            path: [0]
+          },
+          nextBindingRequired: false,
+          model: {
+            library: "chartjs",
+            labels: ["Q1"],
+            series: [
+              {
+                name: "Revenue",
+                data: [12]
+              }
+            ]
+          }
+        }
+      }
     });
 
     expect(
@@ -492,6 +559,28 @@ describe("htmlPreviewDocument", () => {
           token: expectedToken,
           x: "24",
           y: 36
+        },
+        expectedToken,
+        frameWindow,
+        frameWindow,
+        { left: 200, top: 120 }
+      )
+    ).toBeNull();
+
+    expect(
+      extractContextMenuPositionFromPreviewMessage(
+        {
+          type: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: expectedToken,
+          x: 24,
+          y: 36,
+          context: {
+            kind: "svg",
+            request: {
+              kind: "chart"
+            }
+          }
         },
         expectedToken,
         frameWindow,
@@ -933,6 +1022,109 @@ describe("htmlPreviewDocument", () => {
       expect(runtime.postMessage).not.toHaveBeenCalledWith(
         expect.objectContaining({
           type: HTML_PREVIEW_HIDE_CHART_ACTION_MESSAGE_TYPE
+        }),
+        "*"
+      );
+    } finally {
+      chartRuntime.restore();
+      runtime.cleanup();
+    }
+  });
+
+  it("opens a plain context menu without edit actions on ordinary content", () => {
+    const runtime = setupPreviewHostScript('<p id="copy">Hello</p>');
+
+    try {
+      const paragraph = document.querySelector("#copy");
+      if (!(paragraph instanceof HTMLParagraphElement)) {
+        throw new Error("Missing ordinary context-menu target.");
+      }
+
+      paragraph.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 48,
+          clientY: 64
+        })
+      );
+
+      expect(runtime.postMessage).toHaveBeenCalledWith(
+        {
+          type: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "interactive-token",
+          x: 48,
+          y: 64,
+          context: {
+            kind: "none"
+          }
+        },
+        "*"
+      );
+    } finally {
+      runtime.cleanup();
+    }
+  });
+
+  it("includes chart edit context when right-clicking the actual chart canvas", () => {
+    const runtime = setupPreviewHostScript(
+      [
+        '<div id="chart-shell" data-mdpad-chart="chartjs" data-mdpad-chart-source="#chart-data">',
+        '  <canvas id="chart-canvas"></canvas>',
+        "</div>",
+        '<script type="application/json" id="chart-data">',
+        '{"library":"chartjs","chartType":"bar","labels":["Q1"],"series":[{"name":"Revenue","data":[12]}]}',
+        "</script>"
+      ].join("")
+    );
+    const chartRuntime = mockChartJsRuntime();
+
+    try {
+      const canvas = document.querySelector("#chart-canvas");
+      if (!(canvas instanceof HTMLCanvasElement)) {
+        throw new Error("Missing chart canvas.");
+      }
+
+      canvas.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 84,
+          clientY: 116
+        })
+      );
+
+      expect(runtime.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "interactive-token",
+          x: 84,
+          y: 116,
+          context: {
+            kind: "chart",
+            request: {
+              kind: "chart",
+              chartLocator: {
+                root: "body",
+                path: [0]
+              },
+              nextBindingRequired: false,
+              model: {
+                library: "chartjs",
+                chartType: "bar",
+                labels: ["Q1"],
+                series: [
+                  {
+                    name: "Revenue",
+                    type: "bar",
+                    data: [12]
+                  }
+                ]
+              }
+            }
+          }
         }),
         "*"
       );
@@ -1570,7 +1762,7 @@ describe("htmlPreviewDocument", () => {
     }
   });
 
-  it("shows an explicit Edit SVG action after selection and opens the full editor from that action", () => {
+  it("keeps the svg action outside the iframe document and reports selection frame updates", () => {
     const runtime = setupPreviewHostScript(
       '<div id="outside">Outside</div><svg id="diagram" viewBox="0 0 160 80"><rect id="box" x="12" y="10" width="60" height="28" fill="#fff" stroke="#222" /></svg>'
     );
@@ -1603,42 +1795,64 @@ describe("htmlPreviewDocument", () => {
       );
       const overlayRoot = document.querySelector("[data-mdpad-svg-selection-overlay]");
       const resizeHandle = document.querySelector('[data-mdpad-svg-handle="se"]');
-      expect(actionButton).toBeInstanceOf(HTMLButtonElement);
-      expect(actionButton?.textContent).toBe("Edit SVG");
+      expect(actionButton).toBeNull();
       expect(overlayRoot).toBeInstanceOf(HTMLDivElement);
       expect(resizeHandle).toBeInstanceOf(HTMLButtonElement);
-      expect(overlayRoot?.contains(actionButton as Node)).toBe(false);
       expect(overlayRoot?.contains(resizeHandle as Node)).toBe(false);
 
-      actionButton?.dispatchEvent(
-        new MouseEvent("click", {
-          bubbles: true,
-          cancelable: true,
-          button: 0
-        })
+      const selectionFrameCall = runtime.postMessage.mock.calls.find(
+        (entry) => entry[0]?.type === HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE
       );
-
-      const openEditorCall = runtime.postMessage.mock.calls.find(
-        (entry) => entry[0]?.type === HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE
+      const selectionCallIndex = runtime.postMessage.mock.calls.findIndex(
+        (entry) => entry[0]?.type === HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE
       );
-      expect(openEditorCall?.[0]?.request).toEqual(
+      const selectionFrameCallIndex = runtime.postMessage.mock.calls.findIndex(
+        (entry) => entry[0]?.type === HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE
+      );
+      expect(selectionCallIndex).toBeGreaterThanOrEqual(0);
+      expect(selectionFrameCallIndex).toBeGreaterThan(selectionCallIndex);
+      expect(selectionFrameCall?.[0]?.request).toEqual(
         expect.objectContaining({
-          kind: "svg-elements",
           svgLocator: {
             root: "body",
             path: [1]
           },
-          items: expect.arrayContaining([
-            expect.objectContaining({
-              locator: {
-                root: "body",
-                path: [1, 0]
-              },
-              tagName: "rect"
-            })
-          ])
+          selectedLocator: {
+            root: "body",
+            path: [1, 0]
+          },
+          clientRect: {
+            left: 12,
+            top: 10,
+            width: 60,
+            height: 28
+          }
         })
       );
+
+      expect(
+        extractSvgSelectionFrameFromPreviewMessage(
+          selectionFrameCall?.[0],
+          "interactive-token",
+          window,
+          window
+        )
+      ).toEqual({
+        svgLocator: {
+          root: "body",
+          path: [1]
+        },
+        selectedLocator: {
+          root: "body",
+          path: [1, 0]
+        },
+        clientRect: {
+          left: 12,
+          top: 10,
+          width: 60,
+          height: 28
+        }
+      });
 
       outsideElement.dispatchEvent(
         new MouseEvent("mousedown", {
@@ -1649,6 +1863,24 @@ describe("htmlPreviewDocument", () => {
       );
 
       expect(document.querySelector('[data-mdpad-svg-action="open-editor"]')).toBeNull();
+      const dismissFrameCall = [...runtime.postMessage.mock.calls].reverse().find(
+        (entry: unknown[]) =>
+          (entry[0] as { type?: string; request?: { clientRect?: unknown } } | undefined)
+            ?.type === HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE &&
+          (entry[0] as { request?: { clientRect?: unknown } } | undefined)?.request
+            ?.clientRect === null
+      );
+      expect(dismissFrameCall?.[0]?.request).toEqual({
+        svgLocator: {
+          root: "body",
+          path: [1]
+        },
+        selectedLocator: {
+          root: "body",
+          path: [1, 0]
+        },
+        clientRect: null
+      });
     } finally {
       runtime.cleanup();
     }
@@ -1690,6 +1922,189 @@ describe("htmlPreviewDocument", () => {
           type: HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE
         }),
         "*"
+      );
+    } finally {
+      runtime.cleanup();
+    }
+  });
+
+  it("includes svg edit context when right-clicking inside an inline svg", () => {
+    const runtime = setupPreviewHostScript(
+      '<svg id="diagram" viewBox="0 0 160 80"><rect id="box" x="12" y="10" width="60" height="28" fill="#fff" stroke="#222" /></svg>'
+    );
+
+    try {
+      const svgElement = document.querySelector("#diagram");
+      const rectElement = document.querySelector("#box");
+      if (!(svgElement instanceof SVGSVGElement) || !(rectElement instanceof SVGElement)) {
+        throw new Error("Missing svg context-menu test elements.");
+      }
+
+      mockSvgGeometry(svgElement, { x: 0, y: 0, width: 160, height: 80 });
+      mockSvgGeometry(rectElement, { x: 12, y: 10, width: 60, height: 28 });
+
+      svgElement.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 72,
+          clientY: 44
+        })
+      );
+
+      expect(runtime.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "interactive-token",
+          x: 72,
+          y: 44,
+          context: {
+            kind: "svg",
+            request: expect.objectContaining({
+              kind: "svg-elements",
+              svgLocator: {
+                root: "body",
+                path: [0]
+              },
+              viewBox: {
+                minX: 0,
+                minY: 0,
+                width: 160,
+                height: 80
+              },
+              items: [
+                expect.objectContaining({
+                  locator: {
+                    root: "body",
+                    path: [0, 0]
+                  },
+                  tagName: "rect",
+                  geometry: expect.objectContaining({
+                    x: 12,
+                    y: 10,
+                    width: 60,
+                    height: 28
+                  })
+                })
+              ]
+            })
+          }
+        }),
+        "*"
+      );
+    } finally {
+      runtime.cleanup();
+    }
+  });
+
+  it("reuses synced svg draft items in context-menu requests for the active svg", () => {
+    const runtime = setupPreviewHostScript(
+      '<svg id="diagram" viewBox="0 0 160 80"><rect id="box" x="12" y="10" width="60" height="28" fill="#fff" stroke="#222" /></svg>'
+    );
+
+    try {
+      const svgElement = document.querySelector("#diagram");
+      const rectElement = document.querySelector("#box");
+      if (!(svgElement instanceof SVGSVGElement) || !(rectElement instanceof SVGElement)) {
+        throw new Error("Missing synced svg context-menu test elements.");
+      }
+
+      mockSvgGeometry(svgElement, { x: 0, y: 0, width: 160, height: 80 });
+      mockSvgGeometry(rectElement, { x: 12, y: 10, width: 60, height: 28 });
+
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE,
+            source: HTML_PREVIEW_MESSAGE_SOURCE,
+            token: "interactive-token",
+            session: {
+              kind: "svg-elements",
+              svgLocator: {
+                root: "body",
+                path: [0]
+              },
+              svgMarkup:
+                '<svg id="diagram" viewBox="0 0 160 80"><rect id="box" x="12" y="10" width="60" height="28" fill="#fff" stroke="#222" /></svg>',
+              viewBox: {
+                minX: 0,
+                minY: 0,
+                width: 160,
+                height: 80
+              },
+              items: [
+                {
+                  locator: {
+                    root: "body",
+                    path: [0, 0]
+                  },
+                  tagName: "rect",
+                  text: "",
+                  bbox: {
+                    x: 12,
+                    y: 10,
+                    width: 48,
+                    height: 28
+                  },
+                  geometry: {
+                    x: 12,
+                    y: 10,
+                    width: 48,
+                    height: 28
+                  },
+                  style: {
+                    fill: "#fff",
+                    stroke: "#222",
+                    strokeWidth: null,
+                    opacity: null,
+                    fontSize: null,
+                    textAnchor: null,
+                    fontFamily: null,
+                    markerStart: null,
+                    markerEnd: null,
+                    strokeDasharray: null,
+                    strokeLinecap: null,
+                    strokeLinejoin: null
+                  },
+                  transform: null,
+                  canEditText: false
+                }
+              ],
+              selectedLocator: {
+                root: "body",
+                path: [0, 0]
+              }
+            }
+          }
+        })
+      );
+
+      svgElement.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 72,
+          clientY: 44
+        })
+      );
+
+      const contextMenuCall = runtime.postMessage.mock.calls.find(
+        (entry) => entry[0]?.type === HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE
+      );
+      expect(contextMenuCall?.[0]?.context).toEqual(
+        expect.objectContaining({
+          kind: "svg",
+          request: expect.objectContaining({
+            items: [
+              expect.objectContaining({
+                geometry: expect.objectContaining({
+                  width: 48
+                })
+              })
+            ]
+          })
+        })
       );
     } finally {
       runtime.cleanup();

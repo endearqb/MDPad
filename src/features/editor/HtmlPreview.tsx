@@ -16,10 +16,7 @@ import {
   applySvgPatch,
   type HtmlChartEditRequest,
   type HtmlSvgEditRequest,
-  type HtmlSvgPatch,
-  type HtmlSvgPatchItem,
-  type HtmlSvgSelectionRequest,
-  type SvgEditableItem
+  type HtmlSvgPatch
 } from "./htmlPreviewEdit";
 import {
   buildControlledHtmlPreviewDocument,
@@ -33,10 +30,25 @@ import {
   extractReadOnlyBlockedFromPreviewMessage,
   extractSvgEditorRequestFromPreviewMessage,
   extractSvgPreviewPatchFromPreviewMessage,
+  type HtmlPreviewContextMenuRequest,
+  type HtmlPreviewClientRect,
+  type HtmlSvgSelectionFrameRequest,
+  extractSvgSelectionFrameFromPreviewMessage,
   extractSvgSelectionRequestFromPreviewMessage,
-  HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE,
-  HTML_PREVIEW_MESSAGE_SOURCE
+  HTML_PREVIEW_MESSAGE_SOURCE,
+  HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE
 } from "./htmlPreviewDocument";
+import {
+  areLocatorPathsEqual,
+  areSvgItemsEqual,
+  buildSvgCanvasEditorSession,
+  buildSvgInlineSessionFromSelection,
+  buildSvgPatchFromSession,
+  cloneSvgItem,
+  mergeSvgPatchIntoItems,
+  type SvgCanvasEditorSession,
+  type SvgInlineSession
+} from "./htmlPreviewSvgSessions";
 
 interface HtmlPreviewProps {
   html: string;
@@ -54,162 +66,10 @@ interface PendingChartAction {
   y: number;
 }
 
-interface SvgInlineSession {
-  request: HtmlSvgEditRequest;
-  baseItems: SvgEditableItem[];
-  draftItems: SvgEditableItem[];
-  selectedLocator: number[];
-}
-
-type SvgCanvasEditorSession = SvgInlineSession;
-
-function locatorPathKey(path: number[]): string {
-  return path.join(",");
-}
-
-function areLocatorPathsEqual(left: number[] | null, right: number[] | null): boolean {
-  if (left === right) {
-    return true;
-  }
-  if (!left || !right || left.length !== right.length) {
-    return false;
-  }
-  return left.every((value, index) => value === right[index]);
-}
-
-function cloneSvgItem(item: SvgEditableItem): SvgEditableItem {
-  return JSON.parse(JSON.stringify(item)) as SvgEditableItem;
-}
-
-function areSvgItemsEqual(left: SvgEditableItem[], right: SvgEditableItem[]): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function mergeSvgPatchIntoItems(
-  items: SvgEditableItem[],
-  patch: HtmlSvgPatch
-): SvgEditableItem[] {
-  const nextItems = items.map((item) => cloneSvgItem(item));
-
-  patch.items.forEach((patchItem) => {
-    const targetIndex = nextItems.findIndex(
-      (candidate) => locatorPathKey(candidate.locator.path) === locatorPathKey(patchItem.locator.path)
-    );
-    if (targetIndex < 0) {
-      return;
-    }
-
-    const target = nextItems[targetIndex];
-    nextItems[targetIndex] = {
-      ...target,
-      text: typeof patchItem.text === "string" ? patchItem.text : target.text,
-      geometry: patchItem.geometry ? { ...target.geometry, ...patchItem.geometry } : target.geometry,
-      style: patchItem.style ? { ...target.style, ...patchItem.style } : target.style,
-      transform:
-        "transform" in patchItem ? patchItem.transform ?? null : target.transform
-    };
-  });
-
-  return nextItems;
-}
-
-function areSvgLocatorPathsEqual(
-  left: HtmlSvgEditRequest["svgLocator"],
-  right: HtmlSvgEditRequest["svgLocator"]
-): boolean {
-  return left.root === right.root && locatorPathKey(left.path) === locatorPathKey(right.path);
-}
-
-function buildSvgInlineSessionFromSelection(
-  request: HtmlSvgSelectionRequest
-): SvgInlineSession {
-  return {
-    request: {
-      kind: "svg-elements",
-      svgLocator: request.svgLocator,
-      svgMarkup: request.svgMarkup,
-      viewBox: request.viewBox,
-      items: request.items
-    },
-    baseItems: request.items.map((item) => cloneSvgItem(item)),
-    draftItems: request.items.map((item) => cloneSvgItem(item)),
-    selectedLocator: [...request.selectedLocator.path]
-  };
-}
-
-function buildSvgCanvasEditorSession(
-  request: HtmlSvgEditRequest,
-  currentInlineSession: SvgInlineSession | null
-): SvgCanvasEditorSession {
-  if (
-    currentInlineSession &&
-    areSvgLocatorPathsEqual(currentInlineSession.request.svgLocator, request.svgLocator)
-  ) {
-    return {
-      request: {
-        ...currentInlineSession.request,
-        svgMarkup: request.svgMarkup,
-        viewBox: request.viewBox,
-        items: currentInlineSession.draftItems.map((item) => cloneSvgItem(item))
-      },
-      baseItems: currentInlineSession.baseItems.map((item) => cloneSvgItem(item)),
-      draftItems: currentInlineSession.draftItems.map((item) => cloneSvgItem(item)),
-      selectedLocator: [...currentInlineSession.selectedLocator]
-    };
-  }
-
-  return {
-    request: {
-      ...request,
-      items: request.items.map((item) => cloneSvgItem(item))
-    },
-    baseItems: request.items.map((item) => cloneSvgItem(item)),
-    draftItems: request.items.map((item) => cloneSvgItem(item)),
-    selectedLocator: request.items[0] ? [...request.items[0].locator.path] : []
-  };
-}
-
-function buildSvgPatchItem(
-  baseItem: SvgEditableItem,
-  draftItem: SvgEditableItem
-): HtmlSvgPatchItem | null {
-  const hasTextChange = draftItem.text !== baseItem.text;
-  const geometryChanged =
-    JSON.stringify(draftItem.geometry) !== JSON.stringify(baseItem.geometry);
-  const styleChanged = JSON.stringify(draftItem.style) !== JSON.stringify(baseItem.style);
-  const transformChanged =
-    JSON.stringify(draftItem.transform) !== JSON.stringify(baseItem.transform);
-
-  if (!hasTextChange && !geometryChanged && !styleChanged && !transformChanged) {
-    return null;
-  }
-
-  return {
-    locator: draftItem.locator,
-    tagName: draftItem.tagName,
-    ...(hasTextChange ? { text: draftItem.text } : {}),
-    ...(geometryChanged ? { geometry: draftItem.geometry } : {}),
-    ...(styleChanged ? { style: draftItem.style } : {}),
-    ...(transformChanged ? { transform: draftItem.transform ?? null } : {})
-  };
-}
-
-function buildSvgPatchFromSession(session: SvgInlineSession): HtmlSvgPatch {
-  const items = session.draftItems
-    .map((draftItem) => {
-      const baseItem =
-        session.baseItems.find(
-          (candidate) =>
-            locatorPathKey(candidate.locator.path) === locatorPathKey(draftItem.locator.path)
-        ) ?? draftItem;
-      return buildSvgPatchItem(baseItem, draftItem);
-    })
-    .filter((item): item is HtmlSvgPatchItem => item !== null);
-
-  return {
-    kind: "svg-elements",
-    items
-  };
+interface PendingSvgAction {
+  x: number;
+  y: number;
+  clientRect: HtmlPreviewClientRect;
 }
 
 export default function HtmlPreview({
@@ -221,6 +81,7 @@ export default function HtmlPreview({
   onReadOnlyInteraction,
   onRequestExport
 }: HtmlPreviewProps) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const instanceTokenRef = useRef<string>(createHtmlPreviewInstanceToken());
   const htmlRef = useRef(html);
@@ -229,15 +90,16 @@ export default function HtmlPreview({
   const onReadOnlyInteractionRef = useRef(onReadOnlyInteraction);
   const svgInlineSessionRef = useRef<SvgInlineSession | null>(null);
   const svgCanvasEditorSessionRef = useRef<SvgCanvasEditorSession | null>(null);
-  const [contextMenuPosition, setContextMenuPosition] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
+  const pendingSvgFrameRef = useRef<HtmlSvgSelectionFrameRequest | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] =
+    useState<HtmlPreviewContextMenuRequest | null>(null);
   const [svgInlineSession, setSvgInlineSession] = useState<SvgInlineSession | null>(null);
   const [svgCanvasEditorSession, setSvgCanvasEditorSession] =
     useState<SvgCanvasEditorSession | null>(null);
   const [pendingChartAction, setPendingChartAction] =
     useState<PendingChartAction | null>(null);
+  const [pendingSvgAction, setPendingSvgAction] =
+    useState<PendingSvgAction | null>(null);
   const [chartEditorRequest, setChartEditorRequest] =
     useState<HtmlChartEditRequest | null>(null);
 
@@ -258,22 +120,108 @@ export default function HtmlPreview({
   }, [onReadOnlyInteraction]);
 
   useEffect(() => {
-    svgInlineSessionRef.current = svgInlineSession;
-  }, [svgInlineSession]);
-
-  useEffect(() => {
     svgCanvasEditorSessionRef.current = svgCanvasEditorSession;
   }, [svgCanvasEditorSession]);
+
+  const setSvgInlineSessionState = useCallback(
+    (
+      nextSessionOrUpdater:
+        | SvgInlineSession
+        | null
+        | ((current: SvgInlineSession | null) => SvgInlineSession | null)
+    ) => {
+      setSvgInlineSession((current) => {
+        const nextSession =
+          typeof nextSessionOrUpdater === "function"
+            ? (
+                nextSessionOrUpdater as (
+                  current: SvgInlineSession | null
+                ) => SvgInlineSession | null
+              )(current)
+            : nextSessionOrUpdater;
+        svgInlineSessionRef.current = nextSession;
+        return nextSession;
+      });
+    },
+    []
+  );
+
+  const computePendingSvgAction = useCallback(
+    (clientRect: HtmlPreviewClientRect): PendingSvgAction | null => {
+      const frameRect = iframeRef.current?.getBoundingClientRect();
+      const shellRect = shellRef.current?.getBoundingClientRect();
+      if (!frameRect || !shellRect) {
+        return null;
+      }
+
+      const relativeLeft = frameRect.left - shellRect.left + clientRect.left;
+      const relativeTop = frameRect.top - shellRect.top + clientRect.top;
+
+      return {
+        x: Math.max(relativeLeft + clientRect.width - 96, 8),
+        y: Math.max(relativeTop - 36, 8),
+        clientRect
+      };
+    },
+    []
+  );
+
+  const applySvgSelectionFrame = useCallback(
+    (
+      frameRequest: HtmlSvgSelectionFrameRequest,
+      sessionOverride?: SvgInlineSession | null
+    ): boolean => {
+      if (!isEditableRef.current) {
+        pendingSvgFrameRef.current = null;
+        setPendingSvgAction(null);
+        return true;
+      }
+
+      const activeSession = sessionOverride ?? svgInlineSessionRef.current;
+      if (!activeSession) {
+        pendingSvgFrameRef.current = frameRequest;
+        return false;
+      }
+
+      if (
+        !areLocatorPathsEqual(
+          activeSession.selectedLocator,
+          frameRequest.selectedLocator.path
+        )
+      ) {
+        pendingSvgFrameRef.current = null;
+        setPendingSvgAction(null);
+        return false;
+      }
+
+      if (!frameRequest.clientRect) {
+        pendingSvgFrameRef.current = null;
+        setPendingSvgAction(null);
+        return true;
+      }
+
+      const nextAction = computePendingSvgAction(frameRequest.clientRect);
+      if (!nextAction) {
+        pendingSvgFrameRef.current = frameRequest;
+        setPendingSvgAction(null);
+        return false;
+      }
+
+      pendingSvgFrameRef.current = null;
+      setPendingSvgAction(nextAction);
+      return true;
+    },
+    [computePendingSvgAction]
+  );
 
   const srcDoc = useMemo(() => {
     return buildControlledHtmlPreviewDocument({
       html,
       documentPath,
       instanceToken: instanceTokenRef.current,
-      isEditable,
-      svgEditActionLabel: copy?.htmlPreview.svgEditAction
+      isEditable
     });
-  }, [copy?.htmlPreview.svgEditAction, documentPath, html, isEditable]);
+  }, [documentPath, html, isEditable]);
 
   useEffect(() => {
     const frameWindow = iframeRef.current?.contentWindow ?? null;
@@ -342,8 +290,6 @@ export default function HtmlPreview({
         iframeRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 }
       );
       if (nextContextMenuPosition) {
-        setPendingChartAction(null);
-        setSvgCanvasEditorSession(null);
         setContextMenuPosition(nextContextMenuPosition);
         return;
       }
@@ -405,14 +351,47 @@ export default function HtmlPreview({
       if (svgSelectionRequest) {
         if (!isEditableRef.current) {
           setPendingChartAction(null);
+          setPendingSvgAction(null);
+          pendingSvgFrameRef.current = null;
           onReadOnlyInteractionRef.current?.();
           return;
         }
 
+        const nextInlineSession = buildSvgInlineSessionFromSelection(svgSelectionRequest);
         setChartEditorRequest(null);
         setPendingChartAction(null);
+        setPendingSvgAction(null);
         setContextMenuPosition(null);
-        setSvgInlineSession(buildSvgInlineSessionFromSelection(svgSelectionRequest));
+        setSvgInlineSessionState(nextInlineSession);
+        const pendingFrame = pendingSvgFrameRef.current;
+        if (
+          pendingFrame &&
+          areLocatorPathsEqual(
+            nextInlineSession.selectedLocator,
+            pendingFrame.selectedLocator.path
+          )
+        ) {
+          applySvgSelectionFrame(pendingFrame, nextInlineSession);
+        } else {
+          pendingSvgFrameRef.current = null;
+        }
+        return;
+      }
+
+      const svgSelectionFrameRequest = extractSvgSelectionFrameFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (svgSelectionFrameRequest) {
+        if (!isEditableRef.current) {
+          pendingSvgFrameRef.current = null;
+          setPendingSvgAction(null);
+          return;
+        }
+
+        applySvgSelectionFrame(svgSelectionFrameRequest);
         return;
       }
 
@@ -425,12 +404,14 @@ export default function HtmlPreview({
       if (svgEditorRequest) {
         if (!isEditableRef.current) {
           setPendingChartAction(null);
+          setPendingSvgAction(null);
           onReadOnlyInteractionRef.current?.();
           return;
         }
 
         setChartEditorRequest(null);
         setPendingChartAction(null);
+        setPendingSvgAction(null);
         setContextMenuPosition(null);
         setSvgCanvasEditorSession((current) =>
           buildSvgCanvasEditorSession(
@@ -448,7 +429,7 @@ export default function HtmlPreview({
         frameWindow
       );
       if (svgPreviewPatch) {
-        setSvgInlineSession((current) => {
+        setSvgInlineSessionState((current) => {
           if (!current) {
             return current;
           }
@@ -479,7 +460,9 @@ export default function HtmlPreview({
           frameWindow
         )
       ) {
-        setSvgInlineSession(null);
+        pendingSvgFrameRef.current = null;
+        setPendingSvgAction(null);
+        setSvgInlineSessionState(null);
         return;
       }
 
@@ -495,8 +478,10 @@ export default function HtmlPreview({
           return;
         }
 
-        setSvgInlineSession(null);
+        pendingSvgFrameRef.current = null;
+        setSvgInlineSessionState(null);
         setSvgCanvasEditorSession(null);
+        setPendingSvgAction(null);
         setContextMenuPosition(null);
         setPendingChartAction(chartAction);
       }
@@ -515,6 +500,37 @@ export default function HtmlPreview({
   const closePendingChartAction = useCallback(() => {
     setPendingChartAction(null);
   }, []);
+
+  const openChartEditor = useCallback((request: HtmlChartEditRequest) => {
+    setPendingChartAction(null);
+    setContextMenuPosition(null);
+    setChartEditorRequest(request);
+  }, []);
+
+  const openSvgCanvasEditorFromRequest = useCallback(
+    (request: HtmlSvgEditRequest) => {
+      setChartEditorRequest(null);
+      setPendingChartAction(null);
+      setPendingSvgAction(null);
+      setContextMenuPosition(null);
+      setSvgCanvasEditorSession((current) =>
+        buildSvgCanvasEditorSession(
+          request,
+          svgInlineSessionRef.current ?? svgCanvasEditorSessionRef.current ?? current
+        )
+      );
+    },
+    []
+  );
+
+  const openSvgCanvasEditorFromInline = useCallback(() => {
+    const currentInlineSession = svgInlineSessionRef.current;
+    if (!currentInlineSession) {
+      return;
+    }
+
+    openSvgCanvasEditorFromRequest(currentInlineSession.request);
+  }, [openSvgCanvasEditorFromRequest]);
 
   useEffect(() => {
     if (!contextMenuPosition) {
@@ -586,16 +602,26 @@ export default function HtmlPreview({
           onHtmlChangeRef.current?.(nextHtml);
         }
         setSvgCanvasEditorSession(null);
-        setSvgInlineSession(null);
+        pendingSvgFrameRef.current = null;
+        setSvgInlineSessionState(null);
       } catch (error) {
         console.error("Failed to apply inline SVG preview edit.", error);
       }
     },
-    [svgCanvasEditorSession, svgInlineSession]
+    [setSvgInlineSessionState, svgCanvasEditorSession, svgInlineSession]
   );
+  const contextMenuChartRequest =
+    contextMenuPosition?.context.kind === "chart"
+      ? contextMenuPosition.context.request
+      : null;
+  const contextMenuSvgRequest =
+    contextMenuPosition?.context.kind === "svg"
+      ? contextMenuPosition.context.request
+      : null;
 
   return (
     <div
+      ref={shellRef}
       className={[
         "html-preview-shell",
         svgCanvasEditorSession ? "has-inline-svg-inspector" : ""
@@ -615,8 +641,7 @@ export default function HtmlPreview({
         <button
           className="html-preview-chart-action"
           onClick={() => {
-            setPendingChartAction(null);
-            setChartEditorRequest(pendingChartAction.request);
+            openChartEditor(pendingChartAction.request);
           }}
           style={{
             left: `${pendingChartAction.x}px`,
@@ -628,7 +653,27 @@ export default function HtmlPreview({
         </button>
       ) : null}
 
-      {contextMenuPosition && copy?.contextMenu && onRequestExport ? (
+      {copy &&
+      isEditable &&
+      svgInlineSession &&
+      pendingSvgAction &&
+      !svgCanvasEditorSession ? (
+        <button
+          className="html-preview-svg-action"
+          onClick={openSvgCanvasEditorFromInline}
+          style={{
+            left: `${pendingSvgAction.x}px`,
+            top: `${pendingSvgAction.y}px`
+          }}
+          type="button"
+        >
+          {copy.htmlPreview.svgEditAction}
+        </button>
+      ) : null}
+
+      {contextMenuPosition &&
+      copy?.contextMenu &&
+      (onRequestExport || contextMenuPosition.context.kind !== "none") ? (
         <div
           aria-label={copy.contextMenu.ariaLabel}
           className="editor-context-menu html-preview-context-menu"
@@ -638,20 +683,46 @@ export default function HtmlPreview({
             top: `${contextMenuPosition.y}px`
           }}
         >
-          <button
-            className="editor-context-menu-item"
-            onClick={() => {
-              closeContextMenu();
-              onRequestExport({
-                scope: "document",
-                format: "pdf"
-              });
-            }}
-            role="menuitem"
-            type="button"
-          >
-            {copy.contextMenu.exportDocumentPdf}
-          </button>
+          {onRequestExport ? (
+            <button
+              className="editor-context-menu-item"
+              onClick={() => {
+                closeContextMenu();
+                onRequestExport({
+                  scope: "document",
+                  format: "pdf"
+                });
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {copy.contextMenu.exportDocumentPdf}
+            </button>
+          ) : null}
+          {contextMenuChartRequest ? (
+            <button
+              className="editor-context-menu-item"
+              onClick={() => {
+                openChartEditor(contextMenuChartRequest);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {copy.htmlPreview.chartEditAction}
+            </button>
+          ) : null}
+          {contextMenuSvgRequest ? (
+            <button
+              className="editor-context-menu-item"
+              onClick={() => {
+                openSvgCanvasEditorFromRequest(contextMenuSvgRequest);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {copy.htmlPreview.svgEditAction}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -659,9 +730,12 @@ export default function HtmlPreview({
         <SvgTextCanvasEditor
           copy={copy}
           onApply={applySvgInlineSession}
-          onCancel={() => setSvgCanvasEditorSession(null)}
+          onCancel={() => {
+            setPendingSvgAction(null);
+            setSvgCanvasEditorSession(null);
+          }}
           onItemsChange={(nextItems) => {
-            setSvgInlineSession((current) =>
+            setSvgInlineSessionState((current) =>
               current
                 ? areSvgItemsEqual(current.draftItems, nextItems)
                   ? current
@@ -683,7 +757,7 @@ export default function HtmlPreview({
             );
           }}
           onSelectedLocatorPathChange={(nextPath) => {
-            setSvgInlineSession((current) =>
+            setSvgInlineSessionState((current) =>
               current
                 ? areLocatorPathsEqual(current.selectedLocator, nextPath)
                   ? current

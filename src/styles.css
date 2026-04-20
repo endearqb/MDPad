@@ -613,7 +613,8 @@ body {
   width: calc(100% - 320px);
 }
 
-.html-preview-chart-action {
+.html-preview-chart-action,
+.html-preview-svg-action {
   position: absolute;
   z-index: 12;
   left: 0;
@@ -634,7 +635,9 @@ body {
 }
 
 .html-preview-chart-action:hover,
-.html-preview-chart-action:focus-visible {
+.html-preview-chart-action:focus-visible,
+.html-preview-svg-action:hover,
+.html-preview-svg-action:focus-visible {
   background: color-mix(in srgb, var(--hover-soft) 74%, transparent);
   border-color: color-mix(in srgb, var(--slash-menu-border) 82%, transparent);
   outline: none;
@@ -1871,7 +1874,8 @@ body {
   border-radius: 6px;
 }
 
-.app-root.ui-classic .html-preview-chart-action {
+.app-root.ui-classic .html-preview-chart-action,
+.app-root.ui-classic .html-preview-svg-action {
   border-radius: 8px;
 }
 

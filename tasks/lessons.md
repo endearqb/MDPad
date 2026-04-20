@@ -307,3 +307,8 @@
 - 不要把真正可交互的按钮或拖拽手柄放在 `pointer-events: none` 的全屏 overlay 下面，再指望子节点用 `pointer-events: auto` 在所有 WebView/Chromium 环境里都稳定恢复命中。
 - 若功能在 JSDOM 单测中正常、安装包里却“可见但点不动”，优先怀疑 CSS hit-testing 结构问题；JSDOM 的 `dispatchEvent` 不会模拟真实浏览器的命中测试。
 - 对这类 overlay 交互，最稳的结构是“视觉层透传 + 交互控件独立挂载到 body”，而不是继续在同一个透传根节点里微调事件类型。
+
+## 2026-04-20 Parent-layer SVG Actions
+- 如果 iframe / WebView 内的交互入口连续两轮都在真实安装包里不稳定，优先把入口上移到父层宿主渲染，而不是继续在 iframe 内追逐命中细节。
+- 父层浮动动作按钮要配一条轻量位置同步消息（例如 `selection-frame`），只传当前选中元素的 `clientRect`，不要把完整编辑请求和可视定位耦在同一协议里。
+- 超长文件治理要优先切“纯数据 helper”这类低风险模块。像 `HtmlPreview` 的 session 构建、patch 合并就很适合先外提，能先减职责，再决定是否继续拆 UI 和宿主脚本。

@@ -1,3 +1,42 @@
+# 编写 updatenote 并推送 GitHub main（2026-04-20 17:30）
+
+## Plan
+- [x] 盘点当前 `main` 工作区内待提交改动，整理适合写入本轮更新说明的高层级主题
+- [x] 按仓库规范在 `update/` 下新增本轮 `updatenote_yyyymmddhh.md`
+- [x] 运行主分支提交前验证，确认当前改动可安全提交与推送
+- [ ] 提交当前工作区改动并推送 `origin/main`
+
+## Progress Notes
+- 已新增 [update/updatenote_2026042017.md](/D:/MyProject/MDPad/update/updatenote_2026042017.md)，把这轮待发布改动收敛为一份新的仓库内更新说明，重点覆盖 HTML 预览右键菜单中的 `Edit SVG / Edit Chart` 入口、SVG 草稿继承加固，以及 `HtmlPreview` 相关瘦身进展。
+- 主分支发布前验证已完成：`pnpm exec tsc --noEmit` 通过，`pnpm test` 通过（41 个测试文件 / 303 个测试），`pnpm build` 通过。
+- 当前分支仍为 `main`，工作区内待提交内容包含编辑器代码、测试、`tasks/` 记录与多份 `update/` 文档；本轮提交会按用户要求整体提交并直接推送到 `origin/main`。
+
+## Review
+- 结果：本轮 updatenote 已按仓库规范落到 `update/` 目录，并使用新的时间戳文件名，不会覆盖已有发布说明。
+- 结果：当前 `main` 工作区已经通过类型检查、全量测试与生产构建，具备直接提交并推送 GitHub 主分支的本地条件。
+- 说明：提交与推送完成后，需要把本节最后一项补勾，以保证任务记录与实际发布状态一致。
+
+# 将 HTML 预览中的 SVG / Chart 编辑入口并入右键菜单
+
+## Plan
+- [x] 扩展 `htmlPreviewDocument` 的右键菜单消息载荷，加入 `none/chart/svg` 上下文并在 SVG/Chart 命中时附带编辑请求
+- [x] 升级 `HtmlPreview` 的右键菜单状态与渲染逻辑，在保留浮动按钮的前提下追加 `编辑 SVG / 编辑图表` 菜单项
+- [x] 补充 `HtmlPreview` / `htmlPreviewDocument` 回归测试，覆盖空白区域、chart、inline SVG 与草稿继承场景
+- [x] 运行定向 `vitest` 与 `tsc --noEmit` 验证，并回填 Progress Notes / Review
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 现在会在 `open-context-menu` 消息中携带 `context`，并按 `none/chart/svg` 三种情况附带对应编辑请求；右键命中 chart 表面时会发送纯 `HtmlChartEditRequest`，右键命中 inline SVG 任意区域时会基于当前 DOM 重新收集完整 `HtmlSvgEditRequest`。
+- 同一宿主脚本里新增了 `buildSvgEditorRequest(...)`，让双击打开完整 SVG 编辑器和右键菜单入口共用同一份采集逻辑；这样当父层通过 `sync-svg-session` 把 inline draft 回灌到 iframe 后，右键菜单拿到的也是最新草稿，而不是初始源码快照。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 的右键菜单状态已升级为“坐标 + 上下文请求”，并新增菜单内的 `Edit Chart` / `Edit SVG` 项；点击这些菜单项会直接复用现有 `ChartDataEditor` / `SvgTextCanvasEditor` 打开链路。
+- 这次明确保留了原有浮动按钮：右键菜单打开时不再顺手清掉 `pendingChartAction` 或 `pendingSvgAction`，因此 `Edit Chart` / `Edit SVG` 浮动入口和右键菜单可以并存，用户可以任选其一进入编辑器。
+- [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 新增了右键普通区域只显示导出项、chart 上下文菜单打开图表编辑器、svg 上下文菜单打开 SVG 编辑器并继承 inline draft，以及“菜单打开后浮动 chart 按钮仍可继续使用”的回归；[src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 则补上了菜单 payload 解析、chart/svg/普通区域的宿主右键消息，以及同步 SVG 草稿后右键菜单仍会复用草稿的断言。
+
+## Review
+- 结果：HTML 预览里的 SVG / Chart 现在有两条并行入口。用户既可以继续使用浮动 `Edit SVG` / `Edit Chart` 按钮，也可以直接在右键菜单里进入对应编辑器，不需要先触发单独的浮动按钮显示链路。
+- 结果：SVG 右键菜单请求会复用 iframe 当前 DOM，因此不会把已经存在的 inline draft 覆盖回初始值；对于同一 SVG，右键进入完整编辑器仍然能继承刚刚在轻编辑里拖动 / resize 过的草稿。
+- 结果：这次没有引入新的对外 API，也没有改动 SVG/Chart 编辑器本体，只是在 HTML preview iframe 与父层之间扩展了内部上下文菜单消息协议。
+- 验证：`pnpm vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（3 个测试文件 / 53 个测试）；`pnpm exec tsc --noEmit` 通过。
+
 # 编写 updatenote 并推送 main
 
 ## Plan
@@ -15,6 +54,29 @@
 - 结果：本轮发布说明已补齐到仓库规范要求的位置和命名规则下，后续查看版本演进时不需要再从 `tasks/todo.md` 的过程记录里反向提炼。
 - 结果：当前 `main` 工作区已经通过类型检查、全量测试和生产构建，具备提交并推送到 `origin/main` 的本地条件。
 - 说明：本次提交会一并包含当前工作区里已有的功能改动、测试、版本同步、文档记录与 `update/` 历史说明文件，不会只提交单独的 updatenote。
+
+# 修复 Edit SVG 按钮不可点击并启动超长文件瘦身
+
+## Plan
+- [x] 将 `Edit SVG` 入口从 iframe 宿主迁到父层 `HtmlPreview`，绕开安装包中的 iframe/WebView 点击命中不稳定问题
+- [x] 为 SVG 选中态新增轻量 `selection-frame` 消息，同步当前选中元素在 iframe 内的可视位置，供父层按钮定位使用
+- [x] 保持现有轻编辑 -> 完整编辑器链路、草稿继承、双击快捷打开与最小 patch 保存不回退
+- [x] 启动 `HtmlPreview` 相关瘦身，抽出 SVG session helper，减少单文件职责堆积
+- [x] 运行类型检查、相关测试、生产构建与桌面打包构建，并回填任务记录 / 经验 / 更新说明
+
+## Progress Notes
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 现在正式消费新的 `svg-selection-frame` 消息，并在父层 `html-preview-shell` 上渲染 `Edit SVG` 浮动按钮；按钮点击后直接用当前 `svgInlineSession.draftItems` 打开 `SvgTextCanvasEditor`，不再依赖 iframe 内按钮点击成功与否。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已移除 iframe 内的 `data-mdpad-svg-action="open-editor"` 按钮，只保留 SVG 轻编辑选中框、resize handle、双击快捷打开与 patch 回传；同时新增 `HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE` 与对应位置同步消息。
+- 同一文件现已在选中、拖动 / resize 重绘、dismiss 选择时持续上报 `clientRect`，父层会结合 iframe 与 shell 的 `getBoundingClientRect()` 计算外层按钮锚点位置。
+- 为了让 `HtmlPreview.tsx` 开始瘦身，我把 SVG inline/canvas session 的构建、patch 合并和差异提取 helper 抽到了新文件 [src/features/editor/htmlPreviewSvgSessions.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewSvgSessions.ts)；这次先落地第一刀，把原文件里最明显的一组纯数据逻辑拆出去。
+- [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 现已改为覆盖“父层出现 `Edit SVG` 按钮 -> 点击打开完整编辑器 -> 继承 inline draft”的真实主链；[src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 则改为断言 iframe 文档内不再渲染 `Edit SVG` 按钮，而是发送 `selection-frame` 消息并保留双击打开完整编辑器的兜底路径。
+- 我额外执行了一次 `pnpm tauri:build`，确认修复能够进入桌面安装包构建链路；构建脚本仍会自动把版本号 bump 到 `0.2.7`，所以我在验证后已把 [package.json](/D:/MyProject/MDPad/package.json)、[src-tauri/Cargo.toml](/D:/MyProject/MDPad/src-tauri/Cargo.toml)、[src-tauri/tauri.conf.json](/D:/MyProject/MDPad/src-tauri/tauri.conf.json) 和 [src-tauri/Cargo.lock](/D:/MyProject/MDPad/src-tauri/Cargo.lock) 恢复回仓库原本的 `0.2.6`。
+
+## Review
+- 结果：`Edit SVG` 现在不再依赖 iframe 内可点击控件，而是由父层 `HtmlPreview` 直接渲染和接管；这条链路对安装包/WebView 更稳，也自然保留了键盘与宿主层事件控制空间。
+- 结果：轻编辑草稿继承没有回退。用户仍然可以先在预览里拖动 / resize / 轻编辑，再从父层 `Edit SVG` 进入完整编辑器继续精修。
+- 结果：超长文件瘦身本轮先在 `HtmlPreview` 相关链路落地了第一刀，已经把 SVG session helper 外提成独立模块；`htmlPreviewDocument.ts` / `MarkdownEditor.tsx` / `App.tsx` 的更大拆分蓝图仍应继续推进，但这次没有硬拆出高风险宿主脚本模块。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（3 个测试文件 / 45 个测试）；`pnpm build` 通过；`pnpm tauri:build` 通过并产出安装包，随后已恢复构建脚本自动 bump 的版本号文件。
 
 # 修复安装包中 Edit SVG 按钮仍然无效
 
@@ -1007,3 +1069,21 @@
 - 结果：复杂表格和非安全导出场景继续走保守回退，没有为了“全都导出成 Markdown”去引入潜在有损转换；这和本轮方案里“宁可保守也不要误伤”的目标一致。
 - 验证：`pnpm exec vitest run src/features/editor/clipboard/handlers/textMarkdown.test.ts src/features/editor/clipboard/pipeline.test.ts src/features/editor/markdownExport.test.ts src/features/editor/markdownImageSyntax.test.ts src/features/editor/markdownCodec.test.ts` 通过（5 个测试文件 / 74 个测试）；`pnpm build` 通过。
 - 说明：当前工作区本来就有其他用户/历史任务的未提交改动与未跟踪文件；本次只增量修改了 Markdown 剪贴板相关代码与测试，以及本节任务记录，没有回退这些现有变更。
+
+# 修复 HTML 预览中 SVG「编辑 SVG」按钮缺失
+
+## Plan
+- [x] 调整 `htmlPreviewDocument` 的 SVG 选中消息顺序，确保先同步 selection 再同步 frame
+- [x] 在 `HtmlPreview` 增加 SVG selection/frame 抗竞态处理，避免 frame 先到时按钮定位丢失
+- [x] 补充 `HtmlPreview` / `htmlPreviewDocument` 回归测试，锁定按钮显示与消息顺序
+- [x] 运行定向 `vitest` 验证，并在本节回填 Progress Notes / Review
+
+## Progress Notes
+- 修复集中在 [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 与 [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 两层：宿主脚本现在会在 `selectSvgElement(...)` 中先发送 `svgSelection`，再触发 overlay 重绘与 `svgSelectionFrame`，从源头消掉“frame 先于 selection”。
+- `HtmlPreview` 新增了同步维护 `svgInlineSession` 的本地 helper，并加入一次性的 `pendingSvgFrameRef` 缓冲；如果父层先收到 frame、后收到 selection，会在 selection 建立时立即重放该 frame，恢复 `Edit SVG` 按钮定位。
+- 回归测试已补到 [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 与 [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts)：前者覆盖 “frame 先到 -> selection 后到 -> 按钮恢复 -> dismiss 后消失”，后者锁定宿主脚本的消息发送顺序必须是 `svgSelection` 先于 `svgSelectionFrame`。
+
+## Review
+- 结果：HTML 预览里的 SVG 编辑入口已恢复稳定显示；即使消息顺序再次出现抖动，父层也会用缓冲帧补齐定位，不再因为首个 frame 被丢掉而看不到 `编辑 SVG` 按钮。
+- 结果：本次没有改 SVG 编辑器主体、样式或消息协议，只修复了 iframe 与父层之间的内部时序和状态同步，影响面保持在最小范围。
+- 验证：`pnpm vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（3 个测试文件 / 46 个测试）；`pnpm exec tsc --noEmit` 通过。
