@@ -297,3 +297,13 @@
 - Node 25 自带的 `globalThis.navigator` 是带 getter 的只读属性。给 JSDOM 注入浏览器全局时，不要再用 `Object.assign(globalThis, { navigator, ... })`；应改为 `Object.defineProperty(..., { configurable: true, writable: true, value })`，并在清理阶段恢复原始 descriptor。
 - 如果 sidecar 会把一部分前端导出逻辑一起打进 Node 入口，优先评估 CommonJS 产物。此类入口继续打成单文件 ESM 时，容易在 Node 25 下命中 `Dynamic require of "process"` / `Dynamic require of "path"` 这类兼容问题。
 - CLI 的 `--input`、`--output`、`--output-dir` 不能直接把用户传入的相对路径原样交给后端 worker；worker 往往会把 `current_dir` 切到资源目录，导致相对路径被解析到安装目录。命令行入口应先按“用户当前终端工作目录”绝对化，再进入共享导出服务。
+
+## 2026-04-20 SVG 预览交互稳定性
+- 当 overlay 按钮需要在 WebView/安装版里稳定生效时，不要把实际动作依赖到后续 `click`；若前面已经有 `preventDefault`/捕获链路，优先在 `pointerdown` 同帧直接执行动作。
+- 画布元素的选择状态不要同时在 `pointerdown` 和 `click` 两条链路里切换；像 `Shift+点击` 这类增量选择很容易先加选、再在 click 阶段被反向移除。
+- 对细连接线和短连接线，不能只依赖真实 stroke/bbox 的原始命中；需要为 connector 单独提供放大的热区或近点兜底，否则真实环境里会表现成“功能有了，但几乎点不中”。
+
+## 2026-04-20 SVG Overlay Hit-testing in WebView
+- 不要把真正可交互的按钮或拖拽手柄放在 `pointer-events: none` 的全屏 overlay 下面，再指望子节点用 `pointer-events: auto` 在所有 WebView/Chromium 环境里都稳定恢复命中。
+- 若功能在 JSDOM 单测中正常、安装包里却“可见但点不动”，优先怀疑 CSS hit-testing 结构问题；JSDOM 的 `dispatchEvent` 不会模拟真实浏览器的命中测试。
+- 对这类 overlay 交互，最稳的结构是“视觉层透传 + 交互控件独立挂载到 body”，而不是继续在同一个透传根节点里微调事件类型。

@@ -115,7 +115,7 @@ import {
   sanitizePersistedWindowSize
 } from "./shared/utils/windowPreset";
 import { getSampleDocResourcePath } from "./shared/utils/sampleDocs";
-import { stripFrontMatterForExport } from "./features/editor/markdownExport";
+import { stripFrontMatterForExport } from "./features/editor/plainMarkdownExport";
 import {
   htmlToMarkdownWithDiagnostics,
   markdownToHtml
@@ -449,17 +449,6 @@ export default function App() {
   useEffect(() => {
     writeHtmlViewPreference(windowLabel, htmlViewMode);
   }, [htmlViewMode, windowLabel]);
-
-  useEffect(() => {
-    const preloadStart = nowMs();
-    void loadMarkdownEditor()
-      .then(() => {
-        logOpenPerfElapsed("open.editor_module_preload_ms", preloadStart);
-      })
-      .catch(() => {
-        // Ignore preload failures and rely on lazy import fallback.
-      });
-  }, []);
 
   useEffect(() => {
     try {
@@ -1944,9 +1933,12 @@ export default function App() {
                   />
                 ) : doc.kind === "html" && htmlViewMode === "preview" ? (
                   <HtmlPreview
-                    copy={copy.editor.contextMenu}
+                    copy={copy.editor}
                     documentPath={doc.currentPath}
                     html={doc.content}
+                    isEditable={editorMode === "editable"}
+                    onHtmlChange={handleMarkdownChange}
+                    onReadOnlyInteraction={handleReadOnlyInteraction}
                     onRequestExport={handleDocumentExportRequest}
                   />
                 ) : (

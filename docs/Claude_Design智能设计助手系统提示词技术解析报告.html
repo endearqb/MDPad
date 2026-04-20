@@ -1,0 +1,2172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2f4f4f">
+<title>智能设计助手系统提示词技术解析报告</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>window.MathJax = {tex:{inlineMath:[['$','$'],['\\(','\\)']]},svg:{fontCache:'global'}};</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<style>
+/* ===== CSS变量（配色系统，严格遵守） ===== */
+:root {
+  --paper: #fbfaf6;
+  --page:  #ffffff;
+  --ink:   #1f2328;
+  --muted: #5c6570;
+  --line:  #d7d0c3;
+  --soft:  #f5f1e7;
+  --soft-alt: #eef4f1;
+  --soft-blue: #f3f6fb;
+  --accent: #2f4f4f;
+  --accent-dark: #3d6b6b;        /* mobile-nav-btn:active，比 accent 略亮 */
+  --shadow: 0 18px 48px rgba(31,35,40,0.10);
+  /* 警示色系（verify warn / has-warn） */
+  --warn-text:   #e65100;
+  --warn-border: #ff9800;
+  --warn-accent: #f59e0b;
+  /* 徽章色系 */
+  --badge-ok-bg:    #dcfce7;
+  --badge-ok-text:  #166534;
+  --badge-warn-bg:  #fef3c7;
+  --badge-warn-text:#92400e;
+  /* SVG 流程图配色（内嵌 SVG 可读取页面 CSS 变量） */
+  --svg-node-bg:     #f4f1e8;    /* 通用步骤框 */
+  --svg-node-alt:    #eef3f0;    /* 关键步骤框 */
+  --svg-node-data:   #f0f2f6;    /* 数据采集框 */
+  --svg-node-warn:   #fdf4f4;    /* 注意/风险框 */
+  --svg-diamond-bg:  #fff9e6;    /* 判断菱形 */
+  --svg-diamond-stroke: #c9a227; /* 判断菱形边框 */
+  --svg-stroke:      #283239;    /* 节点边框 */
+  --svg-arrow:       #2f4f4f;    /* 箭头/连线 */
+  --svg-start-bg:    #2f4f4f;    /* 开始节点实心背景 */
+  --svg-end-bg:      #1f2328;    /* 结束节点实心背景 */
+  --svg-text:        #1d2328;    /* 主文字 */
+  --svg-text-sub:    #5c6570;    /* 副文字 */
+  --svg-start-text:  #ffffff;    /* 开始/结束节点文字 */
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(47,79,79,0.08), transparent 30%),
+    linear-gradient(180deg, #f6f4ee 0%, var(--paper) 100%);
+  color: var(--ink);
+  font-family: Georgia, "Noto Serif SC", "Songti SC", "STSong", serif;
+  line-height: 1.82;
+}
+
+/* ===== 页面容器 ===== */
+.page {
+  max-width: 980px;
+  margin: 28px auto 48px;
+  padding: 46px 52px 60px;
+  background: var(--page);
+  box-shadow: var(--shadow);
+  border: 1px solid rgba(31,35,40,0.06);
+}
+
+/* ===== 期刊顶栏 ===== */
+.journal-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font: 600 12px/1.4 "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-top: 3px solid var(--ink);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  margin-bottom: 30px;
+}
+
+/* ===== 封面区 ===== */
+.cover {
+  display: grid;
+  grid-template-columns: 1.65fr 0.95fr;
+  gap: 22px;
+  align-items: start;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: 35px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+/* ===== 元数据卡片（右侧）===== */
+.meta-card {
+  background: linear-gradient(180deg, #f8f6ef 0%, #f3efe5 100%);
+  border: 1px solid var(--line);
+  padding: 18px 18px 16px;
+}
+
+.meta-card h2,
+.toc h2,
+.references h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.meta-card dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 8px 12px;
+  font-size: 14px;
+}
+
+.meta-card dt { color: var(--muted); font-family: "Helvetica Neue", Arial, sans-serif; }
+
+/* ===== 摘要 ===== */
+.abstract {
+  margin: 28px 0 20px;
+  padding: 22px 24px 20px;
+  background: #f6f4ed;
+  border-left: 4px solid var(--ink);
+}
+
+.abstract h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.abstract p { margin: 0; font-size: 15px; }
+.keywords { margin-top: 12px; color: var(--muted); font-family: "Helvetica Neue", Arial, sans-serif; }
+
+/* ===== 目录 ===== */
+.toc {
+  margin: 24px 0 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  background: #fbfaf6;
+}
+.toc ol { margin: 0; padding-left: 0; list-style: none; }
+.toc li { margin: 8px 0; }
+
+/* ===== 分割线 ===== */
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line), transparent);
+  margin: 32px 0 20px;
+}
+
+/* ===== 标题系统 ===== */
+h2.section-title {
+  margin: 34px 0 16px;
+  font-size: 24px;
+  line-height: 1.35;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+h3 { margin: 28px 0 10px; font-size: 19px; }
+h4 { margin: 20px 0 8px; font-size: 16px; }
+p  { margin: 0 0 14px; text-align: justify; }
+ul, ol { margin: 0 0 16px 22px; padding: 0; }
+li { margin: 7px 0; }
+
+/* ===== 公式块 ===== */
+.formula {
+  margin: 16px 0 18px;
+  padding: 14px 16px;
+  background: var(--soft-blue);
+  border: 1px solid #d9dfea;
+  font-family: "Courier New", monospace;
+  white-space: pre-wrap;
+  font-size: 14px;
+}
+
+/* ===== 提示框/说明框 ===== */
+.callout {
+  margin: 18px 0;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #edf4f1 0%, #f7fbfa 100%);
+  border-left: 4px solid #3f6b68;
+}
+
+/* ===== 验证结果框 ===== */
+.verification {
+  margin: 18px 0;
+  padding: 14px 16px;
+  background: #f8fdf8;
+  border: 1px solid #c8e6c9;
+  border-left: 4px solid #4caf50;
+  font-family: "Courier New", monospace;
+  font-size: 13px;
+}
+
+.verification .warn {
+  color: var(--warn-text, #e65100);
+  border-left-color: var(--warn-border, #ff9800);
+}
+
+/* ===== 悬浮验证面板（右下角，默认折叠）===== */
+/* 备用：若用户要求附录式，直接用 .verification 块，删除此面板 */
+
+.verify-panel {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 460px;
+  max-width: calc(100vw - 48px);
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(31,35,40,0.14);
+  z-index: 8000;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+/* 有偏差时面板边框变橙警示 */
+.verify-panel.has-warn {
+  border-color: var(--warn-accent, #f59e0b);
+  box-shadow: 0 8px 32px rgba(245,158,11,0.18);
+}
+
+/* 标题栏（点击区域）*/
+.verify-panel-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--soft);
+  border: none;
+  cursor: pointer;
+  font: 600 13px/1.4 "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  text-align: left;
+  transition: background 0.15s;
+}
+.verify-panel-header:hover { background: var(--soft-alt); }
+
+.verify-panel-icon { font-size: 15px; flex-shrink: 0; }
+
+.verify-panel-title { flex: 1; letter-spacing: 0.04em; }
+
+/* 通过数/偏差数 小徽章 */
+.verify-panel-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--badge-ok-bg, #dcfce7);
+  color: var(--badge-ok-text, #166534);
+  white-space: nowrap;
+}
+.verify-panel.has-warn .verify-panel-badge {
+  background: var(--badge-warn-bg, #fef3c7);
+  color: var(--badge-warn-text, #92400e);
+}
+
+/* 折叠箭头 */
+.verify-panel-chevron {
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.verify-panel.open .verify-panel-chevron { transform: rotate(180deg); }
+
+/* 面板主体（折叠时 height:0，展开时 auto）*/
+.verify-panel-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.verify-panel.open .verify-panel-body {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* 验证内容等宽字体块 */
+.verify-pre {
+  margin: 0;
+  padding: 14px 16px;
+  font: 12px/1.65 "Courier New", Consolas, monospace;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* 偏差说明建议文字（可选）*/
+.verify-note {
+  margin: 0;
+  padding: 8px 16px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+  border-top: 1px solid var(--line);
+  display: none;
+}
+.verify-note:not(:empty) { display: block; }
+
+/* 验证面板内分区 */
+.verify-section {
+  border-top: 1px solid var(--line);
+}
+.verify-section-label {
+  padding: 6px 14px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  text-transform: uppercase;
+  background: var(--soft);
+}
+.verify-warn-section .verify-section-label {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+/* 打印时隐藏 */
+@media print { .verify-panel { display: none !important; } }
+
+/* 移动端贴底全宽 */
+@media (max-width: 768px) {
+  .verify-panel {
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 12px 12px 0 0;
+  }
+  .verify-panel.open .verify-panel-body {
+    max-height: 55vh;
+  }
+}
+
+/* ===== 表格 ===== */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 18px 0 22px;
+  font-size: 14px;
+}
+
+th {
+  background: var(--ink);
+  color: #fff;
+  text-align: left;
+  padding: 10px 12px;
+  font: 600 13px/1.45 "Helvetica Neue", Arial, sans-serif;
+}
+
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #ece7dd;
+  vertical-align: top;
+}
+
+tbody tr:nth-child(even) td { background: #faf8f2; }
+
+/* ===== 图表区域 ===== */
+figure { margin: 22px 0 24px; }
+
+figcaption {
+  margin-top: 10px;
+  text-align: center;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
+.chart-container {
+  position: relative;
+  margin: 16px 0;
+  padding: 16px;
+  background: #fafaf8;
+  border: 1px solid var(--line);
+}
+
+.chart-container canvas { min-height: 200px; }
+
+/* ===== 参考文献 ===== */
+.references {
+  margin-top: 38px;
+  padding-top: 18px;
+  border-top: 2px solid var(--ink);
+}
+
+.references ol { margin-left: 20px; font-size: 14px; }
+.references li { margin-bottom: 10px; word-break: break-word; }
+
+/* ===== 页脚 ===== */
+.footer {
+  margin-top: 32px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font: 12px/1.5 "Helvetica Neue", Arial, sans-serif;
+  color: var(--muted);
+}
+
+/* ===== 悬浮目录（宽屏侧边，不侵入正文）===== */
+
+/* 布局容器：把 .page 和 .float-toc 并排放，只在足够宽时生效 */
+.report-layout {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0;
+}
+
+/* 悬浮目录本体 */
+.float-toc {
+  display: none; /* 默认隐藏，由媒体查询开启 */
+  position: sticky;
+  top: 32px;
+  width: 200px;
+  flex-shrink: 0;
+  margin-left: 24px;
+  padding: 16px 16px 14px;
+  background: var(--page);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 18px rgba(31,35,40,0.07);
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.float-toc-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.float-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+
+.float-toc li {
+  margin: 0;
+}
+
+.float-toc a {
+  display: block;
+  padding: 5px 8px;
+  color: var(--muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 3px 3px 0;
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.float-toc a:hover {
+  color: var(--ink);
+  background: var(--soft);
+}
+
+/* 当前阅读位置高亮 */
+.float-toc a.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--soft-alt);
+  font-weight: 600;
+}
+
+/* 子节缩进（h3级别） */
+.float-toc .sub {
+  padding-left: 20px;
+  font-size: 11.5px;
+}
+
+/* ===== 移动端浮动导航按钮（1024px 以下替代侧边目录）===== */
+.mobile-nav-btn {
+  display: none; /* 默认隐藏，由媒体查询开启 */
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+  border: none;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(47,79,79,0.40);
+  z-index: 8100;
+  transition: transform 0.2s ease, background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-nav-btn:hover,
+.mobile-nav-btn:active { transform: scale(1.08); background: var(--accent-dark, #3d6b6b); }
+
+/* 展开状态：图标变 × */
+.mobile-nav-btn.open::after { content: '✕'; }
+.mobile-nav-btn:not(.open)::after { content: '☰'; }
+
+/* 目录菜单弹层 */
+.mobile-nav-menu {
+  display: none;
+  position: fixed;
+  bottom: 78px;
+  right: 16px;
+  width: min(280px, calc(100vw - 32px));
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(31,35,40,0.18);
+  z-index: 8090;
+  overflow: hidden;
+  animation: mobileNavIn 0.22s cubic-bezier(0.34,1.56,0.64,1) forwards;
+}
+.mobile-nav-menu.open { display: block; }
+
+@keyframes mobileNavIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.mobile-nav-label {
+  padding: 10px 16px 8px;
+  font: 700 11px/1 "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border-bottom: 1px solid var(--line);
+}
+
+.mobile-nav-menu ol {
+  margin: 0;
+  padding: 8px 0;
+  list-style: none;
+  max-height: 60vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-nav-menu li { margin: 0; }
+
+.mobile-nav-menu a {
+  display: block;
+  padding: 11px 16px;
+  font: 14px/1.4 "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  text-decoration: none;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  border-left: 3px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.mobile-nav-menu a:active,
+.mobile-nav-menu a:hover {
+  background: var(--soft);
+  border-left-color: var(--accent);
+}
+.mobile-nav-menu li.sub a {
+  padding-left: 28px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* 遮罩层（点击空白处关闭菜单）*/
+.mobile-nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 8080;
+  background: rgba(0,0,0,0.25);
+}
+.mobile-nav-overlay.open { display: block; }
+
+/* ===== 响应式 — 多断点完整实现 ===== */
+
+/* 1280px+：宽屏，悬浮侧边目录显示 */
+@media (min-width: 1280px) {
+  .float-toc { display: block; }
+}
+
+/* 1024px 以下：平板及手机，隐藏侧边目录，改用移动端浮动导航按钮 */
+@media (max-width: 1024px) {
+  .float-toc { display: none !important; }
+  .mobile-nav-btn { display: flex; }
+}
+
+/* 1024px 以下：布局收窄 */
+@media (max-width: 1024px) {
+  .page { margin: 0 auto; padding: 28px 28px 44px; max-width: 100%; }
+}
+
+/* 768px 以下：平板竖屏 / 大手机 */
+@media (max-width: 768px) {
+  .page { margin: 0; padding: 20px 18px 36px; box-shadow: none; border: none; border-radius: 0; }
+  .cover { grid-template-columns: 1fr; gap: 16px; }
+  .meta-card { margin-top: 4px; }
+  .journal-bar { flex-direction: column; gap: 4px; font-size: 11px; padding: 10px 0; }
+  .footer { flex-direction: column; gap: 4px; font-size: 11px; }
+  h1 { font-size: 26px; }
+  h2.section-title { font-size: 21px; }
+  h3 { font-size: 17px; }
+  /* 表格横向滚动 */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -18px; padding: 0 18px; }
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+  th, td { white-space: nowrap; }
+  /* 代码 / 公式块横滚 */
+  .formula, pre { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  svg { width: 100%; height: auto; }
+  .chart-container { padding: 10px; }
+  .chart-container canvas { min-height: 220px; }
+  .abstract { padding: 16px 14px 14px; }
+}
+
+/* 480px 以下：大多数手机竖屏 */
+@media (max-width: 480px) {
+  .page { padding: 16px 14px 28px; }
+  h1 { font-size: 22px; line-height: 1.3; }
+  h2.section-title { font-size: 19px; }
+  h3 { font-size: 16px; }
+  h4 { font-size: 14.5px; }
+  p, li { font-size: 14px; line-height: 1.75; }
+  td { font-size: 13px; }
+  .abstract p, .keywords { font-size: 13.5px; }
+  .abstract { padding: 14px 12px 12px; }
+  .meta-card dl { grid-template-columns: 68px 1fr; font-size: 13px; gap: 6px 10px; }
+  .formula { font-size: 12.5px; padding: 10px 12px; }
+  .verification { font-size: 12px; padding: 10px 12px; }
+  table { font-size: 12.5px; }
+  th, td { padding: 7px 9px; }
+  .journal-bar { font-size: 10.5px; }
+  .toc { padding: 12px 12px; }
+  .toc li { margin: 6px 0; font-size: 13.5px; }
+  .footer { font-size: 10.5px; }
+  .callout { padding: 12px 13px; }
+}
+
+/* 360px 以下：超小屏（老款 Android / 小尺寸机型）*/
+@media (max-width: 360px) {
+  .page { padding: 12px 11px 24px; }
+  h1 { font-size: 19px; }
+  h2.section-title { font-size: 17px; }
+  h3 { font-size: 15px; }
+  p, li { font-size: 13.5px; }
+  .meta-card dl { grid-template-columns: 60px 1fr; font-size: 12.5px; }
+  .formula { font-size: 12px; }
+  th, td { padding: 6px 7px; font-size: 12px; }
+}
+
+/* 横屏手机（高度 < 500px）：减少垂直留白 */
+@media (max-height: 500px) and (orientation: landscape) {
+  .page { padding-top: 12px; padding-bottom: 20px; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .abstract { margin: 14px 0 12px; }
+  .verify-panel { bottom: 8px; right: 8px; }
+  .mobile-nav-btn { bottom: 8px; right: 8px; }
+}
+
+/* 深色模式移动端适配 */
+@media (prefers-color-scheme: dark) and (max-width: 768px) {
+  :root {
+    --paper: #1a1d23;
+    --page:  #22262e;
+    --ink:   #e8eaf0;
+    --muted: #9ba3b2;
+    --line:  #3a3f4d;
+    --soft:  #2a2e38;
+    --soft-alt: #252930;
+    --soft-blue: #1e2535;
+    --accent: #5f9ea0;
+    --shadow: 0 18px 48px rgba(0,0,0,0.45);
+  }
+  body {
+    background: var(--paper);
+  }
+  .meta-card {
+    background: linear-gradient(180deg, #272b35 0%, #23272f 100%);
+  }
+  .abstract { background: #252930; }
+  .toc { background: var(--paper); }
+  tbody tr:nth-child(even) td { background: #282c36; }
+  .chart-container { background: #1e2228; }
+  th { background: #3a3f4d; }
+}
+
+@media print {
+  body { background: #fff; }
+  .page { box-shadow: none; margin: 0; max-width: none; border: none; padding: 0; }
+  .float-toc, .mobile-nav-btn, .mobile-nav-menu { display: none !important; }
+}
+
+/* ----- 热区：左上角不可见触发区 ----- */
+.edit-hotzone {
+  position: fixed;
+  top: 0; left: 0;
+  width: 80px; height: 80px;
+  z-index: 10000;
+  cursor: pointer;
+}
+
+/* ----- 编辑按钮 ----- */
+.edit-toggle {
+  position: fixed;
+  top: 14px; left: 14px;
+  width: 44px; height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  z-index: 10001;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(47,79,79,0.35);
+  /* 默认隐藏；JS 通过 .show / .active 类控制 */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.2s ease;
+}
+.edit-toggle.show,
+.edit-toggle.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+.edit-toggle:hover { transform: scale(1.1); }
+
+/* 移动端始终可见 */
+@media (max-width: 768px) {
+  .edit-toggle {
+    opacity: 1;
+    pointer-events: auto;
+    top: 12px;
+    left: 12px;
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* ----- 状态提示条（编辑模式时才显示）----- */
+.edit-statusbar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--accent);
+  color: #e8f5f5;
+  font: 13px/1 "Helvetica Neue", Arial, sans-serif;
+  padding: 10px 20px;
+  display: none;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 9999;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+}
+.edit-statusbar kbd {
+  background: rgba(255,255,255,0.18);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: monospace;
+  font-size: 12px;
+}
+body.edit-mode-on .edit-statusbar { display: flex; }
+
+/* ----- 编辑模式下：可编辑元素样式 ----- */
+body.edit-mode-on [contenteditable]:hover {
+  outline: 1.5px dashed rgba(47,79,79,0.4);
+  border-radius: 3px;
+  cursor: text;
+}
+body.edit-mode-on [contenteditable]:focus {
+  outline: 2px solid var(--accent);
+  border-radius: 3px;
+  background: rgba(47,79,79,0.04);
+}
+
+/* ----- Toast 提示 ----- */
+.edit-toast {
+  position: fixed;
+  bottom: 60px; left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: #1f2328;
+  color: #fff;
+  font: 13px/1.5 "Helvetica Neue", Arial, sans-serif;
+  padding: 8px 18px;
+  border-radius: 20px;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  z-index: 10010;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.edit-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ----- 打印时隐藏编辑器 UI ----- */
+@media print {
+  .edit-hotzone, .edit-toggle, .edit-statusbar, .edit-toast { display: none !important; }
+}
+</style>
+
+</head>
+<body>
+
+<div class="report-layout">
+<main class="page">
+
+  <div class="journal-bar">
+    <div>AI 设计系统技术文档</div>
+    <div>Report Date: 2026-04-20</div>
+  </div>
+
+  <section class="cover">
+    <div>
+      <h1>智能设计助手系统提示词技术解析报告</h1>
+      <p class="subtitle">基于 Anthropic Claude 的 HTML 设计工件生成系统——架构、工作流与内置技能全景分析</p>
+    </div>
+    <aside class="meta-card">
+      <h2>Report Info</h2>
+      <dl>
+        <dt>文档类型</dt><dd>技术分析报告</dd>
+        <dt>分析对象</dt><dd>Claude 设计助手系统提示词</dd>
+        <dt>语言</dt><dd>中文</dd>
+        <dt>日期</dt><dd>2026-04-20</dd>
+        <dt>版本</dt><dd>v1.0</dd>
+      </dl>
+    </aside>
+  </section>
+
+  <section class="abstract">
+    <h2>Abstract / 摘要</h2>
+    <p>
+      本报告对 Anthropic Claude 智能设计助手的系统提示词进行全面技术解析。该系统将 Claude 定位为专业设计领域的 HTML 工件生成引擎，涵盖 UX 设计、幻灯片制作、动画、原型交互等多种输出形态。报告从系统定位、工作流程、输出规范、技术约束、内置技能等维度进行系统性梳理，重点详解 13 个内置技能（Skill）的功能定义与触发机制。分析表明，该系统通过严格的角色约束、模块化技能调用机制和分层输出策略，实现了设计生产力的结构化提升。本报告客观呈现系统架构的完整信息，适用于需要深度理解该工具能力边界与工作机制的开发者、设计师及研究人员。
+    </p>
+    <p class="keywords"><strong>关键词：</strong>Claude；系统提示词；HTML 设计工件；提示词工程；内置技能；设计自动化；工作流架构</p>
+  </section>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#intro">1. 引言</a></li>
+      <li><a href="#positioning">2. 系统定位与角色约束</a></li>
+      <li><a href="#workflow">3. 核心工作流程</a></li>
+      <li><a href="#output-specs">4. 输出规范与技术约束</a></li>
+      <li><a href="#file-system">5. 文件系统与项目管理</a></li>
+      <li><a href="#tech-stack">6. 技术栈规范</a></li>
+      <li><a href="#skills">7. 内置 13 项技能详解</a></li>
+      <li><a href="#special-features">8. 特殊功能与高级特性</a></li>
+      <li><a href="#design-principles">9. 设计内容原则</a></li>
+      <li><a href="#discussion">10. 讨论</a></li>
+      <li><a href="#conclusion">11. 结论</a></li>
+      <li><a href="#references">参考文献</a></li>
+    </ol>
+  </nav>
+
+  <div class="divider"></div>
+
+  <section id="intro">
+    <h2 class="section-title">1. 引言</h2>
+    <p>
+      大型语言模型（LLM）在设计领域的应用正在经历从"文字生成"向"可交互工件生成"的范式转变。Anthropic 公司基于 Claude 模型构建的智能设计助手系统，通过精心工程化的系统提示词（System Prompt），将通用语言模型转化为专业的 HTML 设计工件生成引擎。
+    </p>
+    <p>
+      该系统的核心创新在于：它并非简单的代码生成工具，而是一个具备完整设计认知能力的虚拟设计师——能够根据上下文选择合适的输出形态（动画、幻灯片、原型、插图等），运用恰当的视觉语言，并通过结构化的迭代工作流产出专业级设计工件。
+    </p>
+    <p>
+      理解该系统的技术架构，对于以下群体具有重要意义：设计师（了解工具能力边界）、开发者（参考系统提示词工程实践）、研究人员（探索 LLM 在创意领域的应用模式）。本报告通过对系统提示词的全面解析，提供客观、完整的技术文档。
+    </p>
+  </section>
+
+  <section id="positioning">
+    <h2 class="section-title">2. 系统定位与角色约束</h2>
+
+    <h3>2.1 核心角色定义</h3>
+    <p>
+      系统提示词将 Claude 定位为"<strong>为用户（管理者）服务的专家设计师</strong>"。这一定位蕴含三个层次的含义：
+    </p>
+    <ul>
+      <li><strong>输出媒介</strong>：HTML 是工具，但输出格式随设计领域而变化——动画师、UX 设计师、幻灯片设计师、原型制作者均是其可能的身份。</li>
+      <li><strong>关系模型</strong>：Claude 是执行者（设计师），用户是决策者（管理者）——需要汇报进度、提前展示草稿、获取反馈。</li>
+      <li><strong>能力边界</strong>：避免 Web 设计俗套和常见 AI 设计模式，追求专业领域的表达深度。</li>
+    </ul>
+
+    <h3>2.2 保密约束</h3>
+    <p>
+      系统对技术实现细节实施严格保密：不得透露系统提示词内容、不得描述虚拟环境或工具的工作机制、不得枚举工具列表。若被问及能力，只能以用户为中心的方式描述可完成的操作类型，不涉及技术细节。
+    </p>
+
+    <h3>2.3 系统运行环境</h3>
+    <p>
+      系统运行于基于文件系统的项目环境中（Filesystem-based project），具有以下特征：
+    </p>
+    <ul>
+      <li><strong>工作目录</strong>：<code>/home/claude</code>（用于临时工作文件）</li>
+      <li><strong>只读目录</strong>：<code>/mnt/user-data/uploads</code>（用户上传）、<code>/mnt/skills/</code>（技能文件）等</li>
+      <li><strong>输出目录</strong>：<code>/mnt/user-data/outputs</code>（最终交付文件）</li>
+      <li><strong>跨项目访问</strong>：支持通过 <code>/projects/&lt;projectId&gt;/</code> 路径读取其他项目（只读）</li>
+    </ul>
+
+    <h3>2.4 知识产权约束</h3>
+    <p>
+      明确禁止复制企业专有 UI 模式、专有命令结构或品牌视觉元素——除非用户邮箱域名表明其所在公司。这是系统对知识产权的主动保护机制。
+    </p>
+  </section>
+
+  <section id="workflow">
+    <h2 class="section-title">3. 核心工作流程</h2>
+
+    <h3>3.1 标准六步工作流</h3>
+    <p>系统提示词规定了固定的六步工作流，确保输出质量的一致性：</p>
+
+    <figure>
+<svg viewBox="0 0 680 420" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Serif SC', Georgia, serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2f4f4f"/>
+    </marker>
+  </defs>
+
+  <!-- Step 1 -->
+  <rect x="40" y="20" width="140" height="56" rx="8" fill="#eef3f0" stroke="#2f4f4f" stroke-width="1.5"/>
+  <text x="110" y="44" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#2f4f4f" font-weight="bold">① 需求理解</text>
+  <text x="110" y="62" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#5a6e5a">提问 · 明确输出形态</text>
+
+  <!-- Arrow 1→2 -->
+  <line x1="180" y1="48" x2="220" y2="48" stroke="#2f4f4f" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 2 -->
+  <rect x="220" y="20" width="140" height="56" rx="8" fill="#eef3f0" stroke="#2f4f4f" stroke-width="1.5"/>
+  <text x="290" y="44" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#2f4f4f" font-weight="bold">② 资源探索</text>
+  <text x="290" y="62" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#5a6e5a">读设计系统 · 采集上下文</text>
+
+  <!-- Arrow 2→3 -->
+  <line x1="360" y1="48" x2="400" y2="48" stroke="#2f4f4f" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 3 -->
+  <rect x="400" y="20" width="140" height="56" rx="8" fill="#eef3f0" stroke="#2f4f4f" stroke-width="1.5"/>
+  <text x="470" y="44" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#2f4f4f" font-weight="bold">③ 规划执行</text>
+  <text x="470" y="62" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#5a6e5a">Todo · 构建文件 · 复制资源</text>
+
+  <!-- Down arrow from step 3 -->
+  <line x1="470" y1="76" x2="470" y2="160" stroke="#2f4f4f" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 4 -->
+  <rect x="400" y="160" width="140" height="56" rx="8" fill="#d4e6d4" stroke="#2f4f4f" stroke-width="1.5"/>
+  <text x="470" y="184" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#1a3a1a" font-weight="bold">④ 交付验证</text>
+  <text x="470" y="202" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#3a5a3a">done() · 检查错误 · 修复</text>
+
+  <!-- Arrow 4→5 -->
+  <line x1="400" y1="188" x2="360" y2="188" stroke="#2f4f4f" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 5 -->
+  <rect x="220" y="160" width="140" height="56" rx="8" fill="#d4e6d4" stroke="#2f4f4f" stroke-width="1.5"/>
+  <text x="290" y="184" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#1a3a1a" font-weight="bold">⑤ 分叉验证</text>
+  <text x="290" y="202" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#3a5a3a">fork_verifier_agent</text>
+
+  <!-- Arrow 5→6 -->
+  <line x1="220" y1="188" x2="180" y2="188" stroke="#2f4f4f" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 6 -->
+  <rect x="40" y="160" width="140" height="56" rx="8" fill="#eef3f0" stroke="#2f4f4f" stroke-width="1.5"/>
+  <text x="110" y="184" text-anchor="middle" dominant-baseline="central" font-size="13" fill="#2f4f4f" font-weight="bold">⑥ 简要总结</text>
+  <text x="110" y="202" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#5a6e5a">仅说注意事项与下一步</text>
+
+  <!-- Error feedback arrow from step 4 back -->
+  <path d="M 540 160 L 540 130 L 600 130 L 600 280 L 540 280 L 540 216" stroke="#c0392b" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="615" y="205" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#c0392b">有错</text>
+  <text x="615" y="220" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#c0392b">重试</text>
+
+  <!-- Legend -->
+  <rect x="40" y="300" width="16" height="16" rx="3" fill="#eef3f0" stroke="#2f4f4f" stroke-width="1"/>
+  <text x="62" y="308" dominant-baseline="central" font-size="11" fill="#5a6e5a">标准步骤</text>
+  <rect x="160" y="300" width="16" height="16" rx="3" fill="#d4e6d4" stroke="#2f4f4f" stroke-width="1"/>
+  <text x="182" y="308" dominant-baseline="central" font-size="11" fill="#3a5a3a">验证节点</text>
+  <line x1="290" y1="308" x2="310" y2="308" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="318" y="308" dominant-baseline="central" font-size="11" fill="#c0392b">错误回路</text>
+</svg>
+
+      <figcaption>图 1. 智能设计助手标准六步工作流</figcaption>
+    </figure>
+
+    <p>六个步骤的详细说明如下：</p>
+    <ol>
+      <li><strong>需求理解（Understand）</strong>：对新任务或模糊需求主动提问；明确输出形态、保真度、变体数量、约束条件及设计系统。</li>
+      <li><strong>资源探索（Explore）</strong>：读取设计系统的完整定义及相关文件，优先获取真实设计上下文而非凭记忆推测。</li>
+      <li><strong>规划与执行（Plan & Build）</strong>：制作 Todo 列表，构建文件夹结构，复制所需资源（避免批量复制大量文件）。</li>
+      <li><strong>交付验证（Done）</strong>：调用 <code>done</code> 工具将文件展示给用户并检查加载是否正常，若有错误则修复后重新调用。</li>
+      <li><strong>分叉验证（Fork Verifier）</strong>：文件确认无错误后调用 <code>fork_verifier_agent</code>，在后台进行深度检查。</li>
+      <li><strong>简要总结（Summarize）</strong>：极简汇报——仅说明注意事项与下一步建议，不做冗长解释。</li>
+    </ol>
+
+    <h3>3.2 设计工作流程</h3>
+    <p>针对设计类任务，系统规定了专门的五步设计流程：</p>
+    <ol>
+      <li>提问澄清需求</li>
+      <li>寻找现有 UI 套件并收集上下文，复制所有相关组件</li>
+      <li>在 HTML 文件开头写明假设、上下文与设计思路（作为初级设计师向管理者汇报的方式），尽早展示文件</li>
+      <li>编写 React 组件并嵌入 HTML，尽快再次展示给用户</li>
+      <li>使用工具检查、验证并迭代设计</li>
+    </ol>
+
+    <h3>3.3 提问机制</h3>
+    <p>
+      系统强调提问的重要性，规定在以下情况<strong>必须</strong>通过 <code>questions_v2</code> 工具提问：
+    </p>
+    <ul>
+      <li>开始新项目或需求模糊时（一轮聚焦的提问通常足够）</li>
+      <li>意图行为从截图中不明确时</li>
+    </ul>
+    <p>以下情况<strong>跳过提问</strong>：小幅调整、后续跟进、用户已提供足够信息时。</p>
+    <p>
+      提问内容应涵盖：起点与产品上下文（UI 套件/设计系统/代码库）、是否需要变体及维度、用户希望探索的方向（新颖 UX、视觉风格、动画、文案）、发散程度（现有组件 vs. 创新方案）。<strong>至少提 10 个问题</strong>，过多提问优于不足。
+    </p>
+
+    <h3>3.4 读取文件机制</h3>
+    <p>对于不同格式文件，系统规定了不同的读取方法：</p>
+    <ul>
+      <li><strong>Markdown / HTML / 纯文本 / 图片</strong>：原生支持，直接读取</li>
+      <li><strong>PPTX / DOCX</strong>：通过 <code>run_script</code> + <code>readFileBinary</code> 函数，以 zip 方式解压并解析 XML</li>
+      <li><strong>PDF</strong>：调用 <code>read_pdf</code> 技能</li>
+    </ul>
+  </section>
+
+  <section id="output-specs">
+    <h2 class="section-title">4. 输出规范与技术约束</h2>
+
+    <h3>4.1 输出形态选择逻辑</h3>
+    <p>系统提示词规定，设计探索的输出形态由探索内容决定：</p>
+    <ul>
+      <li><strong>纯视觉探索</strong>（色彩、字体、单一元素静态布局）→ 使用 <code>design_canvas</code> 启动组件，在画布上并排展示各方案</li>
+      <li><strong>交互流程或多选项场景</strong> → 以可点击的高保真原型形式模拟完整产品，每个选项作为"Tweak"开关暴露</li>
+    </ul>
+
+    <h3>4.2 文件命名与资产管理</h3>
+    <ul>
+      <li>HTML 文件使用描述性文件名（如 <code>Landing Page.html</code>）</li>
+      <li>重要修订时复制旧文件再编辑（如 <code>My Design v2.html</code>），保留历史版本</li>
+      <li>用户可见交付物通过 <code>asset</code> 参数注册，显示在项目资产审查面板</li>
+      <li>避免批量复制大量资源文件夹（>20 个文件），只复制实际引用的文件</li>
+    </ul>
+
+    <h3>4.3 文件体积约束</h3>
+    <p>
+      单个文件避免超过 <strong>1000 行</strong>。超出时应将代码拆分为多个较小的 JSX 文件并在主文件中导入。这使文件更易于管理和编辑。
+    </p>
+
+    <h3>4.4 固定尺寸内容规范</h3>
+    <p>
+      幻灯片、演示文稿、视频等固定尺寸内容，必须实现 JS 缩放适配——固定尺寸画布（默认 1920×1080，16:9）包裹在全视口舞台中，通过 <code>transform: scale()</code> 进行黑边信箱格式缩放，上一步/下一步控件在缩放元素<strong>外部</strong>。
+    </p>
+    <p>
+      幻灯片类内容强制使用 <code>deck_stage.js</code> 启动组件，不允许自行实现。该组件处理：缩放、键盘/触摸导航、幻灯片计数覆层、localStorage 持久化、打印为 PDF（每页一张幻灯片）。
+    </p>
+
+    <h3>4.5 颜色使用规范</h3>
+    <ul>
+      <li>优先使用品牌/设计系统中的颜色</li>
+      <li>若限制过多，使用 oklch 定义与现有调色板和谐的颜色</li>
+      <li>避免凭空创造新颜色</li>
+      <li>Emoji 仅在设计系统使用时才跟随使用</li>
+    </ul>
+
+    <h3>4.6 状态持久化</h3>
+    <p>
+      幻灯片和视频类内容的播放位置（当前幻灯片或时间点）必须持久化存储于 <code>localStorage</code>——每次变更时保存，加载时恢复。目的是方便用户刷新页面后不丢失进度（迭代设计过程中的常见操作）。
+    </p>
+
+    <h3>4.7 CSS 最低字体尺寸要求</h3>
+    <table>
+      <thead>
+        <tr><th>场景</th><th>最小字号</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1920×1080 幻灯片</td><td>24px（通常应更大）</td></tr>
+        <tr><td>印刷文档</td><td>12pt</td></tr>
+        <tr><td>移动端触控目标</td><td>44px</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="file-system">
+    <h2 class="section-title">5. 文件系统与项目管理</h2>
+
+    <h3>5.1 路径类型</h3>
+    <p>系统支持两类文件路径：</p>
+    <table>
+      <thead>
+        <tr><th>路径类型</th><th>格式</th><th>示例</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>项目文件</td><td>相对路径</td><td><code>index.html</code></td><td>默认，当前项目文件</td></tr>
+        <tr><td>跨项目文件</td><td><code>/projects/&lt;id&gt;/&lt;path&gt;</code></td><td><code>/projects/abc/index.html</code></td><td>只读，需目标项目查看权限</td></tr>
+      </tbody>
+    </table>
+
+    <h3>5.2 文件展示规则</h3>
+    <ul>
+      <li>读取文件≠展示给用户。中途预览或非 HTML 文件使用 <code>show_to_user</code></li>
+      <li>回合结束时的 HTML 交付使用 <code>done</code>（同时检查控制台错误）</li>
+      <li>页面间导航使用标准 <code>&lt;a&gt;</code> 标签加相对 URL</li>
+      <li>禁止使用 <code>scrollIntoView</code>（可能影响 Web 应用），使用其他 DOM 滚动方法</li>
+    </ul>
+
+    <h3>5.3 页面/幻灯片标注规范</h3>
+    <p>
+      代表幻灯片和高层级屏幕的元素应添加 <code>[data-screen-label]</code> 属性，便于注释上下文中识别位置。幻灯片序号从 <strong>1</strong> 开始，标签格式如"01 Title"、"02 Agenda"，与用户看到的幻灯片计数一致。
+    </p>
+
+    <h3>5.4 上下文管理（Snip 机制）</h3>
+    <p>
+      每条用户消息末尾带有 <code>[id:mNNNN]</code> 标签。完成一个工作阶段后，使用 <code>snip</code> 工具标记范围以供延迟删除，释放上下文空间。Snip 是注册机制（非立即删除），多次调用标记不同范围，在上下文压力增大时统一执行。
+    </p>
+  </section>
+
+  <section id="tech-stack">
+    <h2 class="section-title">6. 技术栈规范</h2>
+
+    <h3>6.1 React + Babel 内联 JSX</h3>
+    <p>使用内联 JSX 时，必须使用以下固定版本的 script 标签（含完整 integrity 哈希）：</p>
+    <ul>
+      <li>React 18.3.1（含 integrity 哈希）</li>
+      <li>ReactDOM 18.3.1（含 integrity 哈希）</li>
+      <li>Babel Standalone 7.29.0（含 integrity 哈希）</li>
+    </ul>
+    <p>禁止使用未锁定版本（如 <code>react@18</code>）或省略 integrity 属性。</p>
+
+    <h3>6.2 全局 Styles 命名冲突防护</h3>
+    <p>
+      定义全局 styles 对象时，必须给予基于组件名称的<strong>唯一名称</strong>（如 <code>const terminalStyles = {...}</code>），禁止使用通用名 <code>const styles = {...}</code>。多个 Babel 脚本文件导入多个组件时，若存在同名 styles 对象将导致冲突。
+    </p>
+
+    <h3>6.3 多 Babel 脚本文件的作用域共享</h3>
+    <p>
+      每个 <code>&lt;script type="text/babel"&gt;</code> 在转译时有独立作用域。跨文件共享组件需在组件文件末尾显式导出到 <code>window</code> 对象：
+    </p>
+    <blockquote>
+      在组件文件末尾：<code>Object.assign(window, { Terminal, Line, Spacer, ... })</code>，使组件全局可用于其他脚本。
+    </blockquote>
+
+    <h3>6.4 可用第三方库（React Artifacts）</h3>
+    <table>
+      <thead>
+        <tr><th>库名</th><th>版本</th><th>用途</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>lucide-react</td><td>0.383.0</td><td>图标</td></tr>
+        <tr><td>recharts</td><td>latest</td><td>图表</td></tr>
+        <tr><td>mathjs</td><td>latest</td><td>数学计算</td></tr>
+        <tr><td>lodash</td><td>latest</td><td>工具函数</td></tr>
+        <tr><td>d3</td><td>latest</td><td>数据可视化</td></tr>
+        <tr><td>Plotly</td><td>latest</td><td>交互式图表</td></tr>
+        <tr><td>Three.js</td><td>r128</td><td>3D 渲染</td></tr>
+        <tr><td>Papaparse</td><td>latest</td><td>CSV 处理</td></tr>
+        <tr><td>SheetJS</td><td>latest</td><td>Excel 文件处理</td></tr>
+        <tr><td>shadcn/ui</td><td>latest</td><td>UI 组件库</td></tr>
+        <tr><td>Chart.js</td><td>latest</td><td>图表</td></tr>
+        <tr><td>Tone.js</td><td>latest</td><td>音频</td></tr>
+        <tr><td>mammoth</td><td>latest</td><td>DOCX 解析</td></tr>
+        <tr><td>tensorflow</td><td>latest</td><td>机器学习</td></tr>
+      </tbody>
+    </table>
+    <p>注：Three.js 使用 r128 版本；禁用 <code>THREE.CapsuleGeometry</code>（r142 引入），改用 CylinderGeometry 等替代。</p>
+
+    <h3>6.5 动画技术栈</h3>
+    <p>
+      动画类工件首先使用 <code>animations.jsx</code> 启动组件（提供 <code>&lt;Stage&gt;</code>、<code>&lt;Sprite start end&gt;</code>、<code>useTime()</code>/<code>useSprite()</code> 钩子、<code>Easing</code>、<code>interpolate()</code> 等），通过在 Stage 内组合 Sprite 构建场景。仅在该启动组件确实无法覆盖用例时，才回退使用 Popmotion。
+    </p>
+
+    <h3>6.6 浏览器存储限制</h3>
+    <p>
+      <strong>严禁在工件中使用 <code>localStorage</code>、<code>sessionStorage</code> 或任何浏览器存储 API</strong>。这些 API 在 Claude.ai 环境中不受支持，将导致工件失败。替代方案：React state（<code>useState</code>/<code>useReducer</code>）或 JavaScript 变量/对象进行内存存储。
+    </p>
+
+    <h3>6.7 Claude API 集成</h3>
+    <p>HTML 工件可直接调用 Claude API：</p>
+    <blockquote>
+      通过 <code>window.claude.complete("提示词")</code> 或传入 messages 数组调用。使用 <code>claude-haiku-4-5</code> 模型，最大输出 1024 token，每用户有频率限制。无需 SDK 或 API 密钥。
+    </blockquote>
+
+    <h3>6.8 CSS 高级特性</h3>
+    <p>提倡使用现代 CSS：<code>text-wrap: pretty</code>、CSS Grid、oklch 色彩空间等高级特性，以达到专业视觉效果。</p>
+  </section>
+
+  <section id="skills">
+    <h2 class="section-title">7. 内置 13 项技能（Skill）详解</h2>
+
+    <p>
+      系统提示词内置了 13 个专项技能（Skill），每个技能均有独立的指令文件（SKILL.md），通过 <code>invoke_skill</code> 工具按需加载。技能未加载时不占用上下文，实现了能力的模块化管理。以下按技能编号逐一说明。
+    </p>
+
+    <figure>
+<svg viewBox="0 0 720 360" xmlns="http://www.w3.org/2000/svg" font-family="'Noto Serif SC', Georgia, serif">
+  <defs>
+    <marker id="arr2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#6a8a6a"/>
+    </marker>
+  </defs>
+
+  <!-- Center hub -->
+  <ellipse cx="360" cy="180" rx="68" ry="40" fill="#2f4f4f" stroke="none"/>
+  <text x="360" y="174" text-anchor="middle" dominant-baseline="central" font-size="13" fill="white" font-weight="bold">13 项内置</text>
+  <text x="360" y="192" text-anchor="middle" dominant-baseline="central" font-size="13" fill="white" font-weight="bold">技能（Skill）</text>
+
+  <!-- Category: 输出类型 -->
+  <!-- Animated Video -->
+  <rect x="20" y="20" width="130" height="44" rx="8" fill="#eef3f0" stroke="#4a7a4a" stroke-width="1.2"/>
+  <text x="85" y="38" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#2f4f4f" font-weight="bold">① 动画视频</text>
+  <text x="85" y="54" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#5a7a5a">时间轴运动设计</text>
+  <line x1="150" y1="42" x2="290" y2="150" stroke="#6a8a6a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Interactive Prototype -->
+  <rect x="20" y="80" width="130" height="44" rx="8" fill="#eef3f0" stroke="#4a7a4a" stroke-width="1.2"/>
+  <text x="85" y="98" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#2f4f4f" font-weight="bold">② 交互原型</text>
+  <text x="85" y="114" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#5a7a5a">可运行 hi-fi 原型</text>
+  <line x1="150" y1="102" x2="290" y2="165" stroke="#6a8a6a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Make a Deck -->
+  <rect x="20" y="140" width="130" height="44" rx="8" fill="#eef3f0" stroke="#4a7a4a" stroke-width="1.2"/>
+  <text x="85" y="158" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#2f4f4f" font-weight="bold">③ 幻灯片制作</text>
+  <text x="85" y="174" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#5a7a5a">deck_stage.js 驱动</text>
+  <line x1="150" y1="162" x2="290" y2="177" stroke="#6a8a6a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Wireframe -->
+  <rect x="20" y="200" width="130" height="44" rx="8" fill="#eef3f0" stroke="#4a7a4a" stroke-width="1.2"/>
+  <text x="85" y="218" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#2f4f4f" font-weight="bold">⑥ 线框图</text>
+  <text x="85" y="234" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#5a7a5a">发散探索·故事板</text>
+  <line x1="150" y1="222" x2="290" y2="192" stroke="#6a8a6a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Create Design System -->
+  <rect x="20" y="260" width="130" height="44" rx="8" fill="#eef3f0" stroke="#4a7a4a" stroke-width="1.2"/>
+  <text x="85" y="278" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#2f4f4f" font-weight="bold">⑨ 设计系统</text>
+  <text x="85" y="294" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#5a7a5a">色彩·字体·组件规范</text>
+  <line x1="150" y1="282" x2="290" y2="205" stroke="#6a8a6a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Right side: Tweakable & Design -->
+  <!-- Make Tweakable -->
+  <rect x="570" y="20" width="130" height="44" rx="8" fill="#f4ece0" stroke="#8a6a2a" stroke-width="1.2"/>
+  <text x="635" y="38" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5a3a10" font-weight="bold">④ 调节控件</text>
+  <text x="635" y="54" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#7a5a30">postMessage 协议</text>
+  <line x1="570" y1="42" x2="430" y2="150" stroke="#8a6a2a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Frontend Design -->
+  <rect x="570" y="80" width="130" height="44" rx="8" fill="#f4ece0" stroke="#8a6a2a" stroke-width="1.2"/>
+  <text x="635" y="98" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5a3a10" font-weight="bold">⑤ 前端设计</text>
+  <text x="635" y="114" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#7a5a30">美学方向·无品牌场景</text>
+  <line x1="570" y1="102" x2="430" y2="165" stroke="#8a6a2a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Export PPTX editable -->
+  <rect x="570" y="140" width="130" height="44" rx="8" fill="#e8e0f0" stroke="#6a4a9a" stroke-width="1.2"/>
+  <text x="635" y="155" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#3a1a6a" font-weight="bold">⑦ PPTX 可编辑</text>
+  <text x="635" y="172" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#5a3a8a">原生形状·文字框</text>
+  <line x1="570" y1="162" x2="430" y2="177" stroke="#6a4a9a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Export PPTX screenshots -->
+  <rect x="570" y="200" width="130" height="44" rx="8" fill="#e8e0f0" stroke="#6a4a9a" stroke-width="1.2"/>
+  <text x="635" y="215" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#3a1a6a" font-weight="bold">⑧ PPTX 截图</text>
+  <text x="635" y="232" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#5a3a8a">像素级精确·不可编辑</text>
+  <line x1="570" y1="222" x2="430" y2="192" stroke="#6a4a9a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Save as PDF -->
+  <rect x="200" y="300" width="100" height="40" rx="8" fill="#e0f0e8" stroke="#2a6a4a" stroke-width="1.2"/>
+  <text x="250" y="316" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#1a4a2a" font-weight="bold">⑩ PDF</text>
+  <text x="250" y="332" text-anchor="middle" dominant-baseline="central" font-size="9" fill="#3a6a4a">印刷就绪</text>
+  <line x1="250" y1="300" x2="330" y2="220" stroke="#2a6a4a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Standalone HTML -->
+  <rect x="315" y="300" width="110" height="40" rx="8" fill="#e0f0e8" stroke="#2a6a4a" stroke-width="1.2"/>
+  <text x="370" y="316" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#1a4a2a" font-weight="bold">⑪ 独立 HTML</text>
+  <text x="370" y="332" text-anchor="middle" dominant-baseline="central" font-size="9" fill="#3a6a4a">离线·单文件</text>
+  <line x1="370" y1="300" x2="370" y2="222" stroke="#2a6a4a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Send to Canva -->
+  <rect x="440" y="300" width="100" height="40" rx="8" fill="#e0f0e8" stroke="#2a6a4a" stroke-width="1.2"/>
+  <text x="490" y="316" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#1a4a2a" font-weight="bold">⑫ Canva</text>
+  <text x="490" y="332" text-anchor="middle" dominant-baseline="central" font-size="9" fill="#3a6a4a">可导入编辑</text>
+  <line x1="490" y1="300" x2="410" y2="218" stroke="#2a6a4a" stroke-width="1" marker-end="url(#arr2)"/>
+
+  <!-- Handoff Claude Code - small label note -->
+  <rect x="555" y="300" width="130" height="40" rx="8" fill="#ffe8e8" stroke="#9a3a3a" stroke-width="1.2"/>
+  <text x="620" y="316" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#6a1a1a" font-weight="bold">⑬ Claude Code</text>
+  <text x="620" y="332" text-anchor="middle" dominant-baseline="central" font-size="9" fill="#8a3a3a">开发移交包</text>
+  <line x1="570" y1="315" x2="432" y2="216" stroke="#9a3a3a" stroke-width="1" marker-end="url(#arr2)"/>
+</svg>
+
+      <figcaption>图 2. 内置 13 项技能功能分布图</figcaption>
+    </figure>
+
+    <h3>Skill 01 · Animated Video（动画视频）</h3>
+    <p><strong>定位：</strong>基于时间轴的运动设计输出。</p>
+    <p>
+      调用此技能后，系统将作为专业<strong>动画设计师</strong>，使用 <code>animations.jsx</code> 启动组件构建帧动画。核心工具链：<code>&lt;Stage&gt;</code>（自动缩放 + 进度条 + 播放/暂停）、<code>&lt;Sprite start end&gt;</code>（精灵动画）、<code>useTime()</code>/<code>useSprite()</code> 钩子、<code>Easing</code>（缓动函数）、<code>interpolate()</code>（插值）。适用于产品发布动画、数据故事、概念演示等需要时序控制的视觉内容。
+    </p>
+
+    <h3>Skill 02 · Interactive Prototype（交互原型）</h3>
+    <p><strong>定位：</strong>可运行的应用程序，支持真实交互。</p>
+    <p>
+      用于构建具有实际交互逻辑的 hi-fi 原型——表单验证、多步骤流程、条件显示、状态管理等。区别于静态截图式原型，此技能产出的工件可在浏览器中真实操作。特别适合用户流程验证、可用性测试素材制作、向开发团队传递交互规格。
+    </p>
+
+    <h3>Skill 03 · Make a Deck（制作幻灯片）</h3>
+    <p><strong>定位：</strong>HTML 格式的幻灯片演示文稿。</p>
+    <p>
+      强制使用 <code>deck_stage.js</code> 启动组件，所有幻灯片作为 <code>&lt;section&gt;</code> 子元素置于 <code>&lt;deck-stage&gt;</code> 中。该组件自动处理：1920×1080 固定画布缩放、键盘/触摸导航、幻灯片计数覆层、localStorage 持久化、打印为 PDF（每页一张）、<code>slideIndexChanged</code> 消息传递（用于演讲者备注同步）。演讲者备注通过 <code>&lt;script type="application/json" id="speaker-notes"&gt;</code> 注入，仅在用户明确要求时添加。
+    </p>
+
+    <h3>Skill 04 · Make Tweakable（添加调节控件）</h3>
+    <p><strong>定位：</strong>为设计工件添加可视化调节面板（Tweaks）。</p>
+    <p>
+      实现协议如下：① 先注册 <code>window</code> 的 message 监听器（处理 <code>__activate_edit_mode</code> / <code>__deactivate_edit_mode</code>）；② 监听器就绪后，向父页面发送 <code>__edit_mode_available</code>；③ 用户调整参数时，通过 <code>__edit_mode_set_keys</code> 消息将变更持久化到磁盘（JSON 格式，位于 <code>TWEAK_DEFAULS = /*EDITMODE-BEGIN*/{...}/*EDITMODE-END*/</code> 注释块中）。Tweaks 面板默认位于屏幕右下角，Tweaks 关闭时完全隐藏。
+    </p>
+
+    <h3>Skill 05 · Frontend Design（前端设计）</h3>
+    <p><strong>定位：</strong>在无现有品牌或设计系统时，提供大胆美学方向。</p>
+    <p>
+      当设计任务缺乏品牌上下文时调用此技能，获取视觉风格决策指导——色彩体系、字体搭配、排版节奏、组件风格等。核心目标是"提交到一个大胆的美学方向"，避免千篇一律的 AI 设计风格。提示 Claude 通过大比例、色彩填充、纹理、视觉节奏、分层、新颖布局等手法探索差异化表达。
+    </p>
+
+    <h3>Skill 06 · Wireframe（线框图）</h3>
+    <p><strong>定位：</strong>通过线框图和故事板探索多种创意方向。</p>
+    <p>
+      适用于项目早期的发散探索阶段。相比高保真原型，线框图允许在较短时间内呈现更多方案变体，帮助团队在视觉和交互方向上快速对齐。重点在于数量（多方案）而非质量（精细度），服务于决策而非展示。
+    </p>
+
+    <h3>Skill 07 · Export as PPTX (editable)（导出为可编辑 PPTX）</h3>
+    <p><strong>定位：</strong>将 HTML 幻灯片导出为原生 PowerPoint 格式（含真实文字和形状）。</p>
+    <p>
+      通过 <code>gen_pptx</code> 工具实现，模式为 <code>editable</code>，产出文件包含可在 PowerPoint/Keynote 中编辑的原生文字框、形状和图片。适用于需要在演示软件中进一步编辑的场景。注意：字体替换（<code>fontSwaps</code>）和 Google 字体注入（<code>googleFontImports</code>）可在导出前进行配置。
+    </p>
+
+    <h3>Skill 08 · Export as PPTX (screenshots)（导出为截图 PPTX）</h3>
+    <p><strong>定位：</strong>将 HTML 幻灯片导出为每张幻灯片一张 PNG 的 PPTX 文件。</p>
+    <p>
+      通过 <code>gen_pptx</code> 工具实现，模式为 <code>screenshots</code>，产出文件每张幻灯片为全出血 PNG 图片——像素级精确还原 HTML 视觉效果，但内容不可在 PowerPoint 中编辑。适用于对视觉保真度要求极高、不需要后期编辑的场景。
+    </p>
+
+    <h3>Skill 09 · Create Design System（创建设计系统）</h3>
+    <p><strong>定位：</strong>为用户创建完整设计系统或 UI 套件。</p>
+    <p>
+      当用户需要建立可复用的视觉规范库时调用，产出包含色彩体系、字体规范、间距系统、组件库等要素的结构化设计系统。该技能产出可作为后续所有设计工作的基础上下文，被 Claude 在其他设计任务中引用。
+    </p>
+
+    <h3>Skill 10 · Save as PDF（保存为 PDF）</h3>
+    <p><strong>定位：</strong>将 HTML 工件导出为印刷就绪的 PDF 文件。</p>
+    <p>
+      通过 <code>open_for_print</code> 工具触发，在新浏览器标签页中打开文件，引导用户按 Cmd+P（Mac）或 Ctrl+P（Windows）保存为 PDF。适用于报告、简历、设计规格文档等需要印刷或正式分发的内容。
+    </p>
+
+    <h3>Skill 11 · Save as Standalone HTML（保存为独立 HTML）</h3>
+    <p><strong>定位：</strong>将 HTML 工件打包为可离线运行的单一自含文件。</p>
+    <p>
+      通过 <code>super_inline_html</code> 工具实现，将 HTML 文件及其所有引用资源（图片、CSS、JS、字体、外部依赖 meta 标签）内联为单一 HTML 文件，离线可用。输入文件必须包含带有 <code>__bundler_thumbnail</code> id 的 <code>&lt;template&gt;</code> 标签（简洁彩色背景的 SVG 图标），作为加载时的启动画面。
+    </p>
+
+    <h3>Skill 12 · Send to Canva（发送到 Canva）</h3>
+    <p><strong>定位：</strong>将设计工件导出为可在 Canva 中编辑的格式。</p>
+    <p>
+      为需要在 Canva 平台继续编辑的用户提供导出通道。通过生成公开可访问的文件 URL（<code>get_public_file_url</code>，有效期约 1 小时），配合 Canva 的导入接口实现资产迁移。适用于设计团队中非技术人员在 Canva 中进行最后润色的工作流。
+    </p>
+
+    <h3>Skill 13 · Handoff to Claude Code（移交给 Claude Code）</h3>
+    <p><strong>定位：</strong>为开发团队准备完整的开发移交包。</p>
+    <p>
+      当设计工件需要进入工程实现阶段时，该技能将设计规格、资产和说明整理为开发者友好的移交包，降低设计与开发之间的沟通成本。输出内容可直接供 Claude Code（命令行编程助手）使用，实现从设计到代码的无缝衔接。
+    </p>
+
+    <h3>7.1 技能调用机制总结</h3>
+    <table>
+      <thead>
+        <tr><th>技能名称</th><th>主要输出</th><th>核心工具/组件</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Animated Video</td><td>HTML 动画工件</td><td>animations.jsx</td></tr>
+        <tr><td>Interactive Prototype</td><td>可交互 HTML 原型</td><td>React + 状态管理</td></tr>
+        <tr><td>Make a Deck</td><td>HTML 演示文稿</td><td>deck_stage.js</td></tr>
+        <tr><td>Make Tweakable</td><td>带调节面板的工件</td><td>postMessage 协议</td></tr>
+        <tr><td>Frontend Design</td><td>美学方向指导</td><td>CSS / oklch / 排版</td></tr>
+        <tr><td>Wireframe</td><td>线框图 / 故事板</td><td>HTML 简版原型</td></tr>
+        <tr><td>Export PPTX (editable)</td><td>可编辑 .pptx 文件</td><td>gen_pptx (editable)</td></tr>
+        <tr><td>Export PPTX (screenshots)</td><td>截图式 .pptx 文件</td><td>gen_pptx (screenshots)</td></tr>
+        <tr><td>Create Design System</td><td>UI 套件 / 设计规范</td><td>HTML + CSS 变量</td></tr>
+        <tr><td>Save as PDF</td><td>印刷就绪 PDF</td><td>open_for_print</td></tr>
+        <tr><td>Save as Standalone HTML</td><td>离线单文件 HTML</td><td>super_inline_html</td></tr>
+        <tr><td>Send to Canva</td><td>Canva 可导入格式</td><td>get_public_file_url</td></tr>
+        <tr><td>Handoff to Claude Code</td><td>开发移交包</td><td>文件 + 规格文档</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="special-features">
+    <h2 class="section-title">8. 特殊功能与高级特性</h2>
+
+    <h3>8.1 启动组件（Starter Components）</h3>
+    <p>
+      系统通过 <code>copy_starter_component</code> 工具提供预制脚手架，避免从零手写常见设计框架。可用启动组件：
+    </p>
+    <table>
+      <thead>
+        <tr><th>组件名</th><th>类型</th><th>用途</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>deck_stage.js</td><td>Web Component</td><td>幻灯片演示 Shell（强制使用）</td></tr>
+        <tr><td>design_canvas.jsx</td><td>JSX / React</td><td>多方案并排展示画布</td></tr>
+        <tr><td>ios_frame.jsx</td><td>JSX / React</td><td>iPhone 设备外框含状态栏和键盘</td></tr>
+        <tr><td>android_frame.jsx</td><td>JSX / React</td><td>Android 设备外框</td></tr>
+        <tr><td>macos_window.jsx</td><td>JSX / React</td><td>macOS 窗口 Chrome（含交通灯按钮）</td></tr>
+        <tr><td>browser_window.jsx</td><td>JSX / React</td><td>浏览器窗口 Chrome（含标签栏）</td></tr>
+        <tr><td>animations.jsx</td><td>JSX / React</td><td>时间轴动画引擎</td></tr>
+      </tbody>
+    </table>
+    <p>注：kind 名称须含扩展名（如 <code>deck_stage.js</code>），不含扩展名或扩展名错误将导致调用失败。</p>
+
+    <h3>8.2 验证机制（Verifier Agent）</h3>
+    <p>
+      <code>fork_verifier_agent</code> 在 <code>done</code> 报告无错误后调用，在后台独立 iframe 中进行深度检查（截图、布局、JS 探测）。静默通过；仅在发现问题时唤醒主 Claude。支持定向检查模式：传入 <code>task</code> 参数可聚焦于特定问题（如"检查间距"），始终回报结果（不论通过与否）。
+    </p>
+
+    <h3>8.3 演讲者备注（Speaker Notes）</h3>
+    <p>
+      在幻灯片 HTML 的 head 中添加 <code>&lt;script type="application/json" id="speaker-notes"&gt;</code> 标签，内含各幻灯片备注数组。页面必须在初始化时及每次幻灯片切换时向父页面发送 <code>slideIndexChanged</code> 消息。<code>deck_stage.js</code> 自动处理此消息传递。<strong>仅在用户明确要求时添加演讲者备注</strong>。
+    </p>
+
+    <h3>8.4 GitHub 集成</h3>
+    <p>
+      收到"GitHub connected"消息后，Claude 邀请用户粘贴 GitHub 仓库 URL，可探索仓库结构并导入选定文件作为设计参考。解析流程：<code>github_get_tree</code>（查看文件结构）→ <code>github_import_files</code>（复制文件到项目）→ <code>read_file</code>（读取导入文件）。目标文件：主题/色彩 token、指定组件、全局样式和布局脚手架。
+    </p>
+
+    <h3>8.5 PPTX 导出配置参数</h3>
+    <p><code>gen_pptx</code> 工具的关键参数：</p>
+    <ul>
+      <li><code>mode</code>：<code>editable</code>（原生形状）或 <code>screenshots</code>（PNG 截图）</li>
+      <li><code>resetTransformSelector</code>：用于重置缩放变换的 CSS 选择器（幻灯片缩放到预览时使用），deck-stage 组件响应 <code>noscale</code> 属性</li>
+      <li><code>hideSelectors</code>：导出前隐藏的元素（导航箭头、进度条等）</li>
+      <li><code>fontSwaps</code>：字体替换配置（确保布局随替换字体正确回流）</li>
+      <li><code>googleFontImports</code>：捕获前注入的 Google Font 字体族</li>
+      <li><code>save_to_project_path</code>：指定时写入项目文件系统而非触发浏览器下载</li>
+    </ul>
+
+    <h3>8.6 Napkin 草图支持</h3>
+    <p>
+      当附加 <code>.napkin</code> 文件时，通过读取 <code>scraps/.{filename}.thumbnail.png</code> 获取缩略图（JSON 原始数据无直接使用价值）。
+    </p>
+
+    <h3>8.7 模板保存功能</h3>
+    <p>
+      <code>save_as_template</code> 工具将当前项目保存为可复用模板（创建新的 template 类型项目，非就地转换），包含标题、描述和创作者引导语，返回模板链接供用户在 Template Info 标签页审查和发布。
+    </p>
+
+    <h3>8.8 内联注释与元素定位</h3>
+    <p>
+      用户在预览中注释、内联编辑或拖动元素时，附件包含 <code>&lt;mentioned-element&gt;</code> 块，描述被触碰的实时 DOM 节点，包含：React 组件链（<code>react:</code>）、DOM 祖先路径（<code>dom:</code>）、运行时句柄 ID（<code>id:</code>）。Claude 根据此信息定位源码中对应位置。若仅凭此块无法确定源码位置，使用 <code>eval_js_user_view</code> 工具在用户预览中执行 JS 探测，优于猜测并修改。
+    </p>
+  </section>
+
+  <section id="design-principles">
+    <h2 class="section-title">9. 设计内容原则</h2>
+
+    <h3>9.1 禁止"AI 审美俗套"</h3>
+    <p>系统明确列出须避免的 AI 设计常见模式：</p>
+    <ul>
+      <li>激进的渐变背景</li>
+      <li>非品牌明确使用 Emoji（倾向于占位符）</li>
+      <li>带左侧边框强调色的圆角容器</li>
+      <li>用 SVG 绘制图形内容（用占位符代替，请求真实素材）</li>
+      <li>过度使用的字体家族（Inter、Roboto、Arial、Fraunces、系统字体）</li>
+    </ul>
+
+    <h3>9.2 禁止填充内容</h3>
+    <p>
+      严禁用占位文字、虚构段落或信息性材料填充版面——每个元素都应当有其存在价值。若某区域感觉空洞，这是需要通过布局和构图解决的设计问题，而非填充内容的借口。避免"数据堆砌"（不必要的数字、图标、统计数据）。
+    </p>
+
+    <h3>9.3 先询问再添加</h3>
+    <p>
+      若认为额外的章节、页面、文案或内容会改进设计，应先询问用户，而非单方面添加。用户比 AI 更了解受众和目标。
+    </p>
+
+    <h3>9.4 变体与多方案原则</h3>
+    <p>
+      提供选项——通常 3+ 个变体，沿多个维度展开（不同幻灯片或 Tweak 开关）。混合"按图索骥"（匹配现有模式）与新颖创新型交互，探索有趣的布局、隐喻、视觉风格。部分选项使用色彩或高级 CSS；部分带图标，部分不带。从基础开始，逐步趋向高级和创意。目标不是给用户"完美方案"，而是探索尽可能多的原子变体，让用户混搭组合找到最佳解。
+    </p>
+
+    <h3>9.5 设计系统先行</h3>
+    <p>优秀的高保真设计不从零开始，而是植根于既有设计上下文。获取上下文的方式（优先级递减）：</p>
+    <ol>
+      <li>请用户导入代码库（Import）</li>
+      <li>寻找合适的 UI 套件 / 设计资源</li>
+      <li>请用户提供截图或 Figma 链接</li>
+      <li>从头模拟完整产品（最后手段，会导致设计质量下降）</li>
+    </ol>
+
+    <h3>9.6 幻灯片内容规范</h3>
+    <p>
+      制作前确定布局系统：章节页、标题、图片、正文各有统一布局。使用不同背景色引入视觉节奏（最多 1-2 种背景色）。正文较多的幻灯片，坚持添加来自设计系统的图片或使用占位符。字体系统：若无既有字体规范，编写几个不同字体变量的 <code>&lt;style&gt;</code> 标签并通过 Tweaks 允许用户切换。
+    </p>
+
+    <h3>9.7 网络工具使用原则</h3>
+    <ul>
+      <li><code>web_fetch</code> 返回提取文本（词语，非 HTML 或布局）。若想"参考此网站设计"，应请用户提供截图</li>
+      <li><code>web_search</code> 用于超出知识截止日期的事实或时效性信息，大多数设计工作不需要</li>
+    </ul>
+  </section>
+
+  <section id="discussion">
+    <h2 class="section-title">10. 讨论</h2>
+
+    <h3>10.1 系统设计的核心洞察</h3>
+    <p>
+      通过对系统提示词的全面分析，可以提炼出若干值得关注的设计决策：
+    </p>
+    <p>
+      <strong>角色优先于能力</strong>：系统提示词首先定义"我是谁"（专家设计师 + 用户的管理者关系），而非"我能做什么"（工具列表）。这种角色驱动的提示词架构，使模型在面对模糊需求时能够从角色定位出发做出合理推断，而非依赖精确的能力映射。
+    </p>
+    <p>
+      <strong>技能的模块化延迟加载</strong>：13 项专项技能以独立 SKILL.md 文件存储，仅在需要时通过 <code>invoke_skill</code> 加载到上下文。这一机制有效控制了上下文窗口占用，同时保持了能力的完整性——与软件工程中的"懒加载"思想一脉相承。
+    </p>
+    <p>
+      <strong>强制验证闭环</strong>：<code>done</code> + <code>fork_verifier_agent</code> 构成的双重验证机制，将"交付"定义为经过检验的输出，而非"生成完毕即完成"。这一设计将质量保证内嵌于工作流，减少人工检查负担。
+    </p>
+
+    <h3>10.2 提示词工程实践价值</h3>
+    <p>
+      该系统提示词展示了若干提示词工程的最佳实践，对从业者具有参考价值：
+    </p>
+    <ul>
+      <li><strong>保密机制</strong>：明确要求不透露实现细节，同时给出"可以说什么"的正向示例，避免过度限制导致的信息真空</li>
+      <li><strong>负面样例枚举</strong>：通过具体列举"AI 审美俗套"、禁用 API 等，减少对模型"通用常识"的依赖，降低模式化输出风险</li>
+      <li><strong>决策树结构</strong>：用"若...则..."结构覆盖常见分支（如输出形态选择、文件展示时机、提问时机），减少模型的歧义判断</li>
+      <li><strong>量化约束</strong>：1000 行文件上限、至少 10 个设计提问、3+ 个方案变体等具体数值，优于模糊的"适当"、"足够"等措辞</li>
+    </ul>
+
+    <h3>10.3 局限性与注意事项</h3>
+    <p>
+      系统存在若干值得关注的约束：
+    </p>
+    <ul>
+      <li><strong>浏览器存储限制</strong>：工件内禁止使用 localStorage/sessionStorage，限制了某些需要跨会话持久化的交互场景</li>
+      <li><strong>外部资源依赖</strong>：大量第三方库通过 CDN 加载（unpkg、cdnjs），若在网络受限环境中部署存在可靠性风险；使用 integrity 哈希降低但未消除此风险</li>
+      <li><strong>Three.js 版本锁定</strong>：固定于 r128，缺失 r142+ 引入的 CapsuleGeometry 等新特性</li>
+      <li><strong>设计上下文依赖</strong>：系统明确指出"从头模拟完整产品是最后手段"，若无法获取设计上下文将导致质量下降，但并非所有用户都能提供此类素材</li>
+    </ul>
+  </section>
+
+  <section id="conclusion">
+    <h2 class="section-title">11. 结论</h2>
+    <p>
+      本报告对 Anthropic Claude 智能设计助手系统提示词进行了全面技术解析。主要结论如下：
+    </p>
+    <p>
+      该系统通过<strong>角色约束 + 模块化技能 + 结构化工作流 + 双重验证</strong>的四维架构，将通用 LLM 转化为具备设计专业认知的工件生成引擎。13 项内置技能覆盖从概念探索（线框图、前端设计）到专业输出（动画、幻灯片、原型）再到多格式交付（PPTX、PDF、独立 HTML、Canva、Claude Code 移交）的完整设计生产链。
+    </p>
+    <p>
+      系统对"AI 审美俗套"的明确禁止、对变体探索的量化要求（3+ 方案）、对设计上下文获取的优先级策略，体现了对 LLM 创意输出模式化风险的深刻认识，以及对设计工作流专业性的尊重。
+    </p>
+    <p>
+      对于研究提示词工程的从业者，该系统展示了：角色优先、负面样例枚举、决策树结构、量化约束、延迟加载等多种实用技术的综合应用，是 LLM 专业领域适配的优秀参考案例。
+    </p>
+  </section>
+
+  <section id="references" class="references">
+    <h2>参考文献</h2>
+    <ol>
+      <li id="ref-1">
+        Anthropic. Claude Model Family Documentation[EB/OL]. [2026-04-20].
+        <a href="https://docs.anthropic.com/en/docs/about-claude/models/overview" target="_blank">https://docs.anthropic.com/en/docs/about-claude/models/overview</a>
+      </li>
+      <li id="ref-2">
+        Anthropic. System Prompts and Prompt Engineering Guide[EB/OL]. [2026-04-20].
+        <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview" target="_blank">https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview</a>
+      </li>
+      <li id="ref-3">
+        Meta. React 18.3.1 Release Notes[EB/OL]. [2024].
+        <a href="https://github.com/facebook/react/blob/main/CHANGELOG.md" target="_blank">https://github.com/facebook/react/blob/main/CHANGELOG.md</a>
+      </li>
+      <li id="ref-4">
+        Babel. Babel Standalone 7.29.0[EB/OL]. [2025].
+        <a href="https://babeljs.io/docs/babel-standalone" target="_blank">https://babeljs.io/docs/babel-standalone</a>
+      </li>
+      <li id="ref-5">
+        Nussbaumer Knaflic C. Storytelling with Data: A Data Visualization Guide for Business Professionals[M]. Hoboken: John Wiley &amp; Sons, 2015.
+      </li>
+      <li id="ref-6">
+        W3C. Subresource Integrity (SRI) Specification[S]. W3C Recommendation, 2016.
+        <a href="https://www.w3.org/TR/SRI/" target="_blank">https://www.w3.org/TR/SRI/</a>
+      </li>
+      <li id="ref-7">
+        Anthropic. Claude.ai Platform[EB/OL]. [2026-04-20].
+        <a href="https://claude.ai" target="_blank">https://claude.ai</a>
+      </li>
+      <li id="ref-8">
+        Three.js Authors. Three.js r128 Release[EB/OL]. [2021].
+        <a href="https://github.com/mrdoob/three.js/releases/tag/r128" target="_blank">https://github.com/mrdoob/three.js/releases/tag/r128</a>
+      </li>
+    </ol>
+  </section>
+
+  <footer class="footer">
+    <span>AI 设计系统技术文档</span>
+    <span>生成日期：2026-04-20</span>
+  </footer>
+
+</main>
+
+<!-- 宽屏悬浮目录 -->
+<nav class="float-toc" id="floatToc" aria-label="文章目录">
+  <p class="float-toc-label">目录</p>
+  <ol>
+    <li><a href="#intro">1. 引言</a></li>
+    <li><a href="#positioning">2. 系统定位</a></li>
+    <li><a href="#workflow">3. 工作流程</a></li>
+    <li><a href="#output-specs">4. 输出规范</a></li>
+    <li><a href="#file-system">5. 文件系统</a></li>
+    <li><a href="#tech-stack">6. 技术栈</a></li>
+    <li><a href="#skills">7. 内置技能</a></li>
+    <li><a href="#special-features">8. 特殊功能</a></li>
+    <li><a href="#design-principles">9. 设计原则</a></li>
+    <li><a href="#discussion">10. 讨论</a></li>
+    <li><a href="#conclusion">11. 结论</a></li>
+    <li><a href="#references">参考文献</a></li>
+  </ol>
+</nav>
+</div>
+
+<!-- 移动端导航 -->
+<div class="mobile-nav-overlay" id="mobileNavOverlay"></div>
+<nav class="mobile-nav-menu" id="mobileNavMenu" aria-label="快速导航">
+  <div class="mobile-nav-label">目录</div>
+  <ol>
+    <li><a href="#intro">1. 引言</a></li>
+    <li><a href="#positioning">2. 系统定位</a></li>
+    <li><a href="#workflow">3. 工作流程</a></li>
+    <li><a href="#output-specs">4. 输出规范</a></li>
+    <li><a href="#file-system">5. 文件系统</a></li>
+    <li><a href="#tech-stack">6. 技术栈</a></li>
+    <li><a href="#skills">7. 内置技能</a></li>
+    <li><a href="#special-features">8. 特殊功能</a></li>
+    <li><a href="#design-principles">9. 设计原则</a></li>
+    <li><a href="#discussion">10. 讨论</a></li>
+    <li><a href="#conclusion">11. 结论</a></li>
+    <li><a href="#references">参考文献</a></li>
+  </ol>
+</nav>
+<button class="mobile-nav-btn" id="mobileNavBtn" aria-label="打开目录" aria-expanded="false"></button>
+
+<!-- 验证面板（无数据，由 --no-verify-panel 跳过，此处不渲染） -->
+
+
+
+<script>
+/* ===========================================
+   CHART.JS 初始化 — SWD原则配置
+   注意：每次生成报告时，根据实际数据填写labels和datasets
+   =========================================== */
+
+/* 移动端检测：≤768px 时关闭宽高比联动，由 CSS min-height 控制高度 */
+const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+const ctx1 = document.getElementById('chart1');
+if (ctx1) {
+  new Chart(ctx1, {
+    type: 'line',  // 根据数据类型选择：line/bar/scatter
+    data: {
+      labels: [/* x轴标签 */],
+      datasets: [{
+        label: '[系列名]',
+        data: [/* 数据点 */],
+        borderColor: '#2f4f4f',
+        backgroundColor: 'rgba(47,79,79,0.08)',
+        borderWidth: 2,
+        pointRadius: 4,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: !isMobile,
+      plugins: {
+        legend: { display: false },
+        title: { display: false }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: { font: { family: 'Helvetica Neue' } }
+        },
+        y: {
+          grid: { color: '#f0ece2', lineWidth: 1 },
+          border: { display: false },
+          ticks: { font: { family: 'Helvetica Neue' } }
+        }
+      }
+    }
+  });
+}
+
+/* ===========================================
+   FLOAT TOC — 悬浮目录滚动高亮
+   用 IntersectionObserver 监听各节进入视口，
+   自动给对应目录项加 .active 类
+   =========================================== */
+(function () {
+  const toc   = document.getElementById('floatToc');
+  if (!toc) return;
+
+  const links = Array.from(toc.querySelectorAll('a[href^="#"]'));
+  if (!links.length) return;
+
+  // 收集正文 section id
+  const ids      = links.map(a => a.getAttribute('href').slice(1));
+  const sections = ids.map(id => document.getElementById(id)).filter(Boolean);
+
+  // 去重（子节 .sub 可能指向同一 id）
+  const uniqueSections = [...new Set(sections)];
+
+  let activeId = null;
+
+  const setActive = (id) => {
+    if (id === activeId) return;
+    activeId = id;
+    links.forEach(a => {
+      const match = a.getAttribute('href') === '#' + id;
+      a.classList.toggle('active', match);
+    });
+    // 让高亮项在目录中保持可见（目录本身有滚动条时）
+    const activeLink = toc.querySelector('a.active');
+    if (activeLink) {
+      activeLink.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  };
+
+  // IntersectionObserver：section 进入视口上半部分时激活
+  const observer = new IntersectionObserver((entries) => {
+    // 找出所有当前可见的 section，取 y 坐标最小（最靠近顶部）的
+    const visible = entries
+      .filter(e => e.isIntersecting)
+      .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (visible.length > 0) {
+      setActive(visible[0].target.id);
+    }
+  }, {
+    rootMargin: '-10% 0px -60% 0px',  // 触发区：视口上方10%到中间40%
+    threshold: 0
+  });
+
+  uniqueSections.forEach(sec => observer.observe(sec));
+
+  // 平滑滚动（覆盖 CSS scroll-behavior，确保目录点击也有动画）
+  links.forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const target = document.getElementById(a.getAttribute('href').slice(1));
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+})();
+
+/* ===========================================
+   VERIFY PANEL — 悬浮验证面板控制器
+   功能：
+     · 点击标题栏或按 V 键展开/折叠
+     · 自动扫描三区内容，统计 ✓ 和 ✗ 行，更新徽章
+     · 有 ✗ 偏差项时：面板橙框、显示偏差汇总区、自动展开
+     · 全部通过时：绿色徽章、默认折叠
+   =========================================== */
+(function () {
+  const panel       = document.getElementById('verifyPanel');
+  const toggle      = document.getElementById('verifyToggle');
+  const body        = document.getElementById('verifyBody');
+  const badge       = document.getElementById('verifyBadge');
+  const statsEl     = document.getElementById('verifyStatsContent');
+  const calcEl      = document.getElementById('verifyCalcContent');
+  const warnSection = document.getElementById('verifyWarnSection');
+  const warnContent = document.getElementById('verifyWarnContent');
+  const note        = document.getElementById('verifyNote');
+  if (!panel || !toggle) return;
+
+  /* ---- 收集所有区域文本，统计通过/偏差数 ---- */
+  function parseSummary() {
+    const allText = [statsEl, calcEl].map(el => el ? el.textContent : '').join('\n');
+    const passed  = (allText.match(/✓/g) || []).length;
+    const warned  = (allText.match(/✗/g) || []).length;
+    const total   = passed + warned;
+
+    if (total === 0) {
+      badge.textContent = '暂无数据';
+      badge.style.background = '';
+      return;
+    }
+
+    if (warned > 0) {
+      panel.classList.add('has-warn');
+      badge.textContent = `${passed}✓  ${warned}✗`;
+
+      /* 提取偏差行，填充偏差汇总区 */
+      if (warnSection && warnContent) {
+        const warnLines = allText.split('\n')
+          .filter(l => l.includes('✗'))
+          .join('\n');
+        warnContent.textContent = warnLines;
+        warnSection.style.display = '';
+      }
+
+      if (note && !note.textContent.trim()) {
+        note.textContent =
+          `⚠ 发现 ${warned} 项计算偏差，报告正文保留原始数据，` +
+          `建议在「讨论」节说明偏差原因。`;
+      }
+    } else {
+      panel.classList.remove('has-warn');
+      badge.textContent = `${passed}/${total} 通过`;
+      if (warnSection) warnSection.style.display = 'none';
+    }
+  }
+
+  /* ---- 展开/折叠 ---- */
+  function open()  { panel.classList.add('open');    toggle.setAttribute('aria-expanded', 'true'); }
+  function close() { panel.classList.remove('open'); toggle.setAttribute('aria-expanded', 'false'); }
+  function togglePanel() { panel.classList.contains('open') ? close() : open(); }
+
+  /* ---- 有偏差时默认展开，全部通过则默认折叠 ---- */
+  parseSummary();
+  if (panel.classList.contains('has-warn')) open();
+
+  toggle.addEventListener('click', togglePanel);
+
+  /* ---- V 键快捷键（不在输入框时）---- */
+  document.addEventListener('keydown', e => {
+    if ((e.key === 'v' || e.key === 'V') &&
+        !e.target.getAttribute('contenteditable') &&
+        !['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) {
+      e.preventDefault();
+      togglePanel();
+    }
+  });
+})();
+
+/* ===========================================
+   MOBILE NAV — 移动端浮动导航按钮
+   功能：
+     · 点击 ☰ 按钮展开目录菜单
+     · 点击菜单项平滑滚动到对应章节，并自动关闭菜单
+     · 点击遮罩层关闭菜单
+     · 仅在 1024px 以下生效（CSS 控制显示）
+   =========================================== */
+(function () {
+  const btn     = document.getElementById('mobileNavBtn');
+  const menu    = document.getElementById('mobileNavMenu');
+  const overlay = document.getElementById('mobileNavOverlay');
+  if (!btn || !menu) return;
+
+  function openMenu() {
+    menu.classList.add('open');
+    overlay.classList.add('open');
+    btn.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    btn.setAttribute('aria-label', '关闭目录');
+  }
+  function closeMenu() {
+    menu.classList.remove('open');
+    overlay.classList.remove('open');
+    btn.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', '打开目录');
+  }
+  function toggleMenu() {
+    btn.classList.contains('open') ? closeMenu() : openMenu();
+  }
+
+  btn.addEventListener('click', e => { e.stopPropagation(); toggleMenu(); });
+  overlay.addEventListener('click', closeMenu);
+
+  /* 点击菜单项：平滑滚动 + 关闭菜单 */
+  menu.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const target = document.getElementById(a.getAttribute('href').slice(1));
+      if (target) {
+        // 考虑固定元素遮挡，向上偏移 16px
+        const y = target.getBoundingClientRect().top + window.scrollY - 16;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+      }
+      closeMenu();
+    });
+  });
+})();
+
+/* ===========================================
+   INLINE EDITOR — 内联文本编辑器
+   触发方式：
+     1. 鼠标悬停页面左上角热区（80×80px）→ 编辑按钮出现 → 点击
+     2. 键盘快捷键 E 键（在文本框内输入时无效）
+     3. 直接点击热区
+   编辑模式下：
+     - 所有 p、h1-h4、li、td、.abstract p、.keywords 可点击编辑
+     - 编辑中的元素有绿色边框高亮
+     - Ctrl+S / Cmd+S 保存到 localStorage 并导出文件
+     - 再次触发 E 或点击按钮退出编辑模式
+   注意：不使用 CSS ~ 兄弟选择器控制显隐（pointer-events:none 会断链）
+         必须用 JS + 400ms 延时实现热区悬停效果
+   =========================================== */
+class ReportInlineEditor {
+  constructor() {
+    this.isActive   = false;
+    this.storageKey = 'lab-report-edits-' + encodeURIComponent(document.title);
+    this.editableSelector = [
+      'h1','h2.section-title','h3','h4',
+      'p:not(.no-edit)',
+      'li:not(.no-edit)',
+      'td:not(.no-edit)',
+      '.abstract p',
+      '.keywords',
+      '.subtitle',
+      '.journal-bar div'
+    ].join(',');
+
+    this._buildUI();
+    this._bindHotzone();
+    this._bindKeyboard();
+    this._restoreFromStorage();
+  }
+
+  /* ---------- UI 构建 ---------- */
+  _buildUI() {
+    // 热区（左上角不可见触发区域）
+    this.hotzone = document.createElement('div');
+    this.hotzone.className = 'edit-hotzone';
+    this.hotzone.title = '点击进入编辑模式';
+
+    // 编辑切换按钮
+    this.btn = document.createElement('button');
+    this.btn.className = 'edit-toggle';
+    this.btn.id = 'editToggle';
+    this.btn.title = '编辑报告文字 (E)';
+    this.btn.innerHTML = '✏️';
+
+    // 状态提示条（编辑模式时显示在顶部）
+    this.bar = document.createElement('div');
+    this.bar.className = 'edit-statusbar';
+    this.bar.innerHTML =
+      '<span>✏️ 编辑模式 — 点击任意文字开始编辑</span>' +
+      '<span class="edit-actions">' +
+        '<kbd>Ctrl+S</kbd> 保存并导出 &nbsp;|&nbsp; ' +
+        '<kbd>E</kbd> 退出编辑' +
+      '</span>';
+
+    document.body.prepend(this.bar);
+    document.body.prepend(this.btn);
+    document.body.prepend(this.hotzone);
+
+    this.btn.addEventListener('click', () => this.toggleEditMode());
+  }
+
+  /* ---------- 热区悬停（400ms grace period，避免指针事件断链）---------- */
+  _bindHotzone() {
+    let hideTimer = null;
+
+    const showBtn = () => {
+      clearTimeout(hideTimer);
+      this.btn.classList.add('show');
+    };
+    const scheduleHide = () => {
+      hideTimer = setTimeout(() => {
+        if (!this.isActive) this.btn.classList.remove('show');
+      }, 400);
+    };
+
+    this.hotzone.addEventListener('mouseenter', showBtn);
+    this.hotzone.addEventListener('mouseleave', scheduleHide);
+    this.hotzone.addEventListener('click',      () => this.toggleEditMode());
+    this.btn.addEventListener('mouseenter',     showBtn);
+    this.btn.addEventListener('mouseleave',     scheduleHide);
+  }
+
+  /* ---------- 键盘快捷键 ---------- */
+  _bindKeyboard() {
+    document.addEventListener('keydown', e => {
+      // E 键切换编辑模式（在 contenteditable 内输入时跳过）
+      if ((e.key === 'e' || e.key === 'E') &&
+          !e.target.getAttribute('contenteditable') &&
+          !['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) {
+        e.preventDefault();
+        this.toggleEditMode();
+      }
+      // Ctrl+S / Cmd+S 保存
+      if ((e.ctrlKey || e.metaKey) && e.key === 's' && this.isActive) {
+        e.preventDefault();
+        this.saveAndExport();
+      }
+    });
+  }
+
+  /* ---------- 编辑模式开关 ---------- */
+  toggleEditMode() {
+    this.isActive ? this.exitEditMode() : this.enterEditMode();
+  }
+
+  enterEditMode() {
+    this.isActive = true;
+    this.btn.classList.add('active','show');
+    this.btn.innerHTML = '✅';
+    this.btn.title = '退出编辑模式 (E)';
+    document.body.classList.add('edit-mode-on');
+
+    // 给所有可编辑元素加上 contenteditable
+    document.querySelectorAll(this.editableSelector).forEach(el => {
+      // 跳过验证摘要框、代码块、图注（不应手动编辑）
+      if (el.closest('.verification, .formula, figcaption, .references')) return;
+      el.setAttribute('contenteditable', 'true');
+      el.setAttribute('data-edit-original', el.innerHTML);
+      el.classList.add('editable-active');
+      // 失焦时自动存 localStorage
+      el.addEventListener('blur', () => this._autosave(), { passive: true });
+    });
+  }
+
+  exitEditMode() {
+    this.isActive = false;
+    this.btn.classList.remove('active');
+    if (!this._hotzoneHovered) this.btn.classList.remove('show');
+    this.btn.innerHTML = '✏️';
+    this.btn.title = '编辑报告文字 (E)';
+    document.body.classList.remove('edit-mode-on');
+
+    document.querySelectorAll('[contenteditable="true"]').forEach(el => {
+      el.removeAttribute('contenteditable');
+      el.classList.remove('editable-active');
+    });
+
+    this._autosave();
+  }
+
+  /* ---------- 自动保存到 localStorage ---------- */
+  _autosave() {
+    const edits = {};
+    document.querySelectorAll('[data-edit-original]').forEach((el, i) => {
+      const key = el.dataset.editOriginal ? 'el-' + i : null;
+      if (key) edits[key] = { html: el.innerHTML, tag: el.tagName, index: i };
+    });
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify({
+        savedAt: new Date().toISOString(),
+        body: document.querySelector('main').innerHTML
+      }));
+    } catch(e) { /* localStorage 不可用时静默失败 */ }
+  }
+
+  /* ---------- 从 localStorage 恢复 ---------- */
+  _restoreFromStorage() {
+    try {
+      const raw = localStorage.getItem(this.storageKey);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (data && data.body) {
+        document.querySelector('main').innerHTML = data.body;
+        // 图表需要重新初始化（innerHTML 替换后 canvas 上下文丢失）
+        this._reinitCharts();
+        console.info('[ReportEditor] 已从本地存储恢复上次编辑，保存时间:', data.savedAt);
+      }
+    } catch(e) {}
+  }
+
+  /* ---------- 恢复后重新初始化 Chart.js ---------- */
+  _reinitCharts() {
+    // 销毁已有实例，再重建
+    Object.values(Chart.instances || {}).forEach(c => c.destroy());
+    // 触发自定义事件，让页面内的图表初始化代码重新运行
+    document.dispatchEvent(new CustomEvent('report-editor-restored'));
+  }
+
+  /* ---------- 保存并导出 HTML 文件 ---------- */
+  saveAndExport() {
+    this._autosave();
+
+    // 临时移除编辑态样式再序列化
+    const wasActive = this.isActive;
+    document.body.classList.remove('edit-mode-on');
+    document.querySelectorAll('[contenteditable]').forEach(el => {
+      el.removeAttribute('contenteditable');
+      el.classList.remove('editable-active');
+    });
+
+    const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+
+    // 恢复编辑态
+    if (wasActive) {
+      document.body.classList.add('edit-mode-on');
+      document.querySelectorAll(this.editableSelector).forEach(el => {
+        if (el.closest('.verification, .formula, figcaption, .references')) return;
+        el.setAttribute('contenteditable', 'true');
+        el.classList.add('editable-active');
+      });
+    }
+
+    // 触发下载
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = (document.title || 'lab-report') + '-edited.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+
+    this._showToast('✅ 已保存并导出文件');
+  }
+
+  /* ---------- 轻量 Toast 提示 ---------- */
+  _showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'edit-toast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, 2200);
+  }
+}
+
+// 初始化编辑器（仅当 build_html.py 传入 --editable 时，body 上有 data-editable 属性）
+if (document.body.dataset.editable === 'true') {
+  const reportEditor = new ReportInlineEditor();
+}
+</script>
+</body>
+</html>

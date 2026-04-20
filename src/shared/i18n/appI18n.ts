@@ -150,7 +150,59 @@ export interface EditorCopy {
     invalidMarkdownLinkTarget: string;
     openMarkdownLinkFailed: string;
     syncContentFailed: string;
-    readOnlyBlocked: string;
+      readOnlyBlocked: string;
+  };
+  htmlPreview: {
+    svgEditorTitle: string;
+    svgEditorSubtitle: string;
+    svgEditAction: string;
+    chartEditAction: string;
+    chartEditorTitle: string;
+    chartEditorSubtitle: string;
+    elementTypeLabel: string;
+    textLabel: string;
+    xLabel: string;
+    yLabel: string;
+    widthLabel: string;
+    heightLabel: string;
+    radiusLabel: string;
+    rxLabel: string;
+    ryLabel: string;
+    x1Label: string;
+    y1Label: string;
+    x2Label: string;
+    y2Label: string;
+    fillLabel: string;
+    strokeLabel: string;
+    strokeWidthLabel: string;
+    opacityLabel: string;
+    fontSizeLabel: string;
+    textAnchorLabel: string;
+    fontFamilyLabel: string;
+    markerStartLabel: string;
+    markerEndLabel: string;
+    strokeDasharrayLabel: string;
+    strokeLinecapLabel: string;
+    strokeLinejoinLabel: string;
+    pathDataLabel: string;
+    pointsLabel: string;
+    translateXLabel: string;
+    translateYLabel: string;
+    insertPoint: string;
+    deletePoint: string;
+    emptySvgTextWarning: string;
+    invalidSvgPathData: string;
+    invalidSvgPoints: string;
+    noSvgElementSelected: string;
+    elementTypeNames: Record<
+      "rect" | "circle" | "ellipse" | "line" | "polygon" | "polyline" | "path" | "text" | "tspan",
+      string
+    >;
+    labelsRow: string;
+    autoBindingHint: string;
+    invalidNumber: string;
+    noChartData: string;
+    chartSeriesFallback: string;
   };
   toc: {
     dockAriaLabel: string;
@@ -470,6 +522,66 @@ const enCopy: AppCopy = {
       openMarkdownLinkFailed: "Failed to open markdown link target.",
       syncContentFailed: "Failed to sync editor content.",
       readOnlyBlocked: "Editor is read-only. Switch to editable mode first."
+    },
+    htmlPreview: {
+      svgEditorTitle: "Edit SVG Elements",
+      svgEditorSubtitle: "Select one SVG element at a time, drag it on the canvas, and edit its geometry or style on the right.",
+      svgEditAction: "Edit SVG",
+      chartEditAction: "Edit Chart",
+      chartEditorTitle: "Edit Chart Data",
+      chartEditorSubtitle: "Update labels, series names, and numeric values for the detected chart.",
+      elementTypeLabel: "Element Type",
+      textLabel: "Text",
+      xLabel: "X",
+      yLabel: "Y",
+      widthLabel: "Width",
+      heightLabel: "Height",
+      radiusLabel: "Radius",
+      rxLabel: "RX",
+      ryLabel: "RY",
+      x1Label: "X1",
+      y1Label: "Y1",
+      x2Label: "X2",
+      y2Label: "Y2",
+      fillLabel: "Fill",
+      strokeLabel: "Stroke",
+      strokeWidthLabel: "Stroke Width",
+      opacityLabel: "Opacity",
+      fontSizeLabel: "Font Size",
+      textAnchorLabel: "Text Anchor",
+      fontFamilyLabel: "Font Family",
+      markerStartLabel: "Marker Start",
+      markerEndLabel: "Marker End",
+      strokeDasharrayLabel: "Dash Pattern",
+      strokeLinecapLabel: "Line Cap",
+      strokeLinejoinLabel: "Line Join",
+      pathDataLabel: "Path Data",
+      pointsLabel: "Points",
+      translateXLabel: "Translate X",
+      translateYLabel: "Translate Y",
+      insertPoint: "Insert Point",
+      deletePoint: "Delete Point",
+      emptySvgTextWarning: "Empty SVG text can be saved, but it may be filtered out the next time the SVG editor reloads.",
+      invalidSvgPathData: "Path data looks invalid. Fix the SVG path syntax before applying.",
+      invalidSvgPoints: "Points must be valid numeric coordinate pairs.",
+      noSvgElementSelected: "Select an SVG element on the canvas to edit it.",
+      elementTypeNames: {
+        rect: "Rectangle",
+        circle: "Circle",
+        ellipse: "Ellipse",
+        line: "Line",
+        polygon: "Polygon",
+        polyline: "Polyline",
+        path: "Path",
+        text: "Text",
+        tspan: "TSpan"
+      },
+      labelsRow: "Labels",
+      autoBindingHint:
+        "This chart did not have a reusable MDPad data source. Saving will inject one for future edits.",
+      invalidNumber: "Please enter valid numbers for every chart cell.",
+      noChartData: "This chart could not be mapped to editable labels and numeric series.",
+      chartSeriesFallback: "Series"
     },
     toc: {
       dockAriaLabel: "Document outline",
@@ -794,6 +906,66 @@ const zhCopy: AppCopy = {
       openMarkdownLinkFailed: "\u6253\u5f00 Markdown \u94fe\u63a5\u76ee\u6807\u5931\u8d25\u3002",
       syncContentFailed: "\u540c\u6b65\u7f16\u8f91\u5668\u5185\u5bb9\u5931\u8d25\u3002",
       readOnlyBlocked: "\u5f53\u524d\u4e3a\u53ea\u8bfb\u6a21\u5f0f\uff0c\u8bf7\u5148\u5207\u6362\u4e3a\u53ef\u7f16\u8f91\u3002"
+    },
+    htmlPreview: {
+      svgEditorTitle: "编辑 SVG 元素",
+      svgEditorSubtitle: "一次选择一个 SVG 元素，可在画布上拖动，也可在右侧修改几何与样式。",
+      svgEditAction: "编辑 SVG",
+      chartEditAction: "编辑图表",
+      chartEditorTitle: "编辑图表数据",
+      chartEditorSubtitle: "修改检测到的图表标签、系列名称和数值。",
+      elementTypeLabel: "元素类型",
+      textLabel: "文字",
+      xLabel: "X",
+      yLabel: "Y",
+      widthLabel: "宽度",
+      heightLabel: "高度",
+      radiusLabel: "半径",
+      rxLabel: "水平圆角/半径",
+      ryLabel: "垂直圆角/半径",
+      x1Label: "X1",
+      y1Label: "Y1",
+      x2Label: "X2",
+      y2Label: "Y2",
+      fillLabel: "填充",
+      strokeLabel: "描边",
+      strokeWidthLabel: "描边宽度",
+      opacityLabel: "透明度",
+      fontSizeLabel: "字号",
+      textAnchorLabel: "文字对齐锚点",
+      fontFamilyLabel: "字体族",
+      markerStartLabel: "起点箭头",
+      markerEndLabel: "终点箭头",
+      strokeDasharrayLabel: "虚线模式",
+      strokeLinecapLabel: "线帽",
+      strokeLinejoinLabel: "折角连接",
+      pathDataLabel: "路径数据",
+      pointsLabel: "点集",
+      translateXLabel: "平移 X",
+      translateYLabel: "平移 Y",
+      insertPoint: "插入点",
+      deletePoint: "删除点",
+      emptySvgTextWarning: "允许保存空文字，但下次重新载入 SVG 编辑器时它可能会被过滤掉。",
+      invalidSvgPathData: "路径数据格式看起来不合法，请先修正 SVG path 语法。",
+      invalidSvgPoints: "点集必须是有效的数字坐标对。",
+      noSvgElementSelected: "请先在画布上选择一个 SVG 元素。",
+      elementTypeNames: {
+        rect: "矩形",
+        circle: "圆形",
+        ellipse: "椭圆",
+        line: "直线",
+        polygon: "多边形",
+        polyline: "折线",
+        path: "路径",
+        text: "文字",
+        tspan: "文字片段"
+      },
+      labelsRow: "标签",
+      autoBindingHint:
+        "这个图表原本没有可复用的 MDPad 数据源。保存时会自动注入绑定，方便后续继续编辑。",
+      invalidNumber: "请为图表中的每个单元格输入有效数字。",
+      noChartData: "当前图表无法稳定映射为可编辑的标签和数值系列。",
+      chartSeriesFallback: "系列"
     },
     toc: {
       dockAriaLabel: "文档目录",

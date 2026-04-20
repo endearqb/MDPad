@@ -4,11 +4,6 @@ import {
   historyKeymap,
   indentWithTab
 } from "@codemirror/commands";
-import { html as htmlLanguage } from "@codemirror/lang-html";
-import { javascript } from "@codemirror/lang-javascript";
-import { json as jsonLanguage } from "@codemirror/lang-json";
-import { markdown as markdownLanguage } from "@codemirror/lang-markdown";
-import { python as pythonLanguage } from "@codemirror/lang-python";
 import {
   bracketMatching,
   HighlightStyle,
@@ -30,6 +25,11 @@ import {
 } from "@codemirror/view";
 import { useEffect, useMemo, useRef } from "react";
 import type { SourceLanguage } from "../../shared/utils/documentKind";
+import {
+  getImmediateSourceLanguageExtension,
+  loadSourceLanguageExtension,
+  preloadSourceLanguageExtension
+} from "./sourceLanguage";
 
 interface SourceEditorStats {
   wordCount: number;
@@ -55,25 +55,6 @@ function buildEditorStats(value: string): SourceEditorStats {
     charCount: value.length,
     wordCount: normalized ? normalized.split(/\s+/u).length : 0
   };
-}
-
-function getLanguageExtension(language: SourceLanguage) {
-  switch (language) {
-    case "markdown":
-      return markdownLanguage();
-    case "html":
-      return htmlLanguage();
-    case "javascript":
-      return javascript();
-    case "typescript":
-      return javascript({ typescript: true });
-    case "json":
-      return jsonLanguage();
-    case "python":
-      return pythonLanguage();
-    default:
-      return [];
-  }
 }
 
 function getEditableExtension(
@@ -219,6 +200,7 @@ export default function SourceEditor({
   const onChangeRef = useRef(onChange);
   const onReadOnlyInteractionRef = useRef(onReadOnlyInteraction);
   const onStatsChangeRef = useRef(onStatsChange);
+  const languageRequestTokenRef = useRef(0);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -250,7 +232,9 @@ export default function SourceEditor({
         ...searchKeymap
       ]),
       editorTheme,
-      languageCompartmentRef.current.of(getLanguageExtension(language)),
+      languageCompartmentRef.current.of(
+        getImmediateSourceLanguageExtension(language)
+      ),
       highlightCompartmentRef.current.of(getHighlightExtension(language)),
       editableCompartmentRef.current.of(
         getEditableExtension(isEditable, () => {
@@ -297,9 +281,12 @@ export default function SourceEditor({
       return;
     }
 
+    const requestToken = languageRequestTokenRef.current + 1;
+    languageRequestTokenRef.current = requestToken;
+
     view.dispatch({
       effects: languageCompartmentRef.current.reconfigure(
-        getLanguageExtension(language)
+        getImmediateSourceLanguageExtension(language)
       )
     });
 
@@ -308,6 +295,28 @@ export default function SourceEditor({
         getHighlightExtension(language)
       )
     });
+
+    preloadSourceLanguageExtension(language);
+
+    void loadSourceLanguageExtension(language)
+      .then((extension) => {
+        if (languageRequestTokenRef.current !== requestToken) {
+          return;
+        }
+
+        viewRef.current?.dispatch({
+          effects: languageCompartmentRef.current.reconfigure(extension)
+        });
+      })
+      .catch(() => {
+        if (languageRequestTokenRef.current !== requestToken) {
+          return;
+        }
+
+        viewRef.current?.dispatch({
+          effects: languageCompartmentRef.current.reconfigure([])
+        });
+      });
   }, [language]);
 
   useEffect(() => {

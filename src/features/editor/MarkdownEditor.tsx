@@ -79,6 +79,7 @@ import {
 } from "./markdownImageSyntax";
 import { createClipboardPipeline } from "./clipboard/pipeline";
 import { createBinaryMediaPasteHandler } from "./clipboard/handlers/binaryMedia";
+import { createTextMarkdownPasteHandler } from "./clipboard/handlers/textMarkdown";
 import { createTextMarkdownImagePasteHandler } from "./clipboard/handlers/textMarkdownImage";
 import { CalloutBlockquote } from "./extensions/calloutBlockquote";
 import {
@@ -127,6 +128,7 @@ import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
 import {
   canExportCurrentSelection,
+  getMarkdownClipboardText,
   getMarkdownExportSnapshot,
   getMarkdownSelectionExport
 } from "./markdownExport";
@@ -1008,6 +1010,9 @@ export default function MarkdownEditor({
             parseObsidianEmbedImageSyntax,
             widthPxToPercent,
             defaultWidth: mediaDefaults.defaultWidth
+          }),
+          createTextMarkdownPasteHandler({
+            markdownToHtml
           })
         ]
       }),
@@ -1620,6 +1625,7 @@ export default function MarkdownEditor({
           "mdpad-editor prose max-w-none focus:outline-none selection:bg-blue-200 selection:text-blue-900 dark:selection:bg-blue-500/30 dark:selection:text-blue-200",
         style: `--md-table-cell-min-width: ${MD_TABLE_CELL_MIN_WIDTH}px;`
       },
+      clipboardTextSerializer: () => getMarkdownClipboardText(editorRef.current),
       handleDOMEvents: {
         click: (_view, event) => {
           if (!(event instanceof MouseEvent)) {

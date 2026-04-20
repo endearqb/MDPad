@@ -1,7 +1,7 @@
 {
   "name": "mdpad",
   "private": true,
-  "version": "0.2.5",
+  "version": "0.2.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -68,6 +68,7 @@
     "lucide-react": "^0.575.0",
     "marked": "^15.0.7",
     "mermaid": "^11.12.1",
+    "parse5": "8.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "styletron-engine-atomic": "^1.6.2",

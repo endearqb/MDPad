@@ -1,3 +1,291 @@
+# 编写 updatenote 并推送 main
+
+## Plan
+- [x] 盘点当前工作区内待提交改动，整理适合写入本轮更新说明的高层级主题
+- [x] 按仓库规范在 `update/` 下新增本轮 `updatenote_yyyymmddhh.md`
+- [x] 运行提交前验证，确认当前 `main` 可安全提交与推送
+- [x] 提交当前改动并推送 `origin/main`
+
+## Progress Notes
+- 正在基于当前 `main` 工作区的未提交改动整理本轮更新说明范围，重点已确认包含 `0.2.6` 版本同步、HTML 预览 / SVG 编辑增强、图表与锚点交互修复，以及编辑器拆包优化。
+- 已新增 [update/updatenote_2026042015.md](/D:/MyProject/MDPad/update/updatenote_2026042015.md)，将本轮 `0.2.6` 变更收敛为一份高层级更新说明，覆盖 SVG 编辑增强、图表入口收口、锚点滚动兼容、编辑器拆包与 Markdown 粘贴识别。
+- 本地提交前验证已完成：`pnpm exec tsc --noEmit` 通过，`pnpm test` 通过（41 个测试文件 / 294 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：本轮发布说明已补齐到仓库规范要求的位置和命名规则下，后续查看版本演进时不需要再从 `tasks/todo.md` 的过程记录里反向提炼。
+- 结果：当前 `main` 工作区已经通过类型检查、全量测试和生产构建，具备提交并推送到 `origin/main` 的本地条件。
+- 说明：本次提交会一并包含当前工作区里已有的功能改动、测试、版本同步、文档记录与 `update/` 历史说明文件，不会只提交单独的 updatenote。
+
+# 修复安装包中 Edit SVG 按钮仍然无效
+
+## Plan
+- [x] 将 `htmlPreviewDocument` 的 SVG 选中覆盖层重构为“纯视觉层 + 独立交互控件”，避免继续依赖 `pointer-events: none` 父层下的子节点命中
+- [x] 将 `Edit SVG` 按钮恢复为标准 `click` 入口，并保持现有轻编辑到完整编辑器的两段式行为与草稿继承
+- [x] 为宿主脚本补充结构性回归测试，锁定按钮/resize handle 不在全屏 overlay 内
+- [x] 运行类型检查、定向测试与构建验证，并回填任务记录、经验与更新说明
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 现已将 SVG 选中覆盖层拆成两部分：全屏 fixed 的 `overlayRoot` 只保留选中框并继续 `pointer-events: none`；`Edit SVG` 按钮和 8 个 resize handle 改为独立 fixed 控件直接挂到 `document.body`，从结构上切断了对“父层 none、子层 auto 仍可点”的 WebView 兼容假设。
+- 同一文件里，`Edit SVG` 入口已恢复为标准 `click` 触发 `openSvgEditor(...)`；宿主原有的 `mousedown` 捕获仍会识别 `[data-mdpad-svg-action]`，因此点击按钮不会被误判为“点了 SVG 外部而关闭选中态”。
+- 这次没有改动父层 [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 的 `open-svg-editor` 消费逻辑，也没有回退之前已经修好的轻编辑草稿继承、多选和连接线热区增强；只是把宿主 iframe 内的命中结构修成更稳的版本。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 已新增结构性断言：`Edit SVG` 按钮与 resize handle 都不再位于 `[data-mdpad-svg-selection-overlay]` 下，同时保留“点击按钮会发 `open-svg-editor`”的行为回归，避免以后又把交互控件塞回透传 overlay 里。
+- 为了更接近安装包实际链路，我额外跑了一次 `pnpm tauri:build`。该脚本会自动把版本号 bump 到下一个 patch 版本，我在验证完成后已把这些版本号文件手动恢复到原来的 `0.2.6`，只保留功能修复本身。
+
+## Review
+- 结果：安装包里 `Edit SVG` 看得到但点不动的高概率根因已经从结构层修掉。现在真正可点击的按钮和手柄不再处于 `pointer-events: none` 祖先之下，命中将交给浏览器/WebView 的正常 fixed 控件路径处理。
+- 结果：现有交互语义保持不变，仍然是“单击轻编辑、点击 `Edit SVG` 或双击已选中 SVG 才进入完整编辑器”；消息桥、草稿继承、多选和连接线改进都没有回退。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（3 个测试文件 / 44 个测试）；`pnpm build` 通过；`pnpm tauri:build` 通过并成功产出安装包，随后已回退构建脚本自动带来的版本号 bump。
+
+# 修复 SVG 入口点击、多选与连接线命中
+
+## Plan
+- [x] 稳定 `htmlPreviewDocument` 中 `Edit SVG` 按钮的触发链路，并保留现有轻编辑到完整编辑器的两段式行为
+- [x] 修复 `SvgTextCanvasEditor` 里 `Shift+点击` 多选被重复切换的问题，统一画布 item 的选择事件通道
+- [x] 提升预览宿主与完整编辑器里连接线元素的命中热区，改善细线/短线选择体验
+- [x] 补充 `htmlPreviewDocument`、`HtmlPreview`、`htmlPreviewEditors` 回归测试并完成类型检查、定向测试与构建验证
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已把选中覆盖层里的 `Edit SVG` 入口改成 `pointerdown` 直接触发 `openSvgEditor(...)`，不再依赖后续 `click` 冒泡；同时收口了宿主 `mousedown` 捕获链路，对 `[data-mdpad-svg-action]` 不再额外吞事件，从而避免安装版里“按钮看得到但点了没反应”的不稳定路径。
+- 同一文件新增了连接线近点命中兜底：当点击发生在 inline SVG 内、但原始 target 没有直接命中可编辑元素时，会按点击点去查找最近的 `line` / `polyline` / connector `path`，并在 `10px` 容差内把这次点击归到最近连接线，改善细线、短线和贴边连接线的选择成功率。
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 已把画布 item 的选择变更收敛到 `onPointerDown` 单一路径，移除了同一元素上会二次切换 selection 的 `onClick` 选择逻辑；`Shift+点击` 现在会稳定追加/保留当前选择集，不再在 click 阶段被切回去。
+- 同一编辑器对 connector item 增加了额外 hit padding，并通过 [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 的 connector 专用 `::before` 框把视觉框维持在真实 bbox 附近、命中区域则放大到更容易点中的范围，避免简单粗暴扩大所有元素的可点面积。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 已把 `Edit SVG` 回归切到真实 `pointerdown` 触发路径，并新增“在 SVG root 上靠近细连接线点击也能选中 line”的回归；[src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已把多选回归改成 `pointerdown`，同时补上 connector 热区样式断言。
+
+## Review
+- 结果：HTML 预览中的 `Edit SVG` 按钮现在走更早、更直接的事件链路，安装包里的 WebView 环境不会再出现“按钮显示了但点不动”的假可用状态。
+- 结果：`SvgTextCanvasEditor` 里的 `Shift+点击` 多选已恢复稳定，根因是同一 item 先在 `pointerdown` 增选、再在 `click` 被反向切换；现在选择只在一处处理，多选、批量样式和批量移动都不会被这条竞态拖回去。
+- 结果：连接线在预览宿主和完整编辑器里都更容易命中了，而且这次只放大 connector 热区，没有把普通形状也一起变成高误触目标。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts` 通过（3 个测试文件 / 44 个测试）；`pnpm build` 通过。
+
+# 修复 HTML 预览目录锚点路由与滚动兼容性
+
+## Plan
+- [x] 将 HTML preview 的同页锚点处理拆成“捕获阶段阻止默认导航”和“冒泡阶段兜底滚动”两段，避免吞掉文档自身目录脚本
+- [x] 为预览宿主补齐“最近可滚动祖先 -> iframe 内页面视口 -> scrollIntoView 回退”的锚点滚动策略，并统一 16px 顶部偏移
+- [x] 补充 `htmlPreviewDocument` 锚点回归测试，覆盖文档自身 click 逻辑保留、嵌套滚动容器与 iframe 页面视口兜底
+- [x] 运行定向测试完成验证，并在本文件回填 Progress Notes / Review
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已将同页锚点处理从“捕获阶段直接 `scrollIntoView`”改为“两段式”：捕获阶段只 `preventDefault()` 阻止 `<base href>` 下的错误导航，不再对 `#...` 链接调用 `stopPropagation()`，从而把页面自己的目录点击逻辑留在原事件链里执行。
+- 同一文件新增了锚点滚动 helper：会先查找目标元素最近的可滚动祖先，优先对内部滚动容器执行 `scrollTo({ top, behavior: "smooth" })`；找不到内部滚动容器时，再回退到 iframe 内页面视口滚动，最后才保底 `scrollIntoView`。
+- 预览宿主的兜底滚动统一加入了 `16px` 顶部偏移，和当前报告里的移动目录脚本对齐，减少目录脚本已滚动后宿主再次吸顶造成的视觉跳动。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 已更新字符串注入断言，并新增 3 组行为回归：保留文档自身同页锚点 click 副作用、命中嵌套滚动容器时滚动容器本身、无内部滚动容器时回退到 iframe 页面视口。
+- 定向验证已覆盖宿主脚本与父层预览集成：`htmlPreviewDocument` 回归通过后，又额外跑了 `HtmlPreview.test.ts` + `htmlPreviewDocument.test.ts` 联合验证，确认这次锚点路由调整没有影响预览组件的既有消息桥行为。
+
+## Review
+- 结果：HTML 预览里的目录锚点不再被宿主在捕获阶段整段吞掉，文档自己的 click 处理器现在可以继续执行，因此像“移动目录点击后自动关闭”“页面自定义滚动偏移”这类行为恢复了生效空间。
+- 结果：宿主层的滚动兜底也更稳了；当锚点目标位于内部滚动容器内时，预览会滚动正确的容器，而不是一律只对目标元素做 `scrollIntoView`，这解决了嵌套滚动场景下跳转不生效的问题。
+- 验证：`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts` 通过（1 个测试文件 / 27 个测试）；`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts` 通过（2 个测试文件 / 35 个测试）。
+- 边界：当前兼容策略仍假设页面自己的同页锚点逻辑不会在目标阶段主动 `stopPropagation()`；若后续遇到“页面脚本只阻止冒泡、不自己滚动”的非常规文档，再单独补更强的宿主兼容层。
+
+# 修复 HTML 预览中 SVG 编辑入口
+
+## Plan
+- [x] 在 `HtmlPreview` 中正式消费 `open-svg-editor` 消息，并把完整编辑器状态与轻编辑会话状态拆开
+- [x] 在 `htmlPreviewDocument` 的 SVG 选中覆盖层中增加显式“Edit SVG”入口与双击进入完整编辑器
+- [x] 保证从轻编辑进入完整编辑器时继承当前 draft items，不丢失拖动后的草稿状态
+- [x] 补充 `HtmlPreview` / `htmlPreviewDocument` 回归测试，并完成类型检查、定向测试与构建验证
+
+## Progress Notes
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 现已正式消费 `open-svg-editor` 消息，并将预览内轻编辑会话与完整 `SvgTextCanvasEditor` 弹层拆成两套状态；`svgPreviewPatch` 会同时回灌轻编辑草稿与完整编辑器草稿，避免父层只接半条链路。
+- 同一文件已补上会话 ref，同步修正了消息监听闭包里读不到最新 `svgInlineSession` 的问题；现在从预览里先拖动、再进入完整编辑器时，会优先继承当前 draft items，而不是退回到最初采集值。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 的 SVG 选中覆盖层现已增加显式 `Edit SVG` 按钮，并把双击“已选中的 inline SVG”接到 `openSvgEditor(...)`；点击覆盖层按钮时会基于当前 DOM 实时状态重新采集 `items` 并发送完整编辑请求。
+- 预览宿主脚本保留了现有单选、拖动、基础 resize handle 与预览 patch 同步；这次只补了“进入完整编辑器”的第二阶段入口，没有回退已有的轻编辑体验。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts)、[src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 与 [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 已同步补齐按钮文案、显式入口、双击打开、只读不显示入口，以及“选择不自动开编辑器 / 显式打开才进入完整编辑器 / 继承 draft 草稿”的回归覆盖。
+
+## Review
+- 结果：HTML 文件预览中的 SVG 编辑链路已修通。现在单击 SVG 元素仍保留预览内轻编辑；选中后会出现明确的 `Edit SVG` 入口，双击已选中 SVG 也能直接进入完整编辑器。
+- 结果：从轻编辑进入完整编辑器时，当前拖动后的草稿几何不会丢失；完整编辑器继续通过既有 `applySvgPatch` 最小 patch 写回 HTML 源码，不引入新的消息协议种类。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts` 通过（2 个测试文件 / 32 个测试）；`pnpm exec vitest run src/features/editor/htmlPreviewEdit.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts` 通过（4 个测试文件 / 47 个测试）；`pnpm build` 通过。
+- 边界：这次修复只针对 HTML 文件的 `HtmlPreview` SVG 入口链路，不改 Markdown/WYSIWYG 里其它 SVG 或 chart 流程；轻编辑与完整编辑器仍是“两段式”进入，而不是单击即弹全编辑器。
+
+# SVG 高阶编辑扩展落地
+
+## Plan
+- [x] 升级 `HtmlPreview` / `SvgTextCanvasEditor` 的 SVG 会话模型，加入多选、主选中、视口与会话内线性历史
+- [x] 在 `SvgTextCanvasEditor` 中实现多选批量移动、批量样式修改、对齐与分布工具
+- [x] 为 `line` / `polyline` / 正交 `path` 增加端点吸附、绑定与图形移动后的正交路由跟随
+- [x] 为非路由 `path` 增加 `M/L/C/Q/S/T/Z` 锚点与控制柄可视编辑，并对含 `A` 的路径保留文本编辑回退
+- [x] 补充高阶 SVG 编辑相关测试并完成类型检查、定向测试与构建验证
+
+## Progress Notes
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 已升级为显式会话模型：当前会话内维护 `selection`、`viewport`、`bindings` 与 `past/present/future` 历史栈，支持多选、会话内撤销重做、缩放/平移和主选中同步。
+- 同一编辑器现已支持 `Shift` 多选、框选、批量移动、批量样式覆盖，以及 `Align Left / Align Center / Align Right / Distribute X` 这组批量排布工具；多选态会切到批量属性面板并保留 mixed value 展示。
+- 连接线编辑已扩展到 `line`、`polyline`、正交 `path`：端点拖拽时会寻找最近图形边缘吸附，建立会话内绑定，并在源/目标图形移动后按正交折线重新计算终点与路由结果。
+- 非路由 `path` 现在支持 `M/L/C/Q/S/T/Z` 的锚点与控制柄可视编辑、双击插点、键盘删除锚点；含 `A` 弧线的路径继续保留文本级 `d` 编辑与高亮回退，不强行启用不安全的可视手柄。
+- [src/features/editor/svgEditorGeometry.ts](/D:/MyProject/MDPad/src/features/editor/svgEditorGeometry.ts) 新增了 SVG 路由、路径解析、点集处理和贝塞尔编辑的纯逻辑层；[src/features/editor/svgEditorGeometry.test.ts](/D:/MyProject/MDPad/src/features/editor/svgEditorGeometry.test.ts) 与 [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 现已覆盖多选批量应用、撤销重做、正交连线写回、贝塞尔句柄更新与插删点。
+
+## Review
+- 结果：SVG 编辑链路已进入高阶版，当前会话内已具备多选批量编辑、撤销重做、基础流程图连接线吸附/路由，以及常见贝塞尔路径的可视句柄编辑能力。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/svgEditorGeometry.test.ts src/features/editor/htmlPreviewEdit.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts` 通过（5 个测试文件 / 47 个测试）；`pnpm build` 通过。
+- 边界：本轮连接线自动路由仍限定为同一 SVG 内的正交流程图语义，不做全局拥塞求解、跨组复杂 `transform` 绑定或 `A` 弧线可视手柄；批量对齐目前先落地横向排布工具，后续如需要可继续补齐纵向分布与更复杂的版式工具。
+
+# SVG 编辑扩展路线图落地
+
+## Plan
+- [x] 将 `HtmlPreview` 的 SVG 编辑入口切到画布式 `SvgTextCanvasEditor`，保留当前消息桥与最小 patch 保存链路
+- [x] 扩展 SVG 数据结构与 patch 引擎，补齐 `text-anchor`、`font-family`、`marker-start/end`、`path d`、`polyline/polygon points` 等可编辑字段
+- [x] 增强 `SvgTextCanvasEditor`，支持初始选中、文字增强编辑、`line` 端点拖拽、`path`/`polyline`/`polygon` 数据编辑与基础可视化辅助
+- [x] 放宽 `tspan` 相关提取限制，支持带层级的 `text` / `tspan` 编辑模型
+- [x] 补充 `HtmlPreview` / `htmlPreviewDocument` / `htmlPreviewEdit` / `htmlPreviewEditors` 回归测试并完成验证
+
+## Progress Notes
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已将当前 SVG 编辑入口切换为 [SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx)，保留原有 iframe 消息桥与 `applySvgPatch` 落盘链路，同时把会话草稿、选中 locator 和显式应用保存重新串通。
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 现已支持画布选中、双击文字编辑、`line` 端点拖拽、`polyline/polygon` 点句柄拖拽与插删点、`path d` / `points` 文本编辑、基础路径合法性校验、空文字警告，以及 `text-anchor`、`font-family`、箭头/虚线/线帽/折角等样式控制。
+- [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 与 [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已扩展 SVG geometry/style 模型，新增 `pathData`、`points` 与多组 line-like 样式字段，并让预览采集、实时 patch 与源码回写三端保持一致。
+- `text` / `tspan` 的提取与编辑兼容已放宽：父 `text` 不再因包含 `tspan` 被整体排除，画布中可保留父节点的坐标/样式编辑，同时对子 `tspan` 单独编辑文字与坐标，避免直接破坏原有节点结构。
+- [src/features/editor/htmlPreviewEdit.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.test.ts)、[src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts)、[src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts)、[src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 已补上 `path d`、`points`、高级样式字段、`tspan` 层级采集、路径校验与父层会话同步回归。
+
+## Review
+- 结果：SVG 编辑已从右侧字段面板为主的旧链路升级为“画布选中 + 直接拖拽 + 侧栏精修 + 显式应用”的新链路；`line`、`path`、`polyline`、`polygon`、`text` / `tspan` 的能力边界也比之前完整很多。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewEdit.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts` 通过（4 个测试文件 / 42 个测试）；`pnpm build` 通过。
+- 边界：这次还没有进入完整贝塞尔控制点编辑、自动吸附/路由、多选和撤销重做；当前更适合文档内嵌 SVG 的轻量结构化编辑，而不是通用矢量设计器。
+
+# 修复 HTML 预览图表误触发编辑
+
+## Plan
+- [x] 将 HTML preview 中 chart 点击从“点中容器即打开”改为“点中真实渲染面后显示显式入口”
+- [x] 将 iframe -> parent 的 chart 交互改为“两段式”：先显示入口按钮，再打开 `ChartDataEditor`
+- [x] 补充 `htmlPreviewDocument` / `HtmlPreview` 回归测试，覆盖空白区误触发与入口关闭规则
+- [x] 运行定向测试完成验证，并在本文件回填回顾
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 里的 chart 命中已从“`closest([data-mdpad-chart])` 就算命中”收紧为“必须点到真实渲染面”。Chart.js 只接受 `canvas` 命中；ECharts 只接受 `canvas`/SVG 渲染节点命中，绑定容器的留白、标题和顶部间距不再触发。
+- 同一文件的消息协议已改成两段式：iframe 内真实命中 chart 时只发 `show-chart-action`，非 chart 左键点击会发 `hide-chart-action`，右键菜单与只读阻止也会顺手收起这个临时入口。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 新增了轻量 `pendingChartAction` 状态。父层现在先在预览壳层渲染一个“编辑图表”按钮，只有用户再点一次按钮时，才真正打开现有 `ChartDataEditor`。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 与 [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已补齐按钮文案和浮出入口样式；按钮会在点击外部、按 `Escape`、右键菜单打开、或 iframe 明确发出 dismiss 消息时关闭。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 与 [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 已新增回归：覆盖真实 canvas 点击、容器空白/标题点击不触发、只读模式下只有真实 chart 才拦截、入口按钮打开编辑器，以及入口的 dismiss/外部点击/右键菜单关闭规则。
+
+## Review
+- 结果：HTML 预览里的 chart 不再单击直接打开编辑框；现在只有点到真实图表表面时，才会出现显式“编辑图表”入口。容器空白、标题和标题上方留白都不会再误触发。
+- 验证：`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/HtmlPreview.test.ts` 通过（2 个测试文件 / 27 个测试）；`pnpm build` 通过。
+- 说明：当前工作区本来就有其他未提交与未跟踪改动；本次仅增量修改 HTML preview chart 交互、相关测试、文案样式和任务记录，没有回退这些现有变更。
+
+# SVG 预览内直编基础增强
+
+## Plan
+- [x] 扩展 HTML preview 宿主脚本，增加 SVG 选中态、拖拽移动、基础图形缩放手柄与对应消息桥
+- [x] 在 `HtmlPreview` 中接入 SVG 选中会话态与右侧浮动属性面板，串通预览增量 patch 与显式应用保存
+- [x] 保持保守 `applySvgPatch` 回写策略，只对基础图形几何和样式做最小属性 patch
+- [x] 补充 `htmlPreviewDocument`、`HtmlPreview`、`htmlPreviewEdit` 相关测试并运行 `vitest`、`pnpm test`、`pnpm build`
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已从“点击 SVG 打开整窗 modal”扩展为“预览内选中 + 拖拽/缩放 + 双向同步”模式：新增 `svg-selection`、`svg-preview-patch`、`dismiss-svg-selection`、`sync-svg-session` 四类消息，宿主脚本现在会在 iframe 内维护基础的 SVG 选中态、缩放手柄和拖拽态。
+- 预览内直编首批覆盖 `rect/circle/ellipse/line` 的选中、移动和缩放；`path/polygon/polyline` 保持整体移动与样式修改，不进入节点级编辑或包围框缩放。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 现在维护 SVG 会话态而不是默认打开 [SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx)；新增的 [SvgInlineInspector.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgInlineInspector.tsx) 作为右侧浮动属性面板，与预览拖拽共用一份 draft items。
+- 父层改值后会通过 `sync-svg-session` 把当前 draft 反推回 iframe，iframe 会话中的 DOM 与手柄位置会同步刷新；显式点击“应用”后才调用 `applySvgPatch` 回写 HTML 源码，继续维持保守 patch 策略。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已增加预览内 inspector 的布局和样式：打开 SVG 会话时，`HtmlPreview` 右侧保留一个固定宽度的属性面板，iframe 宽度会自动收缩，避免覆盖预览内容。
+- 已更新 [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 与 [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts)，覆盖新的 SVG 选中消息、bbox fallback、只读阻止和右侧 inspector 应用保存链路。
+
+## Review
+- 结果：MDPad 的 SVG 编辑现在已经从“弹窗里改元素”升级到“预览里直接选中、拖拽、缩放基础图形 + 右侧 inspector 改属性”的基础增强版。
+- 结果：源码回写仍然是 locator 驱动的最小属性 patch，没有退回整段 `<svg>` 重写；`path/polygon/polyline` 也继续维持保守移动/样式策略，没有冒进到 `d` / `points` 重写。
+- 验证：定向 `vitest` 通过；`pnpm test` 通过（39 个测试文件 / 267 个测试）；`pnpm build` 通过。
+- 手工验收建议：终端里无法直接完成桌面 GUI 点验，建议你本地重点再试 5 个场景。
+  1. `rect` 拖拽移动
+  2. `circle/ellipse` 缩放手柄
+  3. `line` 端点/包围框缩放后的几何是否符合预期
+  4. `path/polygon/polyline` 是否仍只支持整体移动
+  5. inspector 改值后预览是否同步、点击“应用”后源码是否按预期落盘
+
+# SVG 点击编辑回归修复
+
+## Plan
+- [x] 加固 HTML preview 的 SVG 点击链路，去掉对 `SVGGraphicsElement` 的脆弱依赖
+- [x] 为 SVG bbox 采集增加保守 fallback，避免因运行时缺少 `getBBox()` 让编辑入口失效
+- [x] 补充真实点击 inline SVG 的回归测试，覆盖可编辑、只读、`foreignObject` 与不受支持元素场景
+- [x] 运行定向 `vitest`、`pnpm test` 与 `pnpm build` 完成验证
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 里的 SVG 元素采集不再依赖 `element instanceof SVGGraphicsElement`；现在改为以 SVG 命名空间、受支持标签、`foreignObject` 过滤和源码 locator 可定位性为准，避免运行时缺少该构造函数时点击直接失效。
+- 同一文件已为 `bbox` 采集补了三层 fallback：优先 `getBBox()`，其次相对 `ownerSVGElement` 的 `getBoundingClientRect()`，最后按基础几何属性推导 `rect/circle/ellipse/line/text/tspan` 的保守边界，保证“编辑入口可用”优先于 bbox 精度。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 已新增真实点击回归：覆盖点击 `rect/text`、`path/polygon`、只读模式、`foreignObject`、不受支持元素，以及 `SVGGraphicsElement` 缺失与 `getBBox()` 抛错两类脆弱环境。
+- 这次顺手加固了测试宿主隔离：每个 preview host script 用例结束时都会清理它挂到 `document/window` 上的事件监听器，避免前一个用例残留监听器串进后一个场景造成假阳性或假阴性。
+
+## Review
+- 结果：inline SVG 点击编辑链路已恢复，且不再脆弱依赖特定运行时是否暴露 `SVGGraphicsElement` 或是否能稳定返回 `getBBox()`。
+- 验证：`pnpm vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过；`pnpm test` 通过（39 个测试文件 / 260 个测试）；`pnpm build` 通过。
+- 手工验收建议：本地再点验 4 个场景。
+  1. 点击 `rect`
+  2. 点击 `path` 或 `polygon`
+  3. 点击 `text`
+  4. 只读模式下点击任意 inline SVG
+
+# `vendor-tiptap` / `SourceEditor` 定向拆包方案
+
+## Plan
+- [x] 拆分 Markdown 纯文本导出工具，切断 `App` 到 TipTap 导出模块的静态依赖
+- [x] 收紧 `MarkdownEditor` 预加载策略，避免非 markdown / 非 WYSIWYG 启动路径提前拉取富文本依赖
+- [x] 将 `SourceEditor` 改为核心编辑器 + 按需语言包加载
+- [x] 重写 `vite.config.ts` 的编辑器相关 `manualChunks` 规则
+- [x] 补充相关测试并运行 `pnpm test`、`pnpm build` 完成验证
+
+## Progress Notes
+- `stripFrontMatterForExport` 已从 [markdownExport.ts](/D:/MyProject/MDPad/src/features/editor/markdownExport.ts) 拆到新的 [plainMarkdownExport.ts](/D:/MyProject/MDPad/src/features/editor/plainMarkdownExport.ts)，`App` 现在只静态依赖纯文本导出工具，不再通过这个入口把 `@tiptap/core` / `@tiptap/pm` 提前拉进首页。
+- `App` 已删除原本 mount 时无条件执行的 `loadMarkdownEditor()` 预加载；Markdown 富文本模块现在只在真正进入 WYSIWYG 渲染路径时加载，不再给 HTML / 代码文档的启动路径额外加包。
+- [SourceEditor.tsx](/D:/MyProject/MDPad/src/features/editor/SourceEditor.tsx) 已改为“同步核心 + 异步语言扩展”模型，新增 [sourceLanguage.ts](/D:/MyProject/MDPad/src/features/editor/sourceLanguage.ts) 负责 immediate / async / preload 三层语言加载；markdown 仍留在主块里，`html/js/json/python` 全部通过动态 `import()` 单独出块。
+- [vite.config.ts](/D:/MyProject/MDPad/vite.config.ts) 已把编辑器相关 chunk 调整为更细粒度的 `vendor-react`、`editor-tiptap-core`、`editor-tiptap-ui`、`editor-tiptap-table`、`vendor-highlight`、`vendor-katex`，并把源码语言块稳定命名为 `cm-lang-web`、`cm-lang-json`、`cm-lang-python`。
+- 这次还顺手解决了手动分包引出的两个隐性问题：把 React runtime 单独抽到 `vendor-react`，避免 `index` 再静态 import TipTap chunk；同时将 HTML / JavaScript 语言支持合并为 `cm-lang-web`，消除了 Rollup 的循环分块警告。
+
+## Review
+- 结果：首页主入口最新构建产物 [index-n7F4FBhg.js](/D:/MyProject/MDPad/dist/assets/index-n7F4FBhg.js) 现在只静态 import `vendor-react`、`vendor-icons`、`vendor-katex`，不再静态 import任何 `editor-tiptap-*` chunk。
+- 结果：`SourceEditor` 主块已从原来的约 `590 kB` 降到最新构建中的约 `91 kB`，语言支持拆成了独立块：`cm-lang-web` 约 `455 kB`、`cm-lang-python` 约 `45 kB`、`cm-lang-json` 约 `2 kB`。
+- 结果：原先的 `vendor-tiptap` 大块已拆为 `editor-tiptap-core` 约 `363 kB`、`editor-tiptap-ui` 约 `61 kB`、`editor-tiptap-table` 约 `13 kB`，并且不再被主入口提前绑定。
+- 验证：`pnpm test` 通过（38 个测试文件 / 244 个测试）；`pnpm build` 通过，且本轮构建已不再出现先前的 chunk size warning 或手动分包 circular chunk warning。
+- 说明：当前工作区仍存在其他未提交改动和未跟踪文件（包括之前的 HTML preview 编辑功能相关文件与用户自己的 [docs/newfeaturediscussion.md](/D:/MyProject/MDPad/docs/newfeaturediscussion.md)）；本次只增量修改了导出边界、SourceEditor 拆包、Vite chunk 规则与对应测试，没有回退那些现有变更。
+
+# SVG 图形编辑扩展 v1
+
+## Plan
+- [x] 扩展 HTML preview 的 SVG 桥接请求，采集单元素图形/文字的 locator、bbox、几何与样式信息
+- [x] 将 `htmlPreviewEdit.ts` 中的 SVG patch 泛化为通用元素 patch，支持文字、基础图形和 `transform translate(...)`
+- [x] 将 `SvgTextCanvasEditor` 扩展为 SVG 元素编辑面板，支持单元素选中、拖拽和按类型展示字段
+- [x] 串通 `HtmlPreview` 集成与中英文文案/样式
+- [x] 补充 SVG 桥接、patch、编辑器交互测试并运行 `vitest`、`pnpm test`、`pnpm build`
+
+## Progress Notes
+- 目标保持在 “SVG 元素编辑器 v1” 而不是完整 Inkscape：本轮仅覆盖单元素编辑，不做路径节点编辑、布尔运算、图层顺序或增删元素。
+- 选择粒度按单元素优先实现，不自动把图形和文字组合成一个对象；文本元素继续支持文字内容修改，图形元素优先支持位置、尺寸与常用样式。
+- `path` / `polygon` / `polyline` 只做整体移动和样式编辑，整体移动通过更新或注入 `transform="translate(...)"` 落盘，避免重写 `d` / `points`。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 现在会为 inline SVG 收集 `rect/circle/ellipse/line/polygon/polyline/path/text/tspan` 的单元素编辑载荷，回传 locator、bbox、geometry、style、transform 与 `canEditText`。
+- [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 已将原 `applySvgTextPatch` 升级为通用 `applySvgPatch`：文本元素继续改 `text/x/y`，基础图形改几何属性，`path/polygon/polyline` 通过注入或更新 `transform="translate(...)"` 完成整体平移，同时支持 `fill/stroke/stroke-width/opacity/font-size`。
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 已扩展为 SVG 元素编辑面板：画布覆盖层按 bbox 渲染单元素热点，拖拽会按元素类型更新 geometry 或 transform，右侧面板会按 `text/rect/circle/ellipse/line/path-like` 切换字段。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 与 [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已补齐元素类型、几何/样式字段文案和新的选中框/标签样式。
+- 已更新 [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts)、[src/features/editor/htmlPreviewEdit.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.test.ts)、[src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 覆盖新的 SVG 元素编辑协议与交互。
+
+## Review
+- 结果：SVG 编辑器现在不再只支持文字；`rect/circle/ellipse/line` 可直接改位置/尺寸/圆角或半径，`path/polygon/polyline` 可做整体平移与样式调整，文字元素仍保留文本编辑能力。
+- 结果：HTML preview 继续沿用 `sandbox="allow-scripts"` + `postMessage` + `parse5` 局部回写，没有退回到不安全的 iframe DOM 直改模式。
+- 验证：定向 `vitest` 已通过；`pnpm test` 通过（38 个测试文件 / 247 个测试）；`pnpm build` 通过。
+- 说明：当前工作区仍存在其他未提交改动和未跟踪文件（包括此前的拆包优化链路与用户自己的 [docs/newfeaturediscussion.md](/D:/MyProject/MDPad/docs/newfeaturediscussion.md)）；本次仅增量修改 SVG 元素编辑相关文件，没有回退这些现有变更。
+
+# 渲染态 HTML / SVG / Chart 可视化编辑 MVP
+
+## Plan
+- [x] 扩展 HTML preview 消息桥与 `HtmlPreview` / `App` 接口，接入可编辑与只读阻止链路
+- [x] 新增基于 `parse5` 的 HTML/SVG/chart 源码 patch 引擎，并补齐 chart 数据源注入策略
+- [x] 新增 SVG / chart 编辑器弹窗与预览侧运行时适配逻辑
+- [x] 扩展中英文文案、样式与相关测试
+- [x] 运行相关 `vitest` 与 `pnpm build` 完成验证
+
+## Progress Notes
+- 本次按“消息协议 -> 源码 patch -> React UI -> 测试验证”的顺序落地，避免把 HTML 行内编辑、SVG 画布编辑和 chart 绑定注入全部堆进同一个组件里。
+- 约束保持不变：HTML preview 继续使用 `sandbox="allow-scripts"`，不引入 `allow-same-origin`，所有编辑提交仍通过 `postMessage + token + event.source` 回到父应用修改 `doc.content`。
+- 当前工作区只有未跟踪的 [docs/newfeaturediscussion.md](/D:/MyProject/MDPad/docs/newfeaturediscussion.md)，本次不会覆盖或回退它。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已扩展为统一宿主脚本：保留外链和右键菜单桥接，同时新增 `inline-text-commit`、`open-svg-editor`、`open-chart-editor`、`read-only-blocked` 四类消息；预览内支持双击原位文本编辑、点击 inline SVG 打开文字编辑器，以及点击 Chart.js / ECharts 图表读取运行时模型。
+- [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 新增了基于 `parse5` 的源码 patch 引擎：普通 HTML 文本、SVG `<text>/<tspan>` 和 chart JSON 数据源都按 source location 做局部替换，不再依赖 `DOMParser` 整体序列化；chart 若无现成绑定，会自动补 `data-mdpad-chart` / `data-mdpad-chart-source` 和 JSON `<script>`。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 与 [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 已接入可编辑 HTML preview：父层继续复用 `handleMarkdownChange` 更新 `doc.content`，只读模式下仍走现有 `handleReadOnlyInteraction`。
+- 新增 [SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 和 [ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx)，前者支持画布拖动与坐标编辑，后者支持标签、系列名和数值表格编辑，并在首次保存未绑定 chart 时给出自动注入提示。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 和 [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已补齐 HTML preview 编辑器文案与 modal/table/canvas 样式；同时新增并更新了 [htmlPreviewEdit.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.test.ts)、[HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts)、[htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts)、[htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts)。
+
+## Review
+- 结果：HTML preview 现在支持三类可视化编辑。
+  1. 普通 HTML 文字可双击原位编辑，提交后直接回写源码字符串。
+  2. inline SVG 可打开文字画布编辑器，支持改字和拖动坐标。
+  3. Chart.js / ECharts 图表可编辑标签、系列名和数值；未绑定 chart 首次保存会自动注入 MDPad 数据源。
+- 验证：`pnpm test` 通过（37 个测试文件 / 241 个测试）；`pnpm build` 通过。
+- 说明：构建仍保留项目既有的 chunk size warning（`SourceEditor` / `vendor-tiptap` 超过 500 kB）；这是历史警告，本次未扩大其影响面。
+
 # 分主题调整垂直滚动条颜色
 
 ## Plan
@@ -617,3 +905,105 @@
 - 验证：发布前已运行 `pnpm lint`、`pnpm test`、`pnpm build`、`pnpm release:no-bump`；其中 `pnpm test` 通过 35 个测试文件 / 230 个测试，安装包已重新生成。
 - 安装包：已上传 `MDPad_0.2.5_x64-setup.exe`，最终 SHA256 为 `DC232A701FEEB7EE0CD228598A10C168F6354D70BD186FE9A0C45381C776F00B`。
 - 说明：中途发现“边打包边算哈希”会读到旧产物，因此已以最终生成的安装包和 GitHub 下载资产双重校验 SHA256，并同步修正文档口径。
+
+# 紧凑化右键导出菜单样式
+
+## Plan
+- [x] 收紧 `.editor-context-menu` 的宽度、间距、圆角、阴影和模糊强度
+- [x] 收紧 `.editor-context-menu-item` 的字号、行高、内边距和圆角，并修正文本颜色变量
+- [x] 将 hover / focus 反馈改为轻背景高亮，不再使用强调色文字
+- [x] 为 classic 主题补充更小圆角覆盖
+- [x] 运行 `pnpm build` 验证样式改动未引入构建问题
+
+## Progress Notes
+- 已确认右键导出菜单是应用内自定义菜单，Markdown 编辑区与 HTML 预览共用 `editor-context-menu` / `editor-context-menu-item` 两个类名，因此本次只需改 [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 即可同时影响两处入口。
+- 菜单容器已从原先偏 `slash-menu` 的大卡片风格收紧到更接近状态栏主题菜单的密度：更小的最小宽度、内边距、圆角、模糊和阴影，保留现有 fixed 定位与 z-index，不改弹出位置逻辑。
+- 菜单项已显式改为 `12px / 400 / 1.25` 的文字节奏，并把 `padding`、圆角与 hover 态一起收紧；同时修正了原本错误的 `var(--slash-menu-text)` 颜色引用，统一切到 `var(--slash-menu-text-primary)`。
+- hover / focus-visible 已改成轻背景 + 轻边框的低对比反馈，不再在悬停时把文字切成强调色，避免右键菜单比标题栏和状态栏更“响”。
+- classic 主题额外将菜单容器与菜单项圆角再收一档，保持该主题一贯更克制、更偏原生桌面控件的节奏。
+
+## Review
+- 结果：右键导出菜单现在会更接近标题栏 / 状态栏的紧凑极简风格，主要收敛了字体体量、纵向留白和圆角感；Markdown 编辑区与 HTML 预览会同时生效。
+- 验证：`pnpm build` 已通过。
+- 说明：这次只做了样式层收敛，没有修改菜单项结构、禁用逻辑、导出回调或 JSX 结构；终端里无法直接做 GUI 视觉验收，建议你本地再快速看一下 `light/dark` 与 `modern/classic` 四种组合下的实际观感。
+# 修复页内目录锚点跳转导致空白页
+
+## Plan
+- [x] 在 HTML 预览宿主脚本中拦截同页 `#hash` 点击，改为当前区域内平滑滚动
+- [x] 为 HTML 预览补充锚点解析与回归测试，覆盖命中、缺失和编码 hash
+- [x] 验证 Markdown 富文本的现有锚点链路，并补充回归测试锁定行为
+- [x] 运行定向 `vitest`，确认锚点跳转不再触发空白页回归
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已为预览 iframe 注入同页锚点拦截：点击 `href="#..."` 时不再让浏览器默认导航接管，而是在当前预览文档内查找 `id` / `name` 并执行平滑滚动。
+- 为了把锚点解析逻辑锁住，我补了 `decodeHtmlPreviewAnchorHash` 和 `findHtmlPreviewAnchorTarget` 两个内部辅助函数，并通过宿主脚本复用同一套逻辑，避免“测试一套、运行时另一套”。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 已补充带 `<base href>` 的锚点回归，以及命中、缺失、URL 编码 hash 的解析测试。
+- Markdown 富文本没有额外改运行时逻辑；我新增了 [src/features/editor/markdownAnchorRouting.test.ts](/D:/MyProject/MDPad/src/features/editor/markdownAnchorRouting.test.ts) 锁定现有 `hash -> internal TOC item` 路由行为，覆盖英文与中文标题锚点。
+
+## Review
+- 结果：HTML 预览中的目录锚点现在只会在当前 iframe 内容区内滚动，不会再因为 `<base href="...">` 触发实际导航而把预览切成空白。
+- 结果：Markdown 富文本本轮验证下来现有内部锚点链路仍然成立，因此没有盲目重写点击逻辑，只新增了回归测试把这条行为固定下来。
+- 验证：`pnpm vitest run src/features/editor/linkNavigation.test.ts src/features/editor/linkClickGuard.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/markdownAnchorRouting.test.ts` 通过（4 个测试文件 / 22 个测试）。
+- 说明：当前工作区本来就有其他未提交改动；本次只增量修改了 HTML 预览锚点处理、对应测试，以及任务记录，没有回退那些现有变更。
+
+# HTML 行内编辑退出交互修正
+
+## Plan
+- [x] 为 HTML preview inline editor 增加显式的点击外部退出机制
+- [x] 保持双击切换到其他文字块时“先提交前一个，再进入下一个”
+- [x] 在 link / svg / chart / context menu 等点击交互前先收口当前 inline editor
+- [x] 补充 host script 交互测试并运行定向 vitest 验证
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 里的 `finishInlineEditor` 现在会先把 `contenteditable` span 还原成普通 text node，再发送 `inline-text-commit`；这样提交时编辑态会立即退出，不再完全依赖父层 rerender 才消失。
+- 预览宿主脚本已新增捕获阶段的 `mousedown` 监听：只要当前存在活动 inline editor，且点击目标不在该 editor 内，就会按“保存并切换”语义先提交当前修改。
+- `contextmenu` 入口现在也会先收口当前 inline editor，避免右键菜单弹起时残留编辑态；而 `click` 链路因此会自然覆盖 link / svg / chart 这类后续点击交互。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 已新增 host script 级回归：覆盖点击外部提交退出、双击另一个文字块先提交再切换、外链点击前先提交、以及 `Esc` 取消不提交。
+
+## Review
+- 结果：HTML 行内编辑现在有稳定的退出路径了。单击别处会提交并退出，双击其他文字块会先提交前一个再进入新块，`Esc` 仍保持取消退出。
+- 结果：提交时预览内的编辑框会立刻还原成普通文本，用户不会再看到“已经提交了但蓝框还挂着等 rerender”的残留状态。
+- 验证：已运行 `pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts`，通过。
+- 说明：本次只调整了 HTML inline text editor 的退出一致性，没有改 SVG / chart 编辑器本身的交互语义。
+
+# 新增 update 更新文档规范
+
+## Plan
+- [x] 检查根目录 `AGENTS.md`、`tasks/todo.md` 与 `tasks/lessons.md` 中与文档记录相关的现有约定
+- [x] 新建根目录 `update/` 文件夹，并按 `updatenote_yyyymmddhh.md` 规则创建本轮更新文档
+- [x] 撰写一份可直接留档的更新说明，概括当前仓库近期主要变更
+- [x] 在根目录 [AGENTS.md](/D:/MyProject/MDPad/AGENTS.md) 中补充更新文档保存目录与文件名规则
+
+## Progress Notes
+- 已复核项目现有约定：根目录 [AGENTS.md](/D:/MyProject/MDPad/AGENTS.md) 负责流程规范，`tasks/todo.md` 采用持续追加式记录，`tasks/lessons.md` 明确要求在完成后把结果留档，因此这次沿用同样的记录方式。
+- 已创建根目录 `update/` 文件夹，并按当前时间生成 [updatenote_2026041922.md](/D:/MyProject/MDPad/update/updatenote_2026041922.md)。
+- 更新文档内容采用“更新概览 + 近期重点改进 + 使用说明”结构，重点归纳了最近几轮完成的 HTML 预览交互修复、页内锚点跳转修复、菜单视觉收敛，以及 `v0.2.5` 发布整理。
+- [AGENTS.md](/D:/MyProject/MDPad/AGENTS.md) 已新增“更新文档规范”小节，明确约定更新文档统一保存在根目录 `update/`，文件名统一使用 `updatenote_yyyymmddhh.md`。
+
+## Review
+- 结果：仓库根目录现在已有统一的更新文档目录和命名规则，后续新增 update note 时可以直接沿用，不需要再临时约定。
+- 结果：本轮已落地一份可直接查看的更新说明 [updatenote_2026041922.md](/D:/MyProject/MDPad/update/updatenote_2026041922.md)，内容聚焦近期用户可感知的改进。
+- 验证：已通过文件系统核对确认 `update/` 目录、更新文档文件和 `AGENTS.md` 规则条目均已写入；本次任务仅涉及文档落盘，没有运行构建或测试。
+
+# Tiptap WYSIWYG Markdown 剪贴板补齐
+
+## Plan
+- [x] 在现有 clipboard pipeline 中新增通用 Markdown 文本粘贴 handler，并保持现有媒体 / Markdown 图片粘贴链路不回退
+- [x] 在 `MarkdownEditor` 中补齐 `clipboardTextSerializer`，让 WYSIWYG 复制选区时输出 Markdown `text/plain`
+- [x] 为 Markdown 识别、粘贴处理和复制序列化补充回归测试，覆盖保守识别与默认回退
+- [x] 运行定向测试与构建验证，并回填本节 Progress Notes / Review
+
+## Progress Notes
+- [src/features/editor/clipboard/handlers/textMarkdown.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/handlers/textMarkdown.ts) 已新增通用 Markdown 文本粘贴 handler：只读取 `text/plain`，一旦剪贴板里已有 `text/html` 就直接回退默认富文本粘贴；命中时会复用现有 `markdownToHtml()`，再把结果插回当前选区。
+- Markdown 识别采用保守启发式，优先覆盖标题、列表、任务列表、blockquote / callout、围栏代码块、`$$` 数学块、GFM 表格，以及链接 / 图片 / Obsidian 图片；对普通句子里的 `*`、`_`、`#` 则保持不接管，避免误吞纯文本。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 现已将通用 Markdown handler 接到现有 clipboard pipeline 中，并保持“二进制媒体 -> Markdown 图片 -> 通用 Markdown 文本”的顺序；这样纯图片 Markdown 仍优先走已有 `resizableImage` 插入逻辑，不会被通用 HTML 插入覆盖。
+- [src/features/editor/markdownExport.ts](/D:/MyProject/MDPad/src/features/editor/markdownExport.ts) 已新增 `getMarkdownClipboardText()`，复制时优先复用 `getMarkdownSelectionExport()` 的 Markdown 结果；如果选区不可安全导出或命中复杂表格，则保守回退为 plain text，而不是强行输出可能有损的 Markdown。
+- 同一文件现在由 [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 的 `clipboardTextSerializer` 直接消费，因此 WYSIWYG 中复制选区时，`text/plain` 已切到 Markdown，而默认 HTML clipboard 仍保留给富文本目标使用。
+- 已新增 [src/features/editor/clipboard/handlers/textMarkdown.test.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/handlers/textMarkdown.test.ts) 覆盖 Markdown 检测与 paste handler 行为，并扩展 [src/features/editor/markdownExport.test.ts](/D:/MyProject/MDPad/src/features/editor/markdownExport.test.ts) 覆盖 Markdown 复制与复杂表格 plain text 回退。
+
+## Review
+- 结果：WYSIWYG 里直接粘贴纯 Markdown 文本时，现在会在“没有 HTML clipboard 负载”的前提下走现有 codec 渲染链路；而从网页、Word 等带 `text/html` 的来源粘贴时，仍保持默认富文本粘贴，不会被这次改动抢走。
+- 结果：WYSIWYG 中复制选区后，`text/plain` 已变成 Markdown，适合粘贴到 VS Code、Obsidian 或其他 Markdown 输入框；HTML clipboard 仍然保留，所以复制到富文本目标时不会退化成纯文本。
+- 结果：复杂表格和非安全导出场景继续走保守回退，没有为了“全都导出成 Markdown”去引入潜在有损转换；这和本轮方案里“宁可保守也不要误伤”的目标一致。
+- 验证：`pnpm exec vitest run src/features/editor/clipboard/handlers/textMarkdown.test.ts src/features/editor/clipboard/pipeline.test.ts src/features/editor/markdownExport.test.ts src/features/editor/markdownImageSyntax.test.ts src/features/editor/markdownCodec.test.ts` 通过（5 个测试文件 / 74 个测试）；`pnpm build` 通过。
+- 说明：当前工作区本来就有其他用户/历史任务的未提交改动与未跟踪文件；本次只增量修改了 Markdown 剪贴板相关代码与测试，以及本节任务记录，没有回退这些现有变更。

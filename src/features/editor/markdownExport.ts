@@ -5,12 +5,28 @@ import type {
   MarkdownExportSnapshot,
   MarkdownSelectionExport
 } from "../../shared/types/doc";
-import { splitFrontMatter } from "./frontMatter";
 import { htmlToMarkdownWithDiagnostics } from "./markdownCodec";
+import { stripFrontMatterForExport } from "./plainMarkdownExport";
 import { isCellSelection } from "./extensions/tableKit/tableSelection";
 
-export function stripFrontMatterForExport(markdown: string): string {
-  return splitFrontMatter(markdown).bodyMarkdown.trim();
+export { stripFrontMatterForExport } from "./plainMarkdownExport";
+
+function getSelectionRange(editor: Editor): { from: number; to: number } {
+  const { ranges } = editor.state.selection;
+
+  return {
+    from: Math.min(...ranges.map((range) => range.$from.pos)),
+    to: Math.max(...ranges.map((range) => range.$to.pos))
+  };
+}
+
+function getFallbackClipboardText(editor: Editor): string {
+  const { from, to } = getSelectionRange(editor);
+  if (from === to) {
+    return "";
+  }
+
+  return editor.state.doc.textBetween(from, to, "\n\n");
 }
 
 export function canExportCurrentSelection(editor: Editor | null): boolean {
@@ -69,4 +85,17 @@ export function getMarkdownExportSnapshot(
     html,
     hasComplexTables: diagnostics.hasComplexTables
   };
+}
+
+export function getMarkdownClipboardText(editor: Editor | null): string {
+  if (!editor) {
+    return "";
+  }
+
+  const selectionExport = getMarkdownSelectionExport(editor);
+  if (selectionExport && !selectionExport.hasComplexTables) {
+    return selectionExport.markdown;
+  }
+
+  return getFallbackClipboardText(editor);
 }
