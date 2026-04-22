@@ -1374,3 +1374,39 @@
 - 结果：应用修改后，当前 HTML preview 里的图表会立即同步到最新模型，不再出现“弹窗里改对了，页面图还是旧的”这类状态错位。
 - 验证：`pnpm exec vitest run src/features/editor/chartAdapters.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts` 通过（4 个文件 / 31 个测试）；`pnpm exec tsc --noEmit` 通过；`pnpm build` 通过。
 - 说明：终端内无法直接做 GUI 手工验收；建议你本地重点点验 4 组场景：横向柱图、对数轴柱图、Chart.js/ECharts 各一例，以及 `light/dark + modern/classic` 下的 modal 实际观感。
+
+# 处理 `git pull origin main` 被本地改动阻塞（2026-04-22）
+
+## Plan
+- [x] 记录当前本地改动与远端 `origin/main` 的差异，确认阻塞文件是否存在真实内容改动
+- [x] 以非破坏性方式暂存本地改动并重新执行 `git pull origin main`
+- [x] 审核拉取后的工作区状态，恢复需要保留的本地内容并补充回顾
+
+## Progress Notes
+- `git status --short` 显示阻塞文件为 `src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`tasks/todo.md`，另有未跟踪的 `.editorconfig` 与 `.gitattributes`。
+- 对 `src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 执行 `git diff -- <file>` 时没有正文差异，说明这两处阻塞并非实际源码修改，更像是工作区格式或行尾状态导致的本地脏标记。
+- 当前本地 `HEAD` 为 `3496ec7`，远端 `origin/main` 为 `eaad992`；因此先将当前工作区安全存入 `stash`，再执行 `git pull --ff-only origin main`，成功完成 fast-forward。
+- 拉取后恢复了 stash 中的 `.editorconfig`、`.gitattributes`，并手动把本节任务记录补回 `tasks/todo.md`，避免直接整文件恢复而覆盖远端最新的任务日志内容。
+
+## Review
+- 结果：本地 `main` 已从 `3496ec7` 同步到 `eaad992`，`git pull origin main` 的阻塞已解除。
+- 验证：`git pull --ff-only origin main` 已成功；恢复本地文件后，当前工作区只剩 `.editorconfig`、`.gitattributes`、`tasks/todo.md` 的未提交改动，说明远端更新已落地且你的本地内容仍被保留。
+- 说明：本次创建的 `stash@{0}` 仍保留，作为额外保险；在你确认当前工作区无误后可以执行 `git stash drop 'stash@{0}'` 清理。
+
+# 修正仓库级 `.editorconfig` / `.gitattributes` 使其可提交（2026-04-22）
+
+## Plan
+- [x] 检查 `.editorconfig` / `.gitattributes` 当前内容与仓库现有文件类型、Git 属性命中情况
+- [x] 以最小改动补齐规则文件自身、Windows 脚本与已存在二进制类型的覆盖范围
+- [x] 重新验证关键文件的 `text/eol` 命中结果与工作区状态，并补充回顾
+
+## Progress Notes
+- 检查确认 `.editorconfig` 已提供统一的 `utf-8`、`lf`、2 空格和 Markdown 行尾空格例外；主问题集中在 `.gitattributes` 对规则文件自身、`*.nsh` 与部分仓库内已存在的二进制类型覆盖不完整。
+- 本轮对 `.editorconfig` 只追加了 `*.nsh` 使用 `CRLF`，与现有 `bat/cmd/ps1` 的 Windows 脚本策略保持一致，避免 NSIS 相关文件继续依赖开发机默认换行行为。
+- `.gitattributes` 现已显式把 `.editorconfig`、`.gitattributes` 自身固定为 `LF`，避免规则文件本身继续受 Windows `core.autocrlf` 影响；同时补上 `*.nsh` 的 `CRLF` 约束。
+- 针对仓库里已经存在的产物与资源类型，本轮补充了 `*.exe`、`*.gz`、`*.icns`、`*.mp3`、`*.mp4`、`*.tgz` 的 binary 标记，减少 Git 文本自动检测误判的空间。
+
+## Review
+- 结果：`.editorconfig` 与 `.gitattributes` 现在都达到适合提交到仓库的状态，既覆盖了当前项目真实存在的文件类型，也把这次 `git pull` 暴露出的行尾策略缺口补齐到了仓库级。
+- 验证：重新执行 `git check-attr text eol --` 后，`.editorconfig`、`.gitattributes`、`package.json`、`pnpm-lock.yaml`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`README.md` 均稳定命中 `eol=lf`，`src-tauri/windows/add-user-path.ps1`、`src-tauri/windows/remove-user-path.ps1` 与 `src-tauri/windows/nsis-hooks.nsh` 命中 `eol=crlf`。
+- 说明：这次只修正规则文件，没有批量重写现有工作树文件的换行；因此提交这两个文件本身不会制造一次“大规模格式化提交”，后续文件会在重新 checkout 或按新规则保存时逐步收敛。
