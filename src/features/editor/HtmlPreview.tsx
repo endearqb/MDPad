@@ -5,71 +5,76 @@ import {
   useRef,
   useState
 } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { EditorCopy } from "../../shared/i18n/appI18n";
 import type { DocumentExportRequest } from "../../shared/types/doc";
+import { readHtmlSlideTreatmentPreference, writeHtmlSlideTreatmentPreference } from "../../shared/utils/htmlSlidePreferences";
 import { openExternalUrl } from "../file/fileService";
-import ChartDataEditor from "./components/ChartDataEditor";
-import SvgTextCanvasEditor from "./components/SvgTextCanvasEditor";
+import ChartAssetEditorModal from "./components/ChartAssetEditorModal";
 import {
   applyChartPatch,
+  applyHtmlElementPatch,
   applyHtmlTextPatch,
-  applySvgPatch,
-  type HtmlChartEditRequest,
-  type HtmlSvgEditRequest,
-  type HtmlSvgPatch
+  type HtmlElementSelection,
+  type HtmlElementVisualPatch,
+  type HtmlPreviewSurfaceMode,
+  type HtmlSlideTreatment,
+  type HtmlChartEditRequest
 } from "./htmlPreviewEdit";
+import HtmlVisualEditor from "./html-visual/HtmlVisualEditor";
 import {
   buildControlledHtmlPreviewDocument,
-  createHtmlPreviewInstanceToken,
+  createHtmlPreviewInstanceToken
+} from "./html-preview/previewDocumentBuilder";
+import {
+  extractChartEditorRequestFromPreviewMessage,
   extractChartActionFromPreviewMessage,
   extractContextMenuPositionFromPreviewMessage,
-  extractDismissChartActionFromPreviewMessage,
-  extractDismissSvgSelectionFromPreviewMessage,
+  extractElementCommitPatchFromPreviewMessage,
+  extractElementFrameFromPreviewMessage,
+  extractElementPatchFailedFromPreviewMessage,
+  extractElementSelectionFromPreviewMessage,
   extractExternalOpenUrlFromPreviewMessage,
   extractInlineTextCommitFromPreviewMessage,
   extractReadOnlyBlockedFromPreviewMessage,
-  extractSvgEditorRequestFromPreviewMessage,
-  extractSvgPreviewPatchFromPreviewMessage,
-  type HtmlPreviewContextMenuRequest,
-  type HtmlPreviewClientRect,
-  type HtmlSvgSelectionFrameRequest,
-  extractSvgSelectionFrameFromPreviewMessage,
-  extractSvgSelectionRequestFromPreviewMessage,
-  HTML_PREVIEW_MESSAGE_SOURCE,
-  HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE
-} from "./htmlPreviewDocument";
+  extractSurfaceModeFromPreviewMessage,
+  extractSlideStateFromPreviewMessage
+} from "./html-preview/previewBridgeHost";
 import {
-  areLocatorPathsEqual,
-  areSvgItemsEqual,
-  buildSvgCanvasEditorSession,
-  buildSvgInlineSessionFromSelection,
-  buildSvgPatchFromSession,
-  cloneSvgItem,
-  mergeSvgPatchIntoItems,
-  type SvgCanvasEditorSession,
-  type SvgInlineSession
-} from "./htmlPreviewSvgSessions";
+  type HtmlPreviewContextMenuRequest,
+  HTML_PREVIEW_MESSAGE_SOURCE
+} from "./html-preview/previewBridgeTypes";
+import {
+  HTML_PREVIEW_APPLY_ELEMENT_PATCH_MESSAGE_TYPE,
+  HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
+  type HtmlElementFrameRequest,
+  type HtmlSlideState
+} from "./html-visual/htmlVisualBridge";
+import { HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE } from "./htmlPreviewDocument";
+import { resolveSlideCapability } from "./slides/slideDetection";
 
 interface HtmlPreviewProps {
   html: string;
   documentPath: string | null;
   copy?: EditorCopy;
   isEditable?: boolean;
+  initialSurfaceMode?: HtmlPreviewSurfaceMode;
+  slideTreatment?: HtmlSlideTreatment;
   onHtmlChange?: (nextHtml: string) => void;
   onReadOnlyInteraction?: () => void;
   onRequestExport?: (request: DocumentExportRequest) => void;
+  onSlideTreatmentChange?: (nextTreatment: HtmlSlideTreatment) => void;
+  onSurfaceModeChange?: (nextMode: HtmlPreviewSurfaceMode) => void;
 }
 
-interface PendingChartAction {
-  request: HtmlChartEditRequest;
-  x: number;
-  y: number;
-}
-
-interface PendingSvgAction {
-  x: number;
-  y: number;
-  clientRect: HtmlPreviewClientRect;
+function areLocatorPathsEqual(left: number[] | null, right: number[] | null): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
 }
 
 export default function HtmlPreview({
@@ -77,34 +82,53 @@ export default function HtmlPreview({
   documentPath,
   copy,
   isEditable = false,
+  initialSurfaceMode = "preview",
+  slideTreatment: controlledSlideTreatment,
   onHtmlChange,
   onReadOnlyInteraction,
-  onRequestExport
+  onRequestExport,
+  onSlideTreatmentChange,
+  onSurfaceModeChange
 }: HtmlPreviewProps) {
-  const shellRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const instanceTokenRef = useRef<string>(createHtmlPreviewInstanceToken());
   const htmlRef = useRef(html);
+  const skipNextIframeReloadForHtmlRef = useRef<string | null>(null);
+  const copyRef = useRef(copy);
   const isEditableRef = useRef(isEditable);
   const onHtmlChangeRef = useRef(onHtmlChange);
   const onReadOnlyInteractionRef = useRef(onReadOnlyInteraction);
-  const svgInlineSessionRef = useRef<SvgInlineSession | null>(null);
-  const svgCanvasEditorSessionRef = useRef<SvgCanvasEditorSession | null>(null);
-  const pendingSvgFrameRef = useRef<HtmlSvgSelectionFrameRequest | null>(null);
+  const onSurfaceModeChangeRef = useRef(onSurfaceModeChange);
+  const onSlideTreatmentChangeRef = useRef(onSlideTreatmentChange);
+  const selectedElementRef = useRef<HtmlElementSelection | null>(null);
   const [contextMenuPosition, setContextMenuPosition] =
     useState<HtmlPreviewContextMenuRequest | null>(null);
-  const [svgInlineSession, setSvgInlineSession] = useState<SvgInlineSession | null>(null);
-  const [svgCanvasEditorSession, setSvgCanvasEditorSession] =
-    useState<SvgCanvasEditorSession | null>(null);
-  const [pendingChartAction, setPendingChartAction] =
-    useState<PendingChartAction | null>(null);
-  const [pendingSvgAction, setPendingSvgAction] =
-    useState<PendingSvgAction | null>(null);
   const [chartEditorRequest, setChartEditorRequest] =
     useState<HtmlChartEditRequest | null>(null);
+  const [patchError, setPatchError] = useState<string | null>(null);
+  const [renderedHtml, setRenderedHtml] = useState(html);
+  const [surfaceMode, setSurfaceMode] =
+    useState<HtmlPreviewSurfaceMode>(initialSurfaceMode);
+  const [uncontrolledSlideTreatment, setUncontrolledSlideTreatment] =
+    useState<HtmlSlideTreatment>(() =>
+      controlledSlideTreatment ??
+      readHtmlSlideTreatmentPreference(documentPath, "auto")
+    );
+  const [selectedElement, setSelectedElement] =
+    useState<HtmlElementSelection | null>(null);
+  const [selectedElementFrame, setSelectedElementFrame] =
+    useState<HtmlElementFrameRequest | null>(null);
+  const [slideState, setSlideState] = useState<HtmlSlideState | null>(null);
+
+  const slideTreatment = controlledSlideTreatment ?? uncontrolledSlideTreatment;
 
   useEffect(() => {
     htmlRef.current = html;
+    if (skipNextIframeReloadForHtmlRef.current === html) {
+      skipNextIframeReloadForHtmlRef.current = null;
+      return;
+    }
+    setRenderedHtml(html);
   }, [html]);
 
   useEffect(() => {
@@ -116,112 +140,65 @@ export default function HtmlPreview({
   }, [onHtmlChange]);
 
   useEffect(() => {
+    copyRef.current = copy;
+  }, [copy]);
+
+  useEffect(() => {
     onReadOnlyInteractionRef.current = onReadOnlyInteraction;
   }, [onReadOnlyInteraction]);
 
   useEffect(() => {
-    svgCanvasEditorSessionRef.current = svgCanvasEditorSession;
-  }, [svgCanvasEditorSession]);
+    onSurfaceModeChangeRef.current = onSurfaceModeChange;
+  }, [onSurfaceModeChange]);
 
-  const setSvgInlineSessionState = useCallback(
-    (
-      nextSessionOrUpdater:
-        | SvgInlineSession
-        | null
-        | ((current: SvgInlineSession | null) => SvgInlineSession | null)
-    ) => {
-      setSvgInlineSession((current) => {
-        const nextSession =
-          typeof nextSessionOrUpdater === "function"
-            ? (
-                nextSessionOrUpdater as (
-                  current: SvgInlineSession | null
-                ) => SvgInlineSession | null
-              )(current)
-            : nextSessionOrUpdater;
-        svgInlineSessionRef.current = nextSession;
-        return nextSession;
-      });
-    },
-    []
-  );
+  useEffect(() => {
+    onSlideTreatmentChangeRef.current = onSlideTreatmentChange;
+  }, [onSlideTreatmentChange]);
 
-  const computePendingSvgAction = useCallback(
-    (clientRect: HtmlPreviewClientRect): PendingSvgAction | null => {
-      const frameRect = iframeRef.current?.getBoundingClientRect();
-      const shellRect = shellRef.current?.getBoundingClientRect();
-      if (!frameRect || !shellRect) {
-        return null;
-      }
+  useEffect(() => {
+    selectedElementRef.current = selectedElement;
+  }, [selectedElement]);
 
-      const relativeLeft = frameRect.left - shellRect.left + clientRect.left;
-      const relativeTop = frameRect.top - shellRect.top + clientRect.top;
+  useEffect(() => {
+    if (controlledSlideTreatment) {
+      return;
+    }
+    setUncontrolledSlideTreatment(readHtmlSlideTreatmentPreference(documentPath, "auto"));
+  }, [controlledSlideTreatment, documentPath]);
 
-      return {
-        x: Math.max(relativeLeft + clientRect.width - 96, 8),
-        y: Math.max(relativeTop - 36, 8),
-        clientRect
-      };
-    },
-    []
-  );
+  useEffect(() => {
+    if (controlledSlideTreatment) {
+      return;
+    }
+    writeHtmlSlideTreatmentPreference(documentPath, uncontrolledSlideTreatment);
+  }, [controlledSlideTreatment, documentPath, uncontrolledSlideTreatment]);
 
-  const applySvgSelectionFrame = useCallback(
-    (
-      frameRequest: HtmlSvgSelectionFrameRequest,
-      sessionOverride?: SvgInlineSession | null
-    ): boolean => {
-      if (!isEditableRef.current) {
-        pendingSvgFrameRef.current = null;
-        setPendingSvgAction(null);
-        return true;
-      }
+  const commitVisualHtmlChange = useCallback((nextHtml: string) => {
+    htmlRef.current = nextHtml;
+    skipNextIframeReloadForHtmlRef.current = nextHtml;
+    onHtmlChangeRef.current?.(nextHtml);
+  }, []);
 
-      const activeSession = sessionOverride ?? svgInlineSessionRef.current;
-      if (!activeSession) {
-        pendingSvgFrameRef.current = frameRequest;
-        return false;
-      }
+  const setSurfaceModeState = useCallback((nextMode: HtmlPreviewSurfaceMode) => {
+    setSurfaceMode(nextMode);
+    onSurfaceModeChangeRef.current?.(nextMode);
+  }, []);
 
-      if (
-        !areLocatorPathsEqual(
-          activeSession.selectedLocator,
-          frameRequest.selectedLocator.path
-        )
-      ) {
-        pendingSvgFrameRef.current = null;
-        setPendingSvgAction(null);
-        return false;
-      }
-
-      if (!frameRequest.clientRect) {
-        pendingSvgFrameRef.current = null;
-        setPendingSvgAction(null);
-        return true;
-      }
-
-      const nextAction = computePendingSvgAction(frameRequest.clientRect);
-      if (!nextAction) {
-        pendingSvgFrameRef.current = frameRequest;
-        setPendingSvgAction(null);
-        return false;
-      }
-
-      pendingSvgFrameRef.current = null;
-      setPendingSvgAction(nextAction);
-      return true;
-    },
-    [computePendingSvgAction]
-  );
+  const setSlideTreatmentState = useCallback((nextTreatment: HtmlSlideTreatment) => {
+    if (!controlledSlideTreatment) {
+      setUncontrolledSlideTreatment(nextTreatment);
+    }
+    onSlideTreatmentChangeRef.current?.(nextTreatment);
+  }, [controlledSlideTreatment]);
 
   const srcDoc = useMemo(() => {
     return buildControlledHtmlPreviewDocument({
-      html,
+      html: renderedHtml,
       documentPath,
       instanceToken: instanceTokenRef.current,
       isEditable
     });
-  }, [documentPath, html, isEditable]);
+  }, [documentPath, renderedHtml, isEditable]);
 
   useEffect(() => {
     const frameWindow = iframeRef.current?.contentWindow ?? null;
@@ -231,38 +208,15 @@ export default function HtmlPreview({
 
     frameWindow.postMessage(
       {
-        type: HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE,
+        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
         source: HTML_PREVIEW_MESSAGE_SOURCE,
         token: instanceTokenRef.current,
-        session: svgInlineSession
-          ? {
-              ...svgInlineSession.request,
-              items: svgInlineSession.draftItems,
-              selectedLocator: {
-                root: "body",
-                path: svgInlineSession.selectedLocator
-              }
-            }
-          : {
-              kind: "svg-elements",
-              svgLocator: {
-                root: "body",
-                path: []
-              },
-              svgMarkup: "",
-              viewBox: {
-                minX: 0,
-                minY: 0,
-                width: 1,
-                height: 1
-              },
-              items: [],
-              selectedLocator: null
-            }
+        mode: surfaceMode,
+        slideTreatment
       },
       "*"
     );
-  }, [svgInlineSession, srcDoc]);
+  }, [slideTreatment, srcDoc, surfaceMode]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -274,8 +228,8 @@ export default function HtmlPreview({
         frameWindow
       );
       if (url) {
-        setPendingChartAction(null);
-        setSvgCanvasEditorSession(null);
+        setPatchError(null);
+        setChartEditorRequest(null);
         void openExternalUrl(url).catch((error) => {
           console.error("Failed to open HTML preview external URL.", error);
         });
@@ -295,18 +249,6 @@ export default function HtmlPreview({
       }
 
       if (
-        extractDismissChartActionFromPreviewMessage(
-          event.data,
-          instanceTokenRef.current,
-          event.source,
-          frameWindow
-        )
-      ) {
-        setPendingChartAction(null);
-        return;
-      }
-
-      if (
         extractReadOnlyBlockedFromPreviewMessage(
           event.data,
           instanceTokenRef.current,
@@ -314,8 +256,77 @@ export default function HtmlPreview({
           frameWindow
         )
       ) {
-        setPendingChartAction(null);
         onReadOnlyInteractionRef.current?.();
+        return;
+      }
+
+      const nextElementSelection = extractElementSelectionFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (nextElementSelection) {
+        setPatchError(null);
+        setSelectedElement(nextElementSelection);
+        return;
+      }
+
+      const nextElementFrame = extractElementFrameFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (nextElementFrame) {
+        setSelectedElementFrame(nextElementFrame.clientRect ? nextElementFrame : null);
+        if (nextElementFrame.clientRect === null) {
+          setSelectedElement(null);
+        }
+        return;
+      }
+
+      const elementCommitPatch = extractElementCommitPatchFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (elementCommitPatch) {
+        commitElementPatch(elementCommitPatch);
+        return;
+      }
+
+      const elementPatchFailed = extractElementPatchFailedFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (elementPatchFailed) {
+        setPatchError(elementPatchFailed.reason);
+        return;
+      }
+
+      const nextSlideState = extractSlideStateFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (nextSlideState) {
+        setSlideState(nextSlideState);
+        return;
+      }
+
+      const nextSurfaceMode = extractSurfaceModeFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (nextSurfaceMode) {
+        setSurfaceModeState(nextSurfaceMode.mode);
         return;
       }
 
@@ -326,143 +337,38 @@ export default function HtmlPreview({
         frameWindow
       );
       if (inlineTextPatch) {
-        setPendingChartAction(null);
-        setSvgCanvasEditorSession(null);
-        if (!isEditableRef.current) {
-          onReadOnlyInteractionRef.current?.();
-          return;
-        }
-
-        try {
-          const nextHtml = applyHtmlTextPatch(htmlRef.current, inlineTextPatch);
-          onHtmlChangeRef.current?.(nextHtml);
-        } catch (error) {
-          console.error("Failed to apply inline HTML text edit.", error);
-        }
-        return;
-      }
-
-      const svgSelectionRequest = extractSvgSelectionRequestFromPreviewMessage(
-        event.data,
-        instanceTokenRef.current,
-        event.source,
-        frameWindow
-      );
-      if (svgSelectionRequest) {
-        if (!isEditableRef.current) {
-          setPendingChartAction(null);
-          setPendingSvgAction(null);
-          pendingSvgFrameRef.current = null;
-          onReadOnlyInteractionRef.current?.();
-          return;
-        }
-
-        const nextInlineSession = buildSvgInlineSessionFromSelection(svgSelectionRequest);
+        setPatchError(null);
         setChartEditorRequest(null);
-        setPendingChartAction(null);
-        setPendingSvgAction(null);
-        setContextMenuPosition(null);
-        setSvgInlineSessionState(nextInlineSession);
-        const pendingFrame = pendingSvgFrameRef.current;
-        if (
-          pendingFrame &&
-          areLocatorPathsEqual(
-            nextInlineSession.selectedLocator,
-            pendingFrame.selectedLocator.path
-          )
-        ) {
-          applySvgSelectionFrame(pendingFrame, nextInlineSession);
+        if (!isEditableRef.current) {
+          onReadOnlyInteractionRef.current?.();
+          return;
+        }
+
+        const result = applyHtmlTextPatch(htmlRef.current, inlineTextPatch);
+        if (result.ok) {
+          commitVisualHtmlChange(result.html);
         } else {
-          pendingSvgFrameRef.current = null;
+          setPatchError(result.message);
+          console.error("Failed to apply inline HTML text edit.", result);
         }
         return;
       }
 
-      const svgSelectionFrameRequest = extractSvgSelectionFrameFromPreviewMessage(
+      const chartEditorRequest = extractChartEditorRequestFromPreviewMessage(
         event.data,
         instanceTokenRef.current,
         event.source,
         frameWindow
       );
-      if (svgSelectionFrameRequest) {
+      if (chartEditorRequest) {
         if (!isEditableRef.current) {
-          pendingSvgFrameRef.current = null;
-          setPendingSvgAction(null);
-          return;
-        }
-
-        applySvgSelectionFrame(svgSelectionFrameRequest);
-        return;
-      }
-
-      const svgEditorRequest = extractSvgEditorRequestFromPreviewMessage(
-        event.data,
-        instanceTokenRef.current,
-        event.source,
-        frameWindow
-      );
-      if (svgEditorRequest) {
-        if (!isEditableRef.current) {
-          setPendingChartAction(null);
-          setPendingSvgAction(null);
           onReadOnlyInteractionRef.current?.();
           return;
         }
 
-        setChartEditorRequest(null);
-        setPendingChartAction(null);
-        setPendingSvgAction(null);
+        setPatchError(null);
         setContextMenuPosition(null);
-        setSvgCanvasEditorSession((current) =>
-          buildSvgCanvasEditorSession(
-            svgEditorRequest,
-            svgInlineSessionRef.current ?? svgCanvasEditorSessionRef.current ?? current
-          )
-        );
-        return;
-      }
-
-      const svgPreviewPatch = extractSvgPreviewPatchFromPreviewMessage(
-        event.data,
-        instanceTokenRef.current,
-        event.source,
-        frameWindow
-      );
-      if (svgPreviewPatch) {
-        setSvgInlineSessionState((current) => {
-          if (!current) {
-            return current;
-          }
-
-          return {
-            ...current,
-            draftItems: mergeSvgPatchIntoItems(current.draftItems, svgPreviewPatch)
-          };
-        });
-        setSvgCanvasEditorSession((current) => {
-          if (!current) {
-            return current;
-          }
-
-          return {
-            ...current,
-            draftItems: mergeSvgPatchIntoItems(current.draftItems, svgPreviewPatch)
-          };
-        });
-        return;
-      }
-
-      if (
-        extractDismissSvgSelectionFromPreviewMessage(
-          event.data,
-          instanceTokenRef.current,
-          event.source,
-          frameWindow
-        )
-      ) {
-        pendingSvgFrameRef.current = null;
-        setPendingSvgAction(null);
-        setSvgInlineSessionState(null);
+        setChartEditorRequest(chartEditorRequest);
         return;
       }
 
@@ -478,12 +384,9 @@ export default function HtmlPreview({
           return;
         }
 
-        pendingSvgFrameRef.current = null;
-        setSvgInlineSessionState(null);
-        setSvgCanvasEditorSession(null);
-        setPendingSvgAction(null);
+        setPatchError(null);
         setContextMenuPosition(null);
-        setPendingChartAction(chartAction);
+        setChartEditorRequest(chartAction.request);
       }
     };
 
@@ -497,40 +400,82 @@ export default function HtmlPreview({
     setContextMenuPosition(null);
   }, []);
 
-  const closePendingChartAction = useCallback(() => {
-    setPendingChartAction(null);
-  }, []);
-
   const openChartEditor = useCallback((request: HtmlChartEditRequest) => {
-    setPendingChartAction(null);
+    setPatchError(null);
     setContextMenuPosition(null);
     setChartEditorRequest(request);
   }, []);
 
-  const openSvgCanvasEditorFromRequest = useCallback(
-    (request: HtmlSvgEditRequest) => {
-      setChartEditorRequest(null);
-      setPendingChartAction(null);
-      setPendingSvgAction(null);
-      setContextMenuPosition(null);
-      setSvgCanvasEditorSession((current) =>
-        buildSvgCanvasEditorSession(
-          request,
-          svgInlineSessionRef.current ?? svgCanvasEditorSessionRef.current ?? current
-        )
+  const postElementPatchToFrame = useCallback((patch: HtmlElementVisualPatch) => {
+    const frameWindow = iframeRef.current?.contentWindow ?? null;
+    if (!frameWindow) {
+      return;
+    }
+
+    frameWindow.postMessage(
+      {
+        type: HTML_PREVIEW_APPLY_ELEMENT_PATCH_MESSAGE_TYPE,
+        source: HTML_PREVIEW_MESSAGE_SOURCE,
+        token: instanceTokenRef.current,
+        patch
+      },
+      "*"
+    );
+  }, []);
+
+  const postChartModelToFrame = useCallback(
+    (request: HtmlChartEditRequest, nextModel: HtmlChartEditRequest["model"]) => {
+      const frameWindow = iframeRef.current?.contentWindow ?? null;
+      if (!frameWindow) {
+        return;
+      }
+
+      frameWindow.postMessage(
+        {
+          type: HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: instanceTokenRef.current,
+          chartLocator: request.chartLocator,
+          model: nextModel
+        },
+        "*"
       );
     },
     []
   );
 
-  const openSvgCanvasEditorFromInline = useCallback(() => {
-    const currentInlineSession = svgInlineSessionRef.current;
-    if (!currentInlineSession) {
-      return;
-    }
+  const previewElementPatch = useCallback(
+    (patch: HtmlElementVisualPatch) => {
+      postElementPatchToFrame(patch);
+    },
+    [postElementPatchToFrame]
+  );
 
-    openSvgCanvasEditorFromRequest(currentInlineSession.request);
-  }, [openSvgCanvasEditorFromRequest]);
+  const commitElementPatch = useCallback(
+    (patch: HtmlElementVisualPatch) => {
+      postElementPatchToFrame(patch);
+      const activeSelection = selectedElementRef.current;
+      if (
+        activeSelection?.runtimeGenerated &&
+        areLocatorPathsEqual(activeSelection.locator.path, patch.locator.path)
+      ) {
+        setPatchError(
+          copyRef.current?.htmlPreview.generatedByScript ??
+            "Generated by script elements cannot be written back to source."
+        );
+        return;
+      }
+      const result = applyHtmlElementPatch(htmlRef.current, patch);
+      if (!result.ok) {
+        setPatchError(result.message);
+        return;
+      }
+
+      setPatchError(null);
+      commitVisualHtmlChange(result.html);
+    },
+    [commitVisualHtmlChange, postElementPatchToFrame]
+  );
 
   useEffect(() => {
     if (!contextMenuPosition) {
@@ -560,75 +505,189 @@ export default function HtmlPreview({
     };
   }, [closeContextMenu, contextMenuPosition]);
 
-  useEffect(() => {
-    if (!pendingChartAction) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      const actionButton = document.querySelector(".html-preview-chart-action");
-      if (target && actionButton?.contains(target)) {
-        return;
-      }
-      closePendingChartAction();
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closePendingChartAction();
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [closePendingChartAction, pendingChartAction]);
-
-  const applySvgInlineSession = useCallback(
-    (nextPatch?: HtmlSvgPatch) => {
-      const currentSession = svgCanvasEditorSession ?? svgInlineSession;
-      if (!currentSession) {
-        return;
-      }
-
-      try {
-        const patch = nextPatch ?? buildSvgPatchFromSession(currentSession);
-        if (patch.items.length > 0) {
-          const nextHtml = applySvgPatch(htmlRef.current, patch);
-          onHtmlChangeRef.current?.(nextHtml);
-        }
-        setSvgCanvasEditorSession(null);
-        pendingSvgFrameRef.current = null;
-        setSvgInlineSessionState(null);
-      } catch (error) {
-        console.error("Failed to apply inline SVG preview edit.", error);
-      }
-    },
-    [setSvgInlineSessionState, svgCanvasEditorSession, svgInlineSession]
+  const slideCapability = useMemo(
+    () => resolveSlideCapability(slideTreatment, slideState),
+    [slideState, slideTreatment]
   );
+
+  useEffect(() => {
+    if (
+      !slideCapability.isSlideDocument &&
+      (surfaceMode === "slide-reading" || surfaceMode === "slide-present")
+    ) {
+      setSurfaceModeState("preview");
+    }
+  }, [setSurfaceModeState, slideCapability.isSlideDocument, surfaceMode]);
+
+  useEffect(() => {
+    if (surfaceMode !== "visual-edit") {
+      setSelectedElement(null);
+      setSelectedElementFrame(null);
+    }
+  }, [surfaceMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncFullscreen = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        if (surfaceMode === "slide-present") {
+          await appWindow.setFullscreen(true);
+          return;
+        }
+
+        const isFullscreen = await appWindow.isFullscreen();
+        if (!cancelled && isFullscreen) {
+          await appWindow.setFullscreen(false);
+        }
+      } catch (error) {
+        console.error("Failed to sync HTML preview fullscreen state.", error);
+      }
+    };
+
+    void syncFullscreen();
+    return () => {
+      cancelled = true;
+    };
+  }, [surfaceMode]);
   const contextMenuChartRequest =
     contextMenuPosition?.context.kind === "chart"
       ? contextMenuPosition.context.request
       : null;
-  const contextMenuSvgRequest =
-    contextMenuPosition?.context.kind === "svg"
-      ? contextMenuPosition.context.request
+  const htmlPreviewCopy = copy?.htmlPreview;
+  const slideProgressText =
+    slideCapability.isSlideDocument && slideState && slideState.totalSlides > 0
+      ? `${slideState.currentSlideIndex + 1} / ${slideState.totalSlides}`
       : null;
+  const showHtmlVisualEditor =
+    Boolean(copy) &&
+    isEditable &&
+    surfaceMode === "visual-edit" &&
+    selectedElement &&
+    Boolean(selectedElementFrame?.clientRect ?? true);
+  const showSurfaceToolbar = Boolean(htmlPreviewCopy) && (isEditable || slideCapability.isSlideDocument);
+  const treatSlidesButtonActive = slideTreatment === "slides";
+  const treatDocumentButtonActive = slideTreatment === "document";
 
   return (
     <div
-      ref={shellRef}
       className={[
         "html-preview-shell",
-        svgCanvasEditorSession ? "has-inline-svg-inspector" : ""
+        showSurfaceToolbar ? "has-surface-toolbar" : "",
+        showHtmlVisualEditor ? "has-inline-element-inspector" : "",
+        surfaceMode === "slide-reading" ? "is-slide-reading" : "",
+        surfaceMode === "slide-present" ? "is-slide-present" : ""
       ]
         .filter(Boolean)
         .join(" ")}
     >
+      {showSurfaceToolbar ? (
+        <div className="html-preview-toolbar-hover-shell">
+          <div
+            aria-hidden="true"
+            className="html-preview-toolbar-hotzone"
+          />
+          <div
+            className="html-preview-toolbar"
+            role="toolbar"
+          >
+            <div className="html-preview-toolbar-group">
+              <button
+                className={`html-preview-toolbar-button${
+                  surfaceMode === "preview" ? " is-active" : ""
+                }`}
+                onClick={() => {
+                  setSurfaceModeState("preview");
+                }}
+                type="button"
+              >
+                {htmlPreviewCopy?.surfaceModePreview ?? "Preview"}
+              </button>
+              {isEditable ? (
+                <button
+                  className={`html-preview-toolbar-button${
+                    surfaceMode === "visual-edit" ? " is-active" : ""
+                  }`}
+                  onClick={() => {
+                    setSurfaceModeState("visual-edit");
+                  }}
+                  type="button"
+                >
+                  {htmlPreviewCopy?.surfaceModeEdit ?? "Edit"}
+                </button>
+              ) : null}
+              {slideCapability.showReadMode ? (
+                <button
+                  className={`html-preview-toolbar-button${
+                    surfaceMode === "slide-reading" ? " is-active" : ""
+                  }`}
+                  onClick={() => {
+                    setSurfaceModeState("slide-reading");
+                  }}
+                  type="button"
+                >
+                  {htmlPreviewCopy?.surfaceModeRead ?? "Read"}
+                </button>
+              ) : null}
+              {slideCapability.showPresentMode ? (
+                <button
+                  className={`html-preview-toolbar-button${
+                    surfaceMode === "slide-present" ? " is-active" : ""
+                  }`}
+                  onClick={() => {
+                    setSurfaceModeState("slide-present");
+                  }}
+                  type="button"
+                >
+                  {htmlPreviewCopy?.surfaceModePresent ?? "Present"}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="html-preview-toolbar-group">
+              <button
+                className={`html-preview-toolbar-button${
+                  slideTreatment === "auto" ? " is-active" : ""
+                }`}
+                onClick={() => {
+                  setSlideTreatmentState("auto");
+                }}
+                type="button"
+              >
+                {htmlPreviewCopy?.slideTreatmentAuto ?? "Auto"}
+              </button>
+              <button
+                aria-pressed={treatSlidesButtonActive}
+                className={`html-preview-toolbar-button${
+                  treatSlidesButtonActive ? " is-active" : ""
+                }`}
+                onClick={() => {
+                  setSlideTreatmentState(treatSlidesButtonActive ? "auto" : "slides");
+                }}
+                type="button"
+              >
+                {htmlPreviewCopy?.treatAsSlides ?? "Treat as Slides"}
+              </button>
+              <button
+                aria-pressed={treatDocumentButtonActive}
+                className={`html-preview-toolbar-button${
+                  treatDocumentButtonActive ? " is-active" : ""
+                }`}
+                onClick={() => {
+                  setSlideTreatmentState(treatDocumentButtonActive ? "auto" : "document");
+                }}
+                type="button"
+              >
+                {htmlPreviewCopy?.slideTreatmentDocument ?? "Document"}
+              </button>
+              {slideProgressText ? (
+                <span className="html-preview-slide-progress">{slideProgressText}</span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <iframe
         ref={iframeRef}
         className="html-preview-frame"
@@ -637,38 +696,14 @@ export default function HtmlPreview({
         title="HTML Preview"
       />
 
-      {copy && pendingChartAction ? (
-        <button
-          className="html-preview-chart-action"
-          onClick={() => {
-            openChartEditor(pendingChartAction.request);
-          }}
-          style={{
-            left: `${pendingChartAction.x}px`,
-            top: `${pendingChartAction.y}px`
-          }}
-          type="button"
+      {patchError ? (
+        <div
+          aria-live="polite"
+          className="html-preview-error-banner"
+          role="status"
         >
-          {copy.htmlPreview.chartEditAction}
-        </button>
-      ) : null}
-
-      {copy &&
-      isEditable &&
-      svgInlineSession &&
-      pendingSvgAction &&
-      !svgCanvasEditorSession ? (
-        <button
-          className="html-preview-svg-action"
-          onClick={openSvgCanvasEditorFromInline}
-          style={{
-            left: `${pendingSvgAction.x}px`,
-            top: `${pendingSvgAction.y}px`
-          }}
-          type="button"
-        >
-          {copy.htmlPreview.svgEditAction}
-        </button>
+          {patchError}
+        </div>
       ) : null}
 
       {contextMenuPosition &&
@@ -711,95 +746,44 @@ export default function HtmlPreview({
               {copy.htmlPreview.chartEditAction}
             </button>
           ) : null}
-          {contextMenuSvgRequest ? (
-            <button
-              className="editor-context-menu-item"
-              onClick={() => {
-                openSvgCanvasEditorFromRequest(contextMenuSvgRequest);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              {copy.htmlPreview.svgEditAction}
-            </button>
-          ) : null}
         </div>
       ) : null}
 
-      {copy && svgCanvasEditorSession ? (
-        <SvgTextCanvasEditor
+      {copy && chartEditorRequest ? (
+        <ChartAssetEditorModal
           copy={copy}
-          onApply={applySvgInlineSession}
+          onApply={(patch) => {
+            const result = applyChartPatch(htmlRef.current, patch);
+            if (result.ok) {
+              setPatchError(null);
+              postChartModelToFrame(chartEditorRequest, patch.nextModel);
+              commitVisualHtmlChange(result.html);
+              setChartEditorRequest(null);
+            } else {
+              setPatchError(result.message);
+              console.error("Failed to apply chart edit.", result);
+            }
+          }}
           onCancel={() => {
-            setPendingSvgAction(null);
-            setSvgCanvasEditorSession(null);
+            setPatchError(null);
+            setChartEditorRequest(null);
           }}
-          onItemsChange={(nextItems) => {
-            setSvgInlineSessionState((current) =>
-              current
-                ? areSvgItemsEqual(current.draftItems, nextItems)
-                  ? current
-                  : {
-                      ...current,
-                      draftItems: nextItems.map((item) => cloneSvgItem(item))
-                    }
-                : current
-            );
-            setSvgCanvasEditorSession((current) =>
-              current
-                ? areSvgItemsEqual(current.draftItems, nextItems)
-                  ? current
-                  : {
-                      ...current,
-                      draftItems: nextItems.map((item) => cloneSvgItem(item))
-                    }
-                : current
-            );
-          }}
-          onSelectedLocatorPathChange={(nextPath) => {
-            setSvgInlineSessionState((current) =>
-              current
-                ? areLocatorPathsEqual(current.selectedLocator, nextPath)
-                  ? current
-                  : {
-                      ...current,
-                      selectedLocator: [...nextPath]
-                    }
-                : current
-            );
-            setSvgCanvasEditorSession((current) =>
-              current
-                ? areLocatorPathsEqual(current.selectedLocator, nextPath)
-                  ? current
-                  : {
-                      ...current,
-                      selectedLocator: [...nextPath]
-                    }
-                : current
-            );
-          }}
-          request={{
-            ...svgCanvasEditorSession.request,
-            items: svgCanvasEditorSession.draftItems
-          }}
-          selectedLocatorPath={svgCanvasEditorSession.selectedLocator}
+          request={chartEditorRequest}
         />
       ) : null}
 
-      {copy && chartEditorRequest ? (
-        <ChartDataEditor
+      {showHtmlVisualEditor ? (
+        <HtmlVisualEditor
           copy={copy}
-          onApply={(patch) => {
-            try {
-              const nextHtml = applyChartPatch(htmlRef.current, patch);
-              onHtmlChangeRef.current?.(nextHtml);
-              setChartEditorRequest(null);
-            } catch (error) {
-              console.error("Failed to apply chart edit.", error);
-            }
+          onClose={() => {
+            setPatchError(null);
+            setSelectedElement(null);
+            setSelectedElementFrame(null);
+            setSurfaceModeState(slideCapability.isSlideDocument ? "slide-reading" : "preview");
           }}
-          onCancel={() => setChartEditorRequest(null)}
-          request={chartEditorRequest}
+          onCommitPatch={commitElementPatch}
+          onPreviewPatch={previewElementPatch}
+          selection={selectedElement}
         />
       ) : null}
     </div>

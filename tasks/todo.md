@@ -1,3 +1,219 @@
+# 编写 updatenote 并推送 GitHub main（2026-04-22 17:00）
+
+## Plan
+- [x] 盘点当前 `main` 工作区的未提交改动，提炼适合写入本轮更新说明的主题
+- [x] 按仓库规范在 `update/` 下新增 `updatenote_2026042217.md`
+- [x] 提交当前工作区改动并推送到 `origin/main`
+- [x] 在本节补齐提交结果与 Review
+
+## Progress Notes
+- 当前分支已确认仍为 `main`，工作区包含 HTML preview、chart editor、slides、Tauri 配置、测试、`tasks/` 记录与多份 `update/` 文档的累计改动；本轮会按你的要求统一整理说明并直接推送主分支。
+- 已梳理出这次 updatenote 的高层主题：HTML / slide 可视化编辑第一阶段、chart 编辑链路一致性与 runtime-only 兜底、chart 数据弹窗的功能收缩与交互收口，以及旧 SVG 编辑能力下线与重写边界文档。
+- 即将新增 [update/updatenote_2026042217.md](/D:/MyProject/MDPad/update/updatenote_2026042217.md) 作为本轮仓库内更新说明，保持和已有 `update/` 文档一致的结构与粒度。
+- 主分支提交前验证已完成：`pnpm exec vitest run src/features/editor/chartAdapters.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEdit.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts src/shared/utils/htmlSlidePreferences.test.ts` 通过，`pnpm exec tsc --noEmit` 通过，`pnpm build` 通过。
+- 验证过程中发现一条 `HtmlPreview.test.ts` 仍沿用旧的 `input[type="number"]` 选择器；现已改为匹配当前图表数据网格里的 `input[data-chart-value="true"]`，使回归测试与实际 Excel 化输入结构重新对齐。
+
+## Review
+- 结果：已新增 [update/updatenote_2026042217.md](/D:/MyProject/MDPad/update/updatenote_2026042217.md)，把 2026-04-21 至 2026-04-22 这轮 HTML preview、slide、chart editor 与 SVG 下线相关改动统一整理成一份新的仓库内更新说明。
+- 结果：这次发布前验证覆盖了图表适配器、preview bridge、chart patch、chart editor、slide 偏好与 `HtmlPreview` 主链；唯一冒出的回归只是测试断言没跟上新的数据网格 DOM，功能代码本身未回退。
+- 结果：当前这批累计改动会按你的要求直接从本地 `main` 提交并推送到 `origin/main`，不额外拆分 PR 流程。
+
+# 图表数据弹窗拖拽/删除交互重构（2026-04-22）
+
+## Plan
+- [x] 将标签头与系列头重构为“拖拽手柄 + 输入框 + 条件删除”结构，去掉整格 draggable
+- [x] 调整 `styles.css` 中图表数据表的头单元格交互样式，让删除图标默认隐藏、hover/focus 时再显现
+- [x] 更新 chart editor 相关测试，锁定 handle 拖拽生效、输入框不参与拖拽、删除按钮结构不再常驻抢眼
+- [x] 运行定向 `vitest`、`tsc --noEmit` 与 `pnpm build` 验证，并补充本节 Review / lessons
+
+## Progress Notes
+- [src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 已把标签头和系列头从“整格可拖”改成“独立拖拽手柄 + 输入框 + 条件删除”结构；拖拽事件现在只挂在专用 handle 上，头单元格本身只负责接收 drop，输入框不再和拖拽竞争命中区。
+- 同一组件里新增了轻量的 `DragHandle` 表现层组件，并补上标签/系列拖拽与删除的专用无障碍文案；删除按钮继续保留在头单元格内，但已收缩为浮于输入框右侧的小图标，不再常驻高对比显示。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已同步把头单元格样式改成“手柄左侧固定、输入框主体、删除图标悬浮右侧”的结构；删除图标默认 `opacity: 0`，只有在 `hover` / `focus-within` 时才显示，拖拽目标态则继续用轻量描边提示。
+- [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已更新断言：现在会锁定 `th` 不再携带 `draggable`、只有 handle 能启动 drag、输入框触发 `dragstart` 不会重排，以及 handle 拖动后的 labels/series 顺序和数据顺序都正确。
+
+## Review
+- 结果：图表数据表头默认看起来已经接近纯表格，删除按钮不再成排常驻抢视觉；只有鼠标移入或键盘聚焦到当前头单元格时，删除入口才淡入出现。
+- 结果：拖拽之所以之前“像没效果”，本质上是编辑和拖拽共享了同一命中区；现在手柄独立出来后，输入框专心编辑、手柄专心排序，原生 DnD 链路在当前 Web 侧已恢复稳定。
+- 验证：`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts` 通过（1 个文件 / 4 个测试）；`pnpm exec tsc --noEmit` 通过；`pnpm build` 通过。
+- 说明：终端里没法直接做 GUI 手工验收，建议你本地重点再试两件事：一是从手柄位置而不是输入框上拖动标签/系列，二是检查 hover/focus 时删除图标的出现节奏是否足够克制。
+
+# 图表编辑弹窗功能收缩与 Excel 化数据表（2026-04-22）
+
+## Plan
+- [x] 收缩 `ChartDataEditor`，移除整块展示设置区，只保留预览与数据矩阵编辑
+- [x] 将标签/系列排序从方向按钮改为原生拖放，并移除颜色编辑与多余操作控件
+- [x] 重排 `styles.css` 中 chart 数据表样式，使其更接近 Excel 单元格网格与紧凑宽度
+- [x] 更新 chart editor 相关测试，并运行定向 `vitest`、`tsc --noEmit` 与 `pnpm build` 验证
+
+## Progress Notes
+- [src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 已把图表编辑弹窗收缩为“上预览、下数据矩阵”的单主工作区，整块展示设置已移除；应用时只回写标签、系列名、数值和顺序变更，原有图表展示配置继续按请求模型透传。
+- 同一组件里的数据编辑区已切换为原生拖放排序：标签列头支持横向拖动、系列行头支持纵向拖动，旧的左右/上下移动按钮已删除；系列颜色编辑也已完全下线，只保留系列名称、标签名称、数值和删除操作。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 中 chart 数据表样式已压成更接近 Excel 的网格：单元格宽度统一收紧到约 5 个中文字符的视觉密度，输入框边框直接承担单元格边框，删除按钮贴在输入框后面，表头和首列继续保持 sticky，滚动时仍能稳定编辑。
+- [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已同步更新回归：锁定展示设置整栏消失、颜色输入消失、数值输入链路不变，以及标签/系列通过 drag-and-drop 重排后 `nextModel` 顺序正确。
+
+## Review
+- 结果：图表编辑弹窗现在明确退回“数据矩阵编辑器”定位，不再把图表类型、标题、图例和坐标轴这些展示设置继续堆在同一个 modal 里，整体心智负担明显更低。
+- 结果：数据区的交互从“输入框 + 一排方向按钮 + 颜色块”改成了更接近 Excel 的连续网格，标签和系列都能直接拖动排序，删除动作也收敛到了输入框后侧，界面更紧凑。
+- 验证：`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts` 通过（1 个文件 / 4 个测试）；`pnpm exec tsc --noEmit` 通过；`pnpm build` 通过。
+- 说明：终端里无法直接完成 GUI 手工验收，建议本地重点看一下 6-10 个标签、2-4 个系列时的拖动手感，以及 `modern/classic` 两套主题下单元格密度是否符合预期。
+
+# 图表编辑弹窗信息架构与视觉语言收敛（2026-04-22）
+
+# 运行时图表编辑失败与预览缺失修复（2026-04-22）
+
+## Plan
+- [x] 为 runtime-only chart 编辑请求补充 `captureMode`、`sourceSnapshot` 与降级预览快照信息，保留 bound chart 现有协议
+- [x] 调整 `applyChartPatch(...)` 的安全写回逻辑：bound chart 继续走 fingerprint，runtime-only chart 改走首绑快照校验
+- [x] 为 chart editor 预览增加 runtime snapshot fallback，避免 runtime-only chart 在无脚本复用时直接落到 unavailable
+- [x] 补齐 `htmlPreviewDocument` / `htmlPreviewEdit` / `htmlPreviewEditors` / `HtmlPreview` 回归测试，并运行定向 `vitest`、`tsc --noEmit` 与 `pnpm build`
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 现在会为 runtime-only chart 编辑请求附带 `captureMode: "runtime-only"`、稳定的 `sourceSnapshot`，并在没有可复用 `runtimeScriptUrls` 时附加 `snapshotKind/snapshotDataUrl` 作为静态预览降级输入；bound chart 仍保留原来的 fingerprint 与 runtime script 采集路径。
+- 同一宿主脚本里没有再把 `data-mdpad-source-path` 当成源码级一致性校验的一部分，而是把它只作为运行时定位辅助字段；真正用于首绑保护的是 “locator + tagName + 稳定属性摘要哈希”，避免源码里并不存在的运行时属性导致误报冲突。
+- [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 已扩展 `HtmlChartEditRequest` / `HtmlChartPatch` / `HtmlChartPreviewDescriptor` 的内部只读字段，并把 `applyChartPatch(...)` 改成双路径：bound chart 继续校验 `sourceFingerprint`，runtime-only chart 则校验 `sourceSnapshot`，失效时返回更准确的“关闭弹窗后重新打开”提示。
+- [src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 已新增快照预览模式：有可复用 runtime 时继续走 iframe live preview；没有时改为展示静态截图和说明文字，不再默认落到整块 unavailable 红字。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 与 [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已同步补上 snapshot hint 文案和静态预览样式；[src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts)、[src/features/editor/htmlPreviewEdit.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.test.ts)、[src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts)、[src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 也都补了 runtime-only 首绑成功、快照预览和失效提示的回归。
+
+## Review
+- 结果：runtime-only chart 第一次应用编辑时，不再误走 bound chart 的 binding changed 校验。只要图表所在节点和打开弹窗时的稳定快照仍一致，就会安全注入首个 `data-mdpad-chart-source` 绑定并把 JSON 写回 HTML。
+- 结果：runtime-only chart 在没有可复用脚本的情况下不再直接展示“无法可靠预览”的错误态，而是用当前运行时图表的静态快照做降级预览，并明确提示“修改后以应用结果为准”。
+- 结果：真正的源码变化与 runtime-only 首绑失效现在被区分成两类提示。已绑定 chart 仍然保留原来的 binding changed 保护；runtime-only chart 则会给出“关闭弹窗后重新打开”的恢复语义，降低误导性。
+- 验证：`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEdit.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts` 通过（4 个文件 / 43 个测试）；`pnpm exec tsc --noEmit` 通过；`pnpm build` 通过。
+- 说明：定向测试里仍会看到一条 jsdom 关于 `HTMLCanvasElement.toDataURL()` 的非实现警告，来自“bound chart runtime 不可用时尝试捕获快照”的测试环境限制，不影响这轮功能链路和构建结果；真实桌面运行时不会走这条 jsdom 限制。
+
+# 图表编辑弹窗信息架构与视觉语言收敛（2026-04-22）
+
+## Plan
+- [x] 收敛 `ChartDataEditor` 右侧展示设置的信息架构，改成更接近 MDPad inspector 的紧凑字段栈
+- [x] 重排 chart 数据矩阵的表头 / 系列信息列 / 操作按钮布局，降低视觉噪音并压缩密度
+- [x] 调整 `styles.css` 中 chart modal 的 panel、table、toolbar 与 responsive 样式，使其贴近 MDPad 现有 modal 语言
+- [x] 补充或更新 chart editor 相关测试，并运行定向 `vitest`、`tsc --noEmit` 与必要的构建验证
+
+## Progress Notes
+- [src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 已把右侧展示设置从两张重装饰卡片改成紧凑 inspector：保留“基础 / 坐标轴”两组，但标题、图例与轴配置现在是更直接的字段栈和 toggle 行，标题/X/Y 轴名称只在对应开关开启后显示，减少无效表单噪音。
+- 同一组件里的数据区已重排成更接近矩阵编辑器的结构：标签表头只保留名称输入和紧凑操作条，系列首列改成“系列名 + 行级操作”与“颜色”两层，数值区只负责数值输入，不再把每个单元格都做成小型表单卡片。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已同步收敛 chart modal 样式：右侧设置区移除内层卡片背景与大圆角，改为分节+细分隔；数据表缩小了 padding、最小宽度和按钮尺寸，并为表头与首列加了 sticky 行为，让全宽数据区更像 MDPad 原生数据网格。
+- 预览区也做了轻量统一：保留独立容器，但边框、圆角、背景和 panel 间距已向现有 modal / inspector 语言靠拢，不再维持一套偏“展示卡片”的视觉。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 新增了 chart editor 紧凑分区标题文案；[src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 也已补上新分区与径向图隐藏坐标轴分区的回归断言。
+
+## Review
+- 结果：右侧展示设置现在明显更接近 MDPad 现有 inspector 风格，层级收敛、对齐更整齐，控件不再被多层卡片和留白放大。
+- 结果：下半区数据表的“标签头 / 系列首列 / 数值区”职责已经分离，操作按钮仍保留但存在感更低，整体阅读节奏比之前清晰紧凑很多。
+- 验证：`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts` 通过（1 个文件 / 3 个测试）；`pnpm exec tsc --noEmit` 通过；`pnpm build` 通过。
+- 说明：终端里没法直接做 GUI 手工验收，这轮主要完成了结构、样式和自动化验证；建议你本地重点再看一下 `modern/classic` 两套主题下右侧设置区密度，以及数据表在 5-8 个标签、2-3 个系列时的实际观感。
+
+# HTML 预览工具栏悬浮显隐与样式统一（2026-04-21 13:00）
+
+# 修复图表编辑弹窗与页面图表不一致（2026-04-22）
+
+## Plan
+- [x] 调整 `htmlPreviewDocument` 中绑定图表的检测顺序，命中真实 chart surface 时优先读取 runtime 实例，而不是直接回退到绑定 JSON
+- [x] 收紧 `chartAdapters` 的颜色提取与配置合成规则，优先保留 runtime snapshot 中已生效的形态与颜色
+- [x] 补齐 `htmlPreviewDocument` / `chartAdapters` / `HtmlPreview` / `htmlPreviewEditors` 回归测试，覆盖横向柱图、对数轴与真实颜色顺序
+- [x] 运行定向 `vitest`、`tsc --noEmit` 与 `pnpm build` 验证，并回填本节 Review / Progress Notes
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 中绑定图表的编辑请求采集顺序已调整：命中 Chart.js canvas 或 ECharts 绘图区时，会先读取页面上已初始化完成的 runtime 实例，再回退到绑定 JSON，因此弹窗拿到的 `model.sourceConfig` 现在默认就是当前页面真实图表的快照。
+- 同一宿主脚本里补了两个一致性细节：ECharts runtime 请求现在会显式带上从 `series[*].type` 推断出的 `chartType`，不再被编辑器默认成 `bar`；`runtimeScriptUrls` 采集也从原来的宽松关键字改成了更严格的 `chart.js / chart.min.js / chartjs / echarts` 匹配，避免误收进无关脚本。
+- [src/features/editor/chartAdapters.ts](/D:/MyProject/MDPad/src/features/editor/chartAdapters.ts) 已新增统一的颜色提取 / 保留逻辑：Chart.js 会优先从 `backgroundColor` / `borderColor` 中提取首个可用颜色，ECharts 会优先读 `itemStyle.color` / `lineStyle.color` / `areaStyle.color`；在运行时颜色与编辑器颜色一致时，适配器会优先保留原有数组或样式对象，而不是一律改写成简单字符串。
+- 这次也顺手修掉了 `htmlPreviewDocument` 中 ECharts runtime 快照使用未定义 `instance` 变量的问题，改为稳定读取 `detected.instance.getOption()`，避免真实 ECharts 图表打开编辑器时快照链路抖动。
+- 回归已覆盖到“bound chart 优先 runtime、runtime 不存在才回退 bound JSON、横向柱图 / 对数轴保留、颜色顺序不翻转、编辑后继续携带 runtime sourceConfig”几条主链。
+
+## Review
+- 结果：图表编辑弹窗现在和页面图表使用的是同一份“已初始化完成的运行时配置快照”。像横向柱图、对数轴、真实系列颜色顺序这类页面上已经生效的表现，会直接进入编辑器预览，不再先被绑定 JSON 里较旧的配置覆盖。
+- 结果：颜色合成不再默认把 runtime 样式“标准化”回简单蓝红字符串。对于 Chart.js 的颜色数组和 ECharts 已存在的 `itemStyle/lineStyle` 颜色，只要用户没有显式改色，就会尽量保留页面当前已生效的值。
+- 验证：`pnpm exec vitest run src/features/editor/chartAdapters.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts` 通过（4 个测试文件 / 35 个测试）；`pnpm exec tsc --noEmit` 通过；`pnpm build` 通过。
+- 说明：终端环境里没法直接做 GUI 手工验收，但从自动化覆盖来看，你截图里提到的两类问题都已经被锁定到回归测试里了；建议你本地重点再看一下横向柱图和镍浓度对比图这两个实际样例。
+
+## Plan
+- [x] 为 `HtmlPreview` 现有 surface toolbar 增加悬浮触发壳与顶部 hotzone，不改现有模式切换和 slide 业务逻辑
+- [x] 调整 `styles.css` 中 HTML 预览工具栏样式，使其默认收起、hover / focus-within 滑出，并统一到底栏字重与弹窗按钮几何
+- [x] 为 `HtmlPreview` 补充工具栏渲染回归测试，覆盖可编辑 HTML 和只读 slide 文档场景
+- [x] 运行定向 `vitest` 与 `pnpm build`，并补充本节 Review 与 `update/updatenote_2026042113.md`
+
+## Progress Notes
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 中原先直接挂在 preview 顶部的 `html-preview-toolbar` 已包进新的 `html-preview-toolbar-hover-shell`，并增加透明 `html-preview-toolbar-hotzone` 作为顶部 hover 命中区；按钮逻辑、surface mode 切换和 slide treatment 行为都保持原样。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 里 `has-surface-toolbar` 已不再给 preview 内容固定留出 `52px` 顶部空白，工具栏改为覆盖式绝对定位；默认通过 `transform + opacity` 收起在容器顶部之外，`hover / focus-within` 时再滑出。
+- 工具栏按钮的视觉节奏已统一到“状态栏字重 + 弹窗按钮几何”：字号/字重收敛到 `11px / 400`，按钮和页码胶囊统一 `30px` 高度、Modern 为 `8px` 圆角，Classic 额外回落到 `4px`，同时保留现有激活态强调色而不再依赖更重字重。
+- 为减少动画对敏感用户的影响，工具栏新增了 `prefers-reduced-motion` 兜底，只移除过渡动画，不改显隐逻辑；键盘 Tab 聚焦到工具栏按钮时也会通过 `:focus-within` 自动展开。
+- [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 已新增两条回归：一条锁定可编辑 HTML 会渲染 surface toolbar，另一条锁定只读 slide 文档也会渲染 `Read / Present` 与 slide progress。
+
+## Review
+- 结果：HTML 预览顶部二级工具栏现在默认不再常驻占位，只有鼠标移入预览区顶部热区或键盘聚焦到按钮时才会从上方滑出，内容区域不会再一直被留出一条空白带。
+- 结果：工具栏按钮的文字字重、尺寸和圆角已和应用底栏/弹窗按钮更一致，整体观感比原先更像同一套桌面控件语言；Classic 主题也单独保留了更克制的小圆角。
+- 验证：`pnpm vitest run src/features/editor/HtmlPreview.test.ts` 通过（1 个测试文件 / 21 个测试）；`pnpm build` 通过。
+- 说明：终端环境里没有直接做 GUI 手工悬浮验收，本轮只完成了代码与自动化验证；建议你本地再快速看一下 `modern/classic`、中文界面、普通 HTML 和 slide 文档这几种组合下的实际滑出观感。
+
+# 实现 HTML / Slide 可视化编辑第一阶段（2026-04-21）
+
+## Plan
+- [x] 在 `HtmlPreview` 中引入 `renderedHtml` / `commitVisualHtmlChange(...)` / skip reload 机制，停止视觉编辑后的 iframe 整体重载
+- [x] 拆分 `htmlPreviewDocument` 为 preview builder / bridge types / host bridge，并扩展通用 element visual bridge
+- [x] 在 `htmlPreviewEdit` 与新增 `html-visual` 模块中落地通用 HTML element patch / locator / inspector
+- [x] 在 `HtmlPreview` 内新增 `preview | visual-edit | slide-reading | slide-present` 子模式工具栏与父层状态同步
+- [x] 新增 slides 检测、按路径持久化的 treat-as-slides 偏好、阅读模式与 Tauri fullscreen 演示模式
+- [x] 补齐 `HtmlPreview` / `htmlPreviewDocument` / `htmlPreviewEdit` / slide preference 回归测试，并完成类型检查与定向验证
+
+## Progress Notes
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已切到 `renderedHtml + skipNextIframeReloadForHtmlRef + commitVisualHtmlChange(...)` 架构：SVG、Chart、通用 HTML element patch 和 iframe 内拖拽回写都先保留 live DOM，再把 patch 安全写回源码，视觉编辑不再触发整页 `srcDoc` 重建。
+- 新增的 [src/features/editor/html-visual/HtmlVisualEditor.tsx](/D:/MyProject/MDPad/src/features/editor/html-visual/HtmlVisualEditor.tsx)、[HtmlElementInspector.tsx](/D:/MyProject/MDPad/src/features/editor/html-visual/HtmlElementInspector.tsx)、[htmlElementPatch.ts](/D:/MyProject/MDPad/src/features/editor/html-visual/htmlElementPatch.ts) 和 [htmlElementLocator.ts](/D:/MyProject/MDPad/src/features/editor/html-visual/htmlElementLocator.ts) 已落地通用 HTML inspector / patch / locator；第一版支持文本、颜色、背景、字号、字体、字重、对齐、定位、left/top、宽高和 z-index。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 的 host bridge 现已支持 `select-element`、`element-frame`、`apply-element-patch`、`commit-element-patch`、`set-surface-mode`、`slide-state-change`，并在 source-backed DOM 上打 `data-mdpad-source-path`。运行时脚本生成节点会被标成 `runtimeGenerated`，允许选中但不会写回源码。
+- slide 工作流已接上：新增 [src/features/editor/slides/slideDetection.ts](/D:/MyProject/MDPad/src/features/editor/slides/slideDetection.ts) 和 [src/shared/utils/htmlSlidePreferences.ts](/D:/MyProject/MDPad/src/shared/utils/htmlSlidePreferences.ts)，支持启发式检测、按路径持久化的 treat-as-slides 偏好、`Read / Present` 子模式、键盘翻页、Esc 退出，以及通过 [src-tauri/capabilities/default.json](/D:/MyProject/MDPad/src-tauri/capabilities/default.json) 放开的 Tauri fullscreen 能力。
+- 这轮还补了一个低风险拆分入口：新增 [src/features/editor/html-preview/previewDocumentBuilder.ts](/D:/MyProject/MDPad/src/features/editor/html-preview/previewDocumentBuilder.ts)、[previewBridgeTypes.ts](/D:/MyProject/MDPad/src/features/editor/html-preview/previewBridgeTypes.ts) 和 [previewBridgeHost.ts](/D:/MyProject/MDPad/src/features/editor/html-preview/previewBridgeHost.ts)，先把 builder / bridge API 路径稳定下来，后续继续瘦身 `htmlPreviewDocument.ts` 时不会再牵动外层调用点。
+- 回归已覆盖到新链路：新增/扩展 [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts)、[src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts)、[src/features/editor/htmlPreviewEdit.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.test.ts) 和 [src/shared/utils/htmlSlidePreferences.test.ts](/D:/MyProject/MDPad/src/shared/utils/htmlSlidePreferences.test.ts)，覆盖视觉 patch 不重载 iframe、源码改动会重建、surface mode 同步、live DOM patch、slide 状态、HTML element patch 最小回写，以及无路径文档的 in-memory 偏好回退。
+
+## Review
+- 结果：MDPad 的 HTML 预览现在不再只是“受控 preview + 少量专用入口”。通用 HTML 元素已经具备选中、属性面板、live DOM 预览式修改，以及对 slide 文档的阅读/演示工作流。
+- 结果：slide 编辑第一版已经能跑完整链路。对于被识别或手动标记为 slides 的 HTML，用户可以在 `Edit` 里选中元素、直接拖动绝对定位元素、用方向键微调，并在 `Read / Present` 中保持 slide index，不再因为每次改颜色/字号/位置就整页刷新。
+- 边界：这轮仍然默认把可视化样式写回 inline style，没有做 CSS rule editor / theme token / 批量多选；runtime 生成节点仍只读；`htmlPreviewDocument.ts` 也只是完成第一层抽口，还没有彻底拆成多个实现文件。
+- 验证：`pnpm tsc --noEmit` 通过；`pnpm vitest run src/features/editor/htmlPreviewEdit.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/shared/utils/htmlSlidePreferences.test.ts` 通过（4 个文件 / 78 个测试）；`pnpm build` 通过。
+
+# 修复 HTML 预览页内联 SVG 拖拽保存与右键编辑入口（2026-04-21）
+
+## Plan
+- [x] 在 `htmlPreviewDocument` 中新增 `svg-commit-patch` 消息与拖拽提交链路，保持 `mousemove` 仅做 preview、`mouseup` 才 commit
+- [x] 为预览页右键 SVG 检测补 fallback，避免 `event.target` 未命中 inline SVG 时丢失 `Edit SVG`
+- [x] 在 `HtmlPreview` 中消费 commit patch 并持久化回 HTML，同时为右键菜单增加基于当前 inline session 的 SVG fallback
+- [x] 补齐 `HtmlPreview` / `htmlPreviewDocument` 回归测试，并运行定向 vitest 验证
+
+## Progress Notes
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 新增了 `HTML_PREVIEW_SVG_COMMIT_PATCH_MESSAGE_TYPE`、`extractSvgCommitPatchFromPreviewMessage(...)` 和 host script 的 `svgCommitPatch` 消息通道；拖拽中的 `mousemove` 仍只发 `svg-preview-patch`，`mouseup` 则在有实际变化时发送一次带 `sourceSnapshot` 的 `svg-commit-patch`。
+- 同一宿主脚本里补上了 `findContextSvg(event)` fallback：右键菜单现在会先尝试命中 `event.target` 所在 inline SVG，失败时再回退到当前仍有效的 `activeSvgSelection.svg`；同时只在 `context.kind === "none"` 时尊重已存在的 `defaultPrevented`，确保普通页面右键不被劫持，但 SVG/chart 仍可打开 MDPad 菜单。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 现已消费 `svgCommitPatch` 并在父组件侧持久化回 HTML；如果当前存在 inline/canvas session，会先把 commit patch merge 到 draft items 再 `buildSvgPatchFromSession(...)`，从而保留拖拽期间已有的 preview 草稿。
+- 右键菜单渲染条件也一并补齐：当预览只发来 `context.kind === "none"`，但父组件当前持有 `svgInlineSession + pendingSvgAction` 时，菜单仍会展示 `Edit SVG`，不会再因为上下文识别抖动而丢入口。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 与 [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 已新增回归，覆盖拖拽 preview/commit 分离、无变化不 commit、右键 fallback、`defaultPrevented` 普通内容保留页面行为、`svg-commit-patch` 真正写回 HTML，以及 plain context menu 下的 `Edit SVG` fallback。
+
+## Review
+- 结果：HTML 预览中的 inline SVG 拖拽现在会在松手时真正把 geometry/transform 改动写回 HTML 源码，保存文件不再丢失预览里已经拖好的位置。
+- 结果：右键菜单对 SVG 的识别不再只依赖 `event.target` 命中 inline `<svg>`；当前选中的 SVG 也可作为 fallback，因此 `Edit SVG` 入口在选区存在时更稳定。
+- 结果：这次没有扩展外部 `<img src="*.svg">` / `<object data="*.svg">` 链路，修复范围仍严格限定在 HTML 内联 SVG。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/HtmlPreview.test.ts` 通过（2 个测试文件 / 54 个测试）。
+
+# HTML Preview Editing Hardening（2026-04-21 ）
+
+## Plan
+- [x] 收紧 `htmlPreviewDocument` 的 URL pass-through 策略，移除资源 URL 中对 `javascript:` 的放行，并补齐对应宿主脚本测试
+- [x] 在 `htmlPreviewEdit` 中引入结构化 `PatchResult` / `PatchFailureReason`，为 text / SVG / chart patch 增加 locator 指纹校验与安全失败返回
+- [x] 在 `HtmlPreview` 中消费新的 patch 结果，为 inline text / SVG / chart 编辑失败提供用户可见反馈，而不是仅 `console.error`
+- [x] 为 Chart 编辑建立 normalized model + adapter 层，升级 `ChartDataEditor` 以支持严格数字校验、labels/series 增删改排序与适配器保真
+- [x] 为 SVG item 引入显式 capability metadata，并将 inline inspector / canvas editor 的 UI 分派从 tag 判断收敛到 capability 判断
+- [x] 运行类型检查与定向测试，回填 Progress Notes / Review，并补充本轮 `update/` 更新说明
+
+## Progress Notes
+- [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 已完成 patch contract 硬化：`applyHtmlTextPatch` / `applySvgPatch` / `applyChartPatch` 统一返回 `PatchResult`，并为 inline text、SVG、chart 加入 `currentText` / `sourceSnapshot` / `sourceFingerprint` 校验，失败时用 `LOCATOR_NOT_FOUND`、`TAG_MISMATCH`、`SOURCE_CHANGED`、`INVALID_CHART_MODEL` 等结构化原因安全退出。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 现已在三条编辑链路里消费 `PatchResult`，并通过 `patchError` banner 把失败原因直接呈现在预览壳层，而不是只落到 `console.error`；对应的 [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 也补上了可见错误反馈回归。
+- Chart 链路已升级为“严格数据 + 结构编辑 + 适配器保真”：新增 [src/features/editor/chartAdapters.ts](/D:/MyProject/MDPad/src/features/editor/chartAdapters.ts) 统一归一化/序列化 Chart.js 与 ECharts 模型；[src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 改用严格 `Number(trimmed)` 校验，支持 label / series 的新增、删除、重命名和排序，并保留 `sourceFingerprint` 以便回写前校验绑定未漂移。
+- SVG 链路新增了显式 capability 与源快照：新增 [src/features/editor/svgEditCapabilities.ts](/D:/MyProject/MDPad/src/features/editor/svgEditCapabilities.ts)，并在 [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts)、[SvgInlineInspector.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgInlineInspector.tsx)、[SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 中把 UI 分派逐步从裸 `tagName` 判断收口到 capability；完整编辑器现在也会随 item 携带 `sourceSnapshot`，不再只有 inline 轻编辑链路做安全回写校验。
+- URL policy 已收紧到资源层：`javascript:` 不再通过资源重写链路保留，而是被清空处理；[src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 现已覆盖 unsafe resource URL、chart `sourceFingerprint`、inline text `currentText` 以及 SVG capability / source snapshot 采集。
+
+## Review
+- 结果：HTML preview 的三条编辑回写链路现在都具备“定位 + 轻量指纹 + 结构化失败”的安全栅栏，避免源码已经变化时继续静默误写；同时，失败原因已可在 UI 中直接看到。
+- 结果：Chart 编辑不再接受 `parseFloat("12abc") -> 12` 这类宽松输入，labels / series 结构也不再只能在源码里改；Chart.js / ECharts 的额外配置通过适配器保存在 `sourceConfig` 中，没有被表格编辑器粗暴抹平。
+- 结果：SVG capability 与 `sourceSnapshot` 已贯穿宿主采集、轻编辑和完整编辑器，为后续继续拆分 `htmlPreviewDocument.ts` / `SvgTextCanvasEditor.tsx` 打下了更稳定的数据契约；本轮仍明确维持 translate-level transform，不扩张到 matrix/rotate/scale 编辑。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewEdit.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts` 通过（4 个测试文件 / 68 个测试）；`pnpm build` 通过。
+- 边界：本轮没有实现 `<g>` 层级编辑、CSS 变量保真式样写回，也没有把 `htmlPreviewDocument.ts` / `SvgTextCanvasEditor.tsx` 做到完整模块化拆分；但与这轮安全/正确性直接相关的数据契约、适配器与 capability 分层已经落地。
+
 # 编写 updatenote 并推送 GitHub main（2026-04-20 17:30）
 
 ## Plan
@@ -1087,3 +1303,74 @@
 - 结果：HTML 预览里的 SVG 编辑入口已恢复稳定显示；即使消息顺序再次出现抖动，父层也会用缓冲帧补齐定位，不再因为首个 frame 被丢掉而看不到 `编辑 SVG` 按钮。
 - 结果：本次没有改 SVG 编辑器主体、样式或消息协议，只修复了 iframe 与父层之间的内部时序和状态同步，影响面保持在最小范围。
 - 验证：`pnpm vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（3 个测试文件 / 46 个测试）；`pnpm exec tsc --noEmit` 通过。
+
+# HTML 资源统一弹窗编辑改造（2026-04-21 14:20）
+
+## Plan
+- [x] 收敛 `HtmlPreview` 的 chart/svg 入口，去掉页面内直接编辑状态，只保留弹窗打开链路与右键菜单入口
+- [x] 简化 `htmlPreviewDocument` 宿主脚本与消息协议，删除页面内 SVG/Chart 编辑消息，新增直接打开 chart modal 的请求
+- [x] 新建 SVG 纯弹窗编辑组件壳层，复用现有画布编辑能力并默认隐藏工具区/属性区
+- [x] 新建 Chart 资源弹窗组件，加入预览区、数据编辑、图表类型与常用样式配置
+- [x] 扩展 chart typed model / adapter / patch 写回，保证旧文档兼容与新配置可稳定序列化
+- [x] 补齐 `HtmlPreview` / `htmlPreviewDocument` / `htmlPreviewEditors` / `htmlPreviewEdit` 回归测试并运行验证
+
+## Progress Notes
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已移除 `pendingChartAction` / `pendingSvgAction` / inline SVG session 主链；预览现在只消费 `open-chart-editor` / `open-svg-editor` 请求，并用 [src/features/editor/components/ChartAssetEditorModal.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartAssetEditorModal.tsx) 与 [src/features/editor/components/SvgAssetEditorModal.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgAssetEditorModal.tsx) 统一承接 modal 编辑。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 的 iframe host script 已改成“命中检测 + 右键菜单 + 直接打开请求”：chart 点击直接发 `mdpad:html-preview:open-chart-editor`，inline SVG 点击直接发 `open-svg-editor`，并把 `initialSelectedLocatorPath` 带到请求里；原有的 SVG selection/frame/preview/commit/sync 消息仍保留常量与解析器以兼容测试/过渡，但主流程已不再发送它们。
+- Chart 数据契约已升级：在 [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 给 `MdpadChartModel` 增加了 typed `presentation`，并在 [src/features/editor/chartAdapters.ts](/D:/MyProject/MDPad/src/features/editor/chartAdapters.ts) 中补上从旧 `sourceConfig` 推导、序列化回 Chart.js / ECharts 配置，以及标题 / 图例 / 坐标轴 / series 颜色的归一化。
+- [src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 现在是完整 chart asset modal：左侧独立预览，右侧数据与常用样式配置，底部确认/取消；[src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 也新增了 asset modal 模式，默认只显示画布，通过 `Tools` 开关才展开工具栏与右侧属性区。
+- 文案与样式同步补齐： [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 新增了 SVG tools toggle 与 chart 配置标签， [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 新增了 chart 双栏 modal、preview surface、legend 和 SVG tools collapsed 布局样式。
+
+## Review
+- 结果：HTML preview 里的 chart / inline SVG 已经切成“纯弹窗编辑”语义，页面内不再出现旧的浮动 `Edit Chart` / `Edit SVG` 入口，也不再靠 iframe 内 drag/resize 直接改源码。
+- 结果：SVG modal 保留了现有画布、节点、路径和连线编辑能力，但默认只展示画布与确认/取消；Chart modal 则提供独立预览、图表类型、数据表格和常用展示配置，满足这轮 scoped plan。
+- 兼容性：旧 chart 绑定 JSON 中即使没有 `presentation`，现在也会从 `sourceConfig` 自动推导默认展示配置；写回仍沿用 locator + minimal patch，不改成整段 HTML/SVG 重建。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewEdit.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（4 个文件 / 86 个测试）；`pnpm build` 通过。
+
+# SVG 编辑需求梳理与现有实现下线（2026-04-21 15:xx）
+
+## Plan
+- [x] 梳理当前 SVG 编辑能力、问题链路与重写目标，更新 `update/updatenote_2026042115.md` 为完整 SVG 重写需求文档
+- [x] 在 `HtmlPreview` / `htmlPreviewDocument` / `htmlPreviewEdit` 中移除 SVG 编辑入口、消息、请求、patch 与写回链路，保留 chart 与通用 HTML visual-edit
+- [x] 删除 SVG-only 组件、会话/几何 helper、样式与测试，并同步清理 i18n 文案与桥接导出
+- [x] 运行定向 `vitest` 与 `pnpm build` 验证 chart 编辑与 HTML preview 其他模式未回归
+
+## Progress Notes
+- [update/updatenote_2026042115.md](/D:/MyProject/MDPad/update/updatenote_2026042115.md) 已重写为完整 SVG 编辑重构需求文档，覆盖现状能力盘点、问题复盘、交互矩阵、重写范围、非目标、失败处理与验收场景，可直接作为下一轮 SVG 重写输入。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已移除 SVG 编辑状态、消息消费、右键 `Edit SVG` 入口和 SVG modal；chart 编辑入口、chart modal 与通用 HTML visual-edit 保持可用。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已停止发送和解析 SVG 编辑消息，inline SVG 的点击/双击/右键不再触发编辑请求；同时移除了 SVG 对外 bridge contract，并把残留的 SVG 运行时监听从主链路摘掉，避免继续参与消息同步。
+- [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 已删除 SVG request/patch/source snapshot 写回能力，仅保留 chart patch 与通用 HTML patch；chart 绑定写回链路未改。
+- 已删除 SVG-only 文件 [src/features/editor/components/SvgAssetEditorModal.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgAssetEditorModal.tsx)、[src/features/editor/components/SvgInlineInspector.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgInlineInspector.tsx)、[src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx)、[src/features/editor/htmlPreviewSvgSessions.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewSvgSessions.ts)、[src/features/editor/svgEditCapabilities.ts](/D:/MyProject/MDPad/src/features/editor/svgEditCapabilities.ts)、[src/features/editor/svgEditorGeometry.ts](/D:/MyProject/MDPad/src/features/editor/svgEditorGeometry.ts) 及对应测试。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css)、[src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts)、[src/features/editor/html-visual/HtmlElementInspector.tsx](/D:/MyProject/MDPad/src/features/editor/html-visual/HtmlElementInspector.tsx) 已同步清理 SVG 专用样式/文案，并把通用 HTML inspector 从 SVG 命名中解耦。
+- 定向测试已改为锁定“SVG 不再打开编辑器、chart 仍可编辑”的新行为，并对 chart JSON 断言改成空白不敏感形式，避免格式化输出引发伪失败。
+
+## Review
+- 结果：HTML Preview 中的 SVG 编辑能力已完整下线。inline SVG 点击、双击、右键都不会再打开编辑器，也不会再出现 `Edit SVG` 菜单项；这次是为后续完整重写让路，不是永久删除能力。
+- 结果：chart 编辑链路保持原样可用。`HtmlChartEditRequest`、chart modal、chart 数据写回、chart 右键/点击入口和通用 HTML visual-edit 都通过回归验证，没有被 SVG 清理波及。
+- 结果：仓库里与现有 SVG 编辑直接相关的组件、会话辅助、几何 helper、对外 bridge 消息、SVG patch 写回和专用文案样式已集中清理；同时对残留 host script 监听做了进一步摘除，避免 SVG 编辑逻辑继续挂在运行时主链路上。
+- 验证：`pnpm exec vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEdit.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（4 个文件 / 35 个测试）；`pnpm build` 通过。
+- 说明：当前工作区原本就存在其他未提交改动与未跟踪文件；本轮只增量修改 SVG/chart 预览编辑相关文件、测试、样式、文案和任务记录，没有回退这些既有变更。
+
+# 图表编辑弹窗一致性与布局优化（2026-04-22）
+
+## Plan
+- [x] 为 chart 编辑请求补充高保真 preview descriptor，并让宿主脚本在打开 chart editor 时携带 bound/runtime 预览信息
+- [x] 提取共享 chart preview/runtime builder，统一 modal 预览与页面真实图表的配置来源
+- [x] 重构 `ChartDataEditor` 为“上预览右设置下数据”布局，修正复选框/输入区层级与数据表滚动
+- [x] 在 `HtmlPreview` 中补上 chart apply 后的即时页面同步，确保弹窗预览与页面图表一致
+- [x] 补齐 chart adapter / host script / modal / HtmlPreview 回归测试并运行定向验证
+
+## Progress Notes
+- `HtmlChartEditRequest` 已新增可选 `preview` descriptor，当前会由 `htmlPreviewDocument` 在打开 chart editor 时附带 `bound`、容器 HTML、绑定 JSON script HTML，以及按库名筛出的 runtime script URL 列表；bound/runtime-only 两条路径都已被宿主脚本测试锁住。
+- `chartAdapters.ts` 已提取 `buildChartRuntimeConfig(...)`，把 Chart.js / ECharts 的 runtime 配置派生收敛为共享入口；`serializeChartModel(...)` 与 modal 预览现在都复用它，不再一边写回 `sourceConfig`、一边在弹窗里手工画简化图。
+- `ChartDataEditor` 已重写成“上预览右设置下数据”的三段式 modal：顶部保留标题和自动绑定提示，中间左侧是 sandbox chart runtime iframe，右侧是展示设置，下方是全宽数据表；坐标轴设置会在径向图类型下自动隐藏，checkbox 也改成统一的 toggle row。
+- 预览窗格已不再使用自绘 SVG/渐变示意图，而是用隔离 iframe 加载图表 runtime，并基于当前 `sourceConfig + presentation + labels/series` 实际渲染 Chart.js / ECharts；当文档里缺少可复用 runtime 时，预览会明确显示“当前图表运行时无法在弹窗中可靠预览”，不再伪装成近似图。
+- `HtmlPreview.tsx` 已补上 chart apply 后的即时消息同步：写回 HTML 成功后会向预览 iframe 发送 `apply-chart-model`，让当前页面中的真实 chart runtime 立刻更新，不必等整页 reload 才看到结果。
+- `styles.css` 已同步重排 chart modal 样式：modal card 增加 `max-height` 与固定 footer 结构，body 独立滚动；预览 panel 固定高度且桌面端 sticky；数据表改为全宽独立滚动区域，并移除了原先依赖未定义 `--surface-1/--surface-2` 的背景写法。
+
+## Review
+- 结果：chart 编辑弹窗的预览现在不再是“看起来像图表”的近似草图，而是直接用 Chart.js / ECharts runtime 按当前配置渲染，横向柱图、对数轴、标题/图例和 series 颜色能与页面真实图表保持同一条配置链路。
+- 结果：弹窗布局已经从“右侧窄栏塞满所有内容”改成分层更明确的三段式结构，预览、展示设置和数据表的职责清晰了很多，复选框/输入框错位和表格横向拥挤问题也一起被收敛。
+- 结果：应用修改后，当前 HTML preview 里的图表会立即同步到最新模型，不再出现“弹窗里改对了，页面图还是旧的”这类状态错位。
+- 验证：`pnpm exec vitest run src/features/editor/chartAdapters.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts` 通过（4 个文件 / 31 个测试）；`pnpm exec tsc --noEmit` 通过；`pnpm build` 通过。
+- 说明：终端内无法直接做 GUI 手工验收；建议你本地重点点验 4 组场景：横向柱图、对数轴柱图、Chart.js/ECharts 各一例，以及 `light/dark + modern/classic` 下的 modal 实际观感。

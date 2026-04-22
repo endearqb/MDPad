@@ -1,21 +1,26 @@
 import { resolveMediaSource } from "../../shared/utils/mediaSource";
 import type {
   HtmlChartEditRequest,
+  HtmlElementSelection,
+  HtmlElementVisualPatch,
   HtmlInlineTextPatch,
   HtmlNodeLocator,
-  HtmlSvgEditRequest,
-  HtmlSvgPatch,
-  HtmlSvgSelectionRequest,
+  HtmlPreviewSurfaceMode,
+  HtmlSlideTreatment,
   MdpadChartModel,
-  SvgBoundingBox,
-  SvgEditableGeometry,
-  SvgEditableItem,
-  SvgEditableStyle,
-  SvgEditableTagName,
-  SvgTransformTranslation,
-  SvgViewBox,
   SupportedChartLibrary
 } from "./htmlPreviewEdit";
+import {
+  HTML_PREVIEW_APPLY_ELEMENT_PATCH_MESSAGE_TYPE,
+  HTML_PREVIEW_COMMIT_ELEMENT_PATCH_MESSAGE_TYPE,
+  HTML_PREVIEW_ELEMENT_FRAME_MESSAGE_TYPE,
+  HTML_PREVIEW_ELEMENT_PATCH_FAILED_MESSAGE_TYPE,
+  HTML_PREVIEW_SELECT_ELEMENT_MESSAGE_TYPE,
+  HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
+  HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
+  type HtmlElementFrameRequest,
+  type HtmlSlideState
+} from "./html-visual/htmlVisualBridge";
 
 export const HTML_PREVIEW_MESSAGE_SOURCE = "mdpad-html-preview";
 export const HTML_PREVIEW_OPEN_EXTERNAL_MESSAGE_TYPE =
@@ -24,24 +29,16 @@ export const HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE =
   "mdpad:html-preview:open-context-menu";
 export const HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE =
   "mdpad:html-preview:inline-text-commit";
-export const HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE =
-  "mdpad:html-preview:open-svg-editor";
-export const HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE =
-  "mdpad:html-preview:svg-selection";
-export const HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE =
-  "mdpad:html-preview:svg-selection-frame";
-export const HTML_PREVIEW_SVG_PREVIEW_PATCH_MESSAGE_TYPE =
-  "mdpad:html-preview:svg-preview-patch";
-export const HTML_PREVIEW_DISMISS_SVG_SELECTION_MESSAGE_TYPE =
-  "mdpad:html-preview:dismiss-svg-selection";
+export const HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE =
+  "mdpad:html-preview:open-chart-editor";
+export const HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE =
+  "mdpad:html-preview:apply-chart-model";
 export const HTML_PREVIEW_SHOW_CHART_ACTION_MESSAGE_TYPE =
   "mdpad:html-preview:show-chart-action";
 export const HTML_PREVIEW_HIDE_CHART_ACTION_MESSAGE_TYPE =
   "mdpad:html-preview:hide-chart-action";
 export const HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE =
   "mdpad:html-preview:read-only-blocked";
-export const HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE =
-  "mdpad:html-preview:sync-svg-session";
 
 const RESOURCE_TAG_PATTERN =
   /<(script|img|audio|video|source|track|link)\b[^>]*>/giu;
@@ -57,22 +54,11 @@ const LINK_REWRITE_REL_TOKENS = new Set([
   "manifest"
 ]);
 const PASS_THROUGH_URL_PATTERN =
-  /^(?:https?:|data:|blob:|javascript:|mailto:|tel:|about:)/iu;
+  /^(?:https?:|data:|blob:|mailto:|tel:|about:)/iu;
 const EXTERNAL_PREVIEW_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
 const SUPPORTED_CHART_LIBRARIES = new Set<SupportedChartLibrary>([
   "chartjs",
   "echarts"
-]);
-const SVG_EDITABLE_TAG_NAMES = new Set<SvgEditableTagName>([
-  "rect",
-  "circle",
-  "ellipse",
-  "line",
-  "polygon",
-  "polyline",
-  "path",
-  "text",
-  "tspan"
 ]);
 
 interface ControlledHtmlPreviewDocumentOptions {
@@ -89,16 +75,9 @@ export interface HtmlPreviewClientRect {
   height: number;
 }
 
-export interface HtmlSvgSelectionFrameRequest {
-  svgLocator: HtmlNodeLocator;
-  selectedLocator: HtmlNodeLocator;
-  clientRect: HtmlPreviewClientRect | null;
-}
-
 export type HtmlPreviewContextMenuContext =
   | { kind: "none" }
-  | { kind: "chart"; request: HtmlChartEditRequest }
-  | { kind: "svg"; request: HtmlSvgEditRequest };
+  | { kind: "chart"; request: HtmlChartEditRequest };
 
 export interface HtmlPreviewContextMenuRequest {
   x: number;
@@ -158,6 +137,9 @@ function rewritePreviewResourceUrl(
   documentPath: string | null
 ): string {
   const trimmed = rawValue.trim();
+  if (/^javascript:/iu.test(trimmed)) {
+    return "";
+  }
   if (!trimmed || trimmed.startsWith("#") || PASS_THROUGH_URL_PATTERN.test(trimmed)) {
     return rawValue;
   }
@@ -274,21 +256,24 @@ function buildPreviewHostScript(
     source: HTML_PREVIEW_MESSAGE_SOURCE,
     token: instanceToken,
     isEditable,
-    messageTypes: {
-      external: HTML_PREVIEW_OPEN_EXTERNAL_MESSAGE_TYPE,
-      contextMenu: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
-      inlineTextCommit: HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
-      openSvgEditor: HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
-      svgSelection: HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE,
-      svgSelectionFrame: HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE,
-      svgPreviewPatch: HTML_PREVIEW_SVG_PREVIEW_PATCH_MESSAGE_TYPE,
-      dismissSvgSelection: HTML_PREVIEW_DISMISS_SVG_SELECTION_MESSAGE_TYPE,
-      showChartAction: HTML_PREVIEW_SHOW_CHART_ACTION_MESSAGE_TYPE,
-      hideChartAction: HTML_PREVIEW_HIDE_CHART_ACTION_MESSAGE_TYPE,
-      readOnlyBlocked: HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE,
-      syncSvgSession: HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE
-    }
-  });
+      messageTypes: {
+        external: HTML_PREVIEW_OPEN_EXTERNAL_MESSAGE_TYPE,
+        contextMenu: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+        inlineTextCommit: HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
+        selectElement: HTML_PREVIEW_SELECT_ELEMENT_MESSAGE_TYPE,
+        elementFrame: HTML_PREVIEW_ELEMENT_FRAME_MESSAGE_TYPE,
+        applyElementPatch: HTML_PREVIEW_APPLY_ELEMENT_PATCH_MESSAGE_TYPE,
+        commitElementPatch: HTML_PREVIEW_COMMIT_ELEMENT_PATCH_MESSAGE_TYPE,
+        elementPatchFailed: HTML_PREVIEW_ELEMENT_PATCH_FAILED_MESSAGE_TYPE,
+        setSurfaceMode: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
+        slideStateChange: HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
+        openChartEditor: HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
+        applyChartModel: HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE,
+        showChartAction: HTML_PREVIEW_SHOW_CHART_ACTION_MESSAGE_TYPE,
+        hideChartAction: HTML_PREVIEW_HIDE_CHART_ACTION_MESSAGE_TYPE,
+        readOnlyBlocked: HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE
+      }
+    });
 
   return `<script data-mdpad-html-preview-host="true">
 (function () {
@@ -311,7 +296,19 @@ function buildPreviewHostScript(
   ]);
   const ANCHOR_SCROLL_OFFSET = 16;
   const SVG_CONNECTOR_HIT_TOLERANCE = 10;
+  const HTML_SOURCE_PATH_ATTRIBUTE = "data-mdpad-source-path";
   let activeInlineEditor = null;
+  let activeElementSelection = null;
+  let activeElementPreviewRect = null;
+  let activeElementDrag = null;
+  let currentSurfaceMode = "preview";
+  let currentSlideTreatment = "auto";
+  let currentSlideState = {
+    isSlideDocument: false,
+    kind: "none",
+    totalSlides: 0,
+    currentSlideIndex: 0
+  };
   let activeSvgSelection = null;
   let activeSvgDrag = null;
   let chartActionVisible = false;
@@ -583,7 +580,8 @@ function buildPreviewHostScript(
 
     postMessage(CONFIG.messageTypes.inlineTextCommit, {
       locator: editorState.locator,
-      nextText: nextText
+      nextText: nextText,
+      currentText: editorState.originalText
     });
   }
 
@@ -681,6 +679,39 @@ function buildPreviewHostScript(
 
     const svg = element.closest("svg");
     return isInlineSvgRoot(svg) ? svg : null;
+  }
+
+  function isPointInsideElement(element, clientX, clientY) {
+    if (!element || typeof element.getBoundingClientRect !== "function") {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    return Boolean(
+      rect &&
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom
+    );
+  }
+
+  function findContextSvg(event) {
+    const inlineSvg = findInlineSvgRoot(event.target);
+    if (inlineSvg) {
+      return inlineSvg;
+    }
+
+    if (
+      activeSvgSelection &&
+      activeSvgSelection.svg &&
+      activeSvgSelection.svg.isConnected &&
+      isPointInsideElement(activeSvgSelection.svg, event.clientX, event.clientY)
+    ) {
+      return activeSvgSelection.svg;
+    }
+
+    return null;
   }
 
   function isSvgElementNode(element) {
@@ -1181,6 +1212,63 @@ function buildPreviewHostScript(
       return "shape";
     }
 
+    function getSvgEditCapabilities(tagName, canEditText) {
+      if (tagName === "text" || tagName === "tspan") {
+        return {
+          canMove: true,
+          canResize: false,
+          canEditText: canEditText,
+          canEditPoints: false,
+          canEditPathData: false,
+          canEditStyle: true,
+          canEditTranslate: false
+        };
+      }
+
+      if (tagName === "path") {
+        return {
+          canMove: true,
+          canResize: false,
+          canEditText: false,
+          canEditPoints: false,
+          canEditPathData: true,
+          canEditStyle: true,
+          canEditTranslate: true
+        };
+      }
+
+      if (tagName === "polygon" || tagName === "polyline") {
+        return {
+          canMove: true,
+          canResize: false,
+          canEditText: false,
+          canEditPoints: true,
+          canEditPathData: false,
+          canEditStyle: true,
+          canEditTranslate: true
+        };
+      }
+
+      return {
+        canMove: true,
+        canResize: true,
+        canEditText: false,
+        canEditPoints: false,
+        canEditPathData: false,
+        canEditStyle: true,
+        canEditTranslate: tagName === "line"
+      };
+    }
+
+    function buildSvgSourceSnapshot(element, tagName, geometry, style, transform, canEditText) {
+      return {
+        ...(canEditText ? { text: element.textContent || "" } : {}),
+        geometry: geometry,
+        style: style,
+        transform: transform
+      };
+    }
+
   function collectSvgViewBox(svg) {
     try {
       if (svg.viewBox && Number.isFinite(svg.viewBox.baseVal.width) && Number.isFinite(svg.viewBox.baseVal.height) && svg.viewBox.baseVal.width > 0 && svg.viewBox.baseVal.height > 0) {
@@ -1244,6 +1332,8 @@ function buildPreviewHostScript(
         const geometry = collectSvgGeometry(tagName, element, bbox);
         const canEditText = canEditSvgTextContent(element);
 
+        const style = collectSvgStyle(element);
+        const transform = readTranslateTransform(element);
         items.push({
           locator: {
             root: "body",
@@ -1255,9 +1345,18 @@ function buildPreviewHostScript(
           kind: getSvgEditableKind(tagName, geometry, canEditText),
           routeCandidate: getSvgEditableKind(tagName, geometry, canEditText) === "connector",
           geometry: geometry,
-          style: collectSvgStyle(element),
-          transform: readTranslateTransform(element),
-          canEditText: canEditText
+          style: style,
+          transform: transform,
+          canEditText: canEditText,
+          capabilities: getSvgEditCapabilities(tagName, canEditText),
+          sourceSnapshot: buildSvgSourceSnapshot(
+            element,
+            tagName,
+            geometry,
+            style,
+            transform,
+            canEditText
+          )
         });
       });
 
@@ -1278,6 +1377,8 @@ function buildPreviewHostScript(
       const bbox = collectSvgBoundingBox(element, tagName);
       const geometry = collectSvgGeometry(tagName, element, bbox);
       const canEditText = canEditSvgTextContent(element);
+      const style = collectSvgStyle(element);
+      const transform = readTranslateTransform(element);
       return {
         locator: {
           root: "body",
@@ -1289,9 +1390,18 @@ function buildPreviewHostScript(
         kind: getSvgEditableKind(tagName, geometry, canEditText),
         routeCandidate: getSvgEditableKind(tagName, geometry, canEditText) === "connector",
         geometry: geometry,
-        style: collectSvgStyle(element),
-        transform: readTranslateTransform(element),
-        canEditText: canEditText
+        style: style,
+        transform: transform,
+        canEditText: canEditText,
+        capabilities: getSvgEditCapabilities(tagName, canEditText),
+        sourceSnapshot: buildSvgSourceSnapshot(
+          element,
+          tagName,
+          geometry,
+          style,
+          transform,
+          canEditText
+        )
       };
     }
 
@@ -1338,6 +1448,779 @@ function buildPreviewHostScript(
     }
 
     return node;
+  }
+
+  function markSourceBackedElements() {
+    if (!document.body) {
+      return;
+    }
+
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    let current = walker.currentNode;
+    while (current) {
+      if (current instanceof Element && current !== document.body) {
+        const locatorPath = getNodePathFromBody(current);
+        if (locatorPath) {
+          current.setAttribute(HTML_SOURCE_PATH_ATTRIBUTE, locatorPath.join("."));
+        }
+      }
+
+      current = walker.nextNode();
+    }
+  }
+
+  function isHtmlVisualBlockedElement(element) {
+    return Boolean(
+      !element ||
+        element === document.body ||
+        element.closest(
+          "script,style,iframe,svg,canvas,textarea,input,button,select,option,[data-mdpad-inline-editor='true']"
+        )
+    );
+  }
+
+  function findSelectableHtmlElement(target) {
+    const element = getElementTarget(target);
+    if (!element) {
+      return null;
+    }
+
+    let current = element;
+    while (current && current !== document.body) {
+      if (
+        !isHtmlVisualBlockedElement(current) &&
+        !detectChartRequest(current) &&
+        !findInlineSvgRoot(current)
+      ) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
+  function readInlineStyleProperty(element, propertyName) {
+    return (element.style && typeof element.style.getPropertyValue === "function"
+      ? element.style.getPropertyValue(propertyName)
+      : "") || "";
+  }
+
+  function inferParentLayout(element) {
+    const parent = element ? element.parentElement : null;
+    if (!parent) {
+      return "flow";
+    }
+
+    try {
+      const parentStyle = window.getComputedStyle(parent);
+      if (/(grid)/iu.test(parentStyle.display || "")) {
+        return "grid";
+      }
+      if (/(flex)/iu.test(parentStyle.display || "")) {
+        return "flex";
+      }
+      if (/(absolute|fixed)/iu.test(parentStyle.position || "")) {
+        return "absolute";
+      }
+    } catch {
+      return "flow";
+    }
+
+    return "flow";
+  }
+
+  function canEditHtmlElementText(element) {
+    if (!element || isEditableBlockedAncestor(element)) {
+      return false;
+    }
+
+    const childElements = Array.from(element.children || []);
+    if (childElements.length > 0) {
+      return false;
+    }
+
+    return typeof element.textContent === "string";
+  }
+
+  function collectHtmlElementAttributes(element) {
+    return Array.from(element.attributes || []).reduce(function (result, attribute) {
+      if (attribute.name === HTML_SOURCE_PATH_ATTRIBUTE) {
+        return result;
+      }
+      result[attribute.name] = attribute.value;
+      return result;
+    }, {});
+  }
+
+  function collectHtmlElementSelection(element) {
+    const locatorPath = getNodePathFromBody(element);
+    if (!locatorPath) {
+      return null;
+    }
+
+    const computedStyle = window.getComputedStyle(element);
+    const textEditable = canEditHtmlElementText(element);
+
+    return {
+      locator: {
+        root: "body",
+        path: locatorPath
+      },
+      tagName: element.tagName.toLowerCase(),
+      text: textEditable ? element.textContent || "" : null,
+      textEditable: textEditable,
+      sourcePath: element.getAttribute(HTML_SOURCE_PATH_ATTRIBUTE),
+      runtimeGenerated: !element.hasAttribute(HTML_SOURCE_PATH_ATTRIBUTE),
+      attributes: collectHtmlElementAttributes(element),
+      style: {
+        color: readInlineStyleProperty(element, "color"),
+        "background-color": readInlineStyleProperty(element, "background-color"),
+        "font-size": readInlineStyleProperty(element, "font-size"),
+        "font-family": readInlineStyleProperty(element, "font-family"),
+        "font-weight": readInlineStyleProperty(element, "font-weight"),
+        "text-align": readInlineStyleProperty(element, "text-align"),
+        position: readInlineStyleProperty(element, "position"),
+        left: readInlineStyleProperty(element, "left"),
+        top: readInlineStyleProperty(element, "top"),
+        width: readInlineStyleProperty(element, "width"),
+        height: readInlineStyleProperty(element, "height"),
+        transform: readInlineStyleProperty(element, "transform"),
+        "z-index": readInlineStyleProperty(element, "z-index")
+      },
+      layout: {
+        position: computedStyle.position || "",
+        left: computedStyle.left || "",
+        top: computedStyle.top || "",
+        width: computedStyle.width || "",
+        height: computedStyle.height || "",
+        transform: computedStyle.transform === "none" ? "" : computedStyle.transform || "",
+        zIndex: computedStyle.zIndex === "auto" ? "" : computedStyle.zIndex || ""
+      },
+      parentLayout: inferParentLayout(element)
+    };
+  }
+
+  function ensureElementSelectionOverlay() {
+    if (
+      activeElementSelection &&
+      activeElementSelection.overlayRoot &&
+      activeElementSelection.overlayRoot.isConnected
+    ) {
+      return activeElementSelection.overlayRoot;
+    }
+
+    const overlayRoot = document.createElement("div");
+    overlayRoot.setAttribute("data-mdpad-element-selection-overlay", "true");
+    overlayRoot.style.position = "fixed";
+    overlayRoot.style.left = "0";
+    overlayRoot.style.top = "0";
+    overlayRoot.style.right = "0";
+    overlayRoot.style.bottom = "0";
+    overlayRoot.style.pointerEvents = "none";
+    overlayRoot.style.zIndex = "2147482500";
+
+    const box = document.createElement("div");
+    box.setAttribute("data-mdpad-element-selection-box", "true");
+    box.style.position = "fixed";
+    box.style.border = "1px solid rgba(59, 130, 246, 0.95)";
+    box.style.background = "rgba(59, 130, 246, 0.08)";
+    box.style.boxShadow = "0 0 0 1px rgba(59, 130, 246, 0.2)";
+    box.style.borderRadius = "8px";
+    box.style.pointerEvents = "none";
+
+    overlayRoot.appendChild(box);
+    document.body.appendChild(overlayRoot);
+
+    if (activeElementSelection) {
+      activeElementSelection.overlayRoot = overlayRoot;
+      activeElementSelection.selectionBox = box;
+    }
+
+    return overlayRoot;
+  }
+
+  function removeElementSelectionOverlay() {
+    if (
+      activeElementSelection &&
+      activeElementSelection.overlayRoot &&
+      activeElementSelection.overlayRoot.parentNode
+    ) {
+      activeElementSelection.overlayRoot.parentNode.removeChild(
+        activeElementSelection.overlayRoot
+      );
+    }
+  }
+
+  function buildElementFrameRequest(element) {
+    const locatorPath = getNodePathFromBody(element);
+    if (!locatorPath) {
+      return null;
+    }
+
+    return {
+      locator: {
+        root: "body",
+        path: locatorPath
+      },
+      clientRect: readElementRect(element)
+    };
+  }
+
+  function postElementFrame(element) {
+    const request = buildElementFrameRequest(element);
+    if (!request) {
+      return;
+    }
+
+    activeElementPreviewRect = request.clientRect;
+    postMessage(CONFIG.messageTypes.elementFrame, {
+      request: request
+    });
+  }
+
+  function repaintElementSelectionOverlay() {
+    if (
+      !activeElementSelection ||
+      !activeElementSelection.element ||
+      !activeElementSelection.selectionBox
+    ) {
+      return;
+    }
+
+    const rect = activeElementSelection.element.getBoundingClientRect();
+    activeElementSelection.selectionBox.style.left = rect.left + "px";
+    activeElementSelection.selectionBox.style.top = rect.top + "px";
+    activeElementSelection.selectionBox.style.width = Math.max(rect.width, 1) + "px";
+    activeElementSelection.selectionBox.style.height = Math.max(rect.height, 1) + "px";
+    postElementFrame(activeElementSelection.element);
+  }
+
+  function dismissElementSelection(notifyParent) {
+    if (activeElementDrag) {
+      cancelHtmlElementDrag();
+    }
+    removeElementSelectionOverlay();
+    activeElementSelection = null;
+    activeElementPreviewRect = null;
+
+    if (notifyParent) {
+      postMessage(CONFIG.messageTypes.elementFrame, {
+        request: {
+          locator: {
+            root: "body",
+            path: []
+          },
+          clientRect: null
+        }
+      });
+    }
+  }
+
+  function selectHtmlElement(element) {
+    const selection = collectHtmlElementSelection(element);
+    if (!selection) {
+      return false;
+    }
+
+    dismissChartAction();
+    activeElementSelection = {
+      element: element,
+      overlayRoot: null,
+      selectionBox: null,
+      selection: selection
+    };
+    ensureElementSelectionOverlay();
+    repaintElementSelectionOverlay();
+    postMessage(CONFIG.messageTypes.selectElement, {
+      request: selection
+    });
+    return true;
+  }
+
+  function normalizeCssPixelValue(value, fallback) {
+    const numericValue =
+      typeof value === "number" ? value : parseFloat(String(value || ""));
+    return Number.isFinite(numericValue) ? numericValue : fallback;
+  }
+
+  function formatCssPixelValue(value) {
+    return String(Math.round(value * 100) / 100) + "px";
+  }
+
+  function buildHtmlElementStyleSnapshot(selection) {
+    if (!selection || !selection.style) {
+      return undefined;
+    }
+
+    return {
+      position: selection.style.position || null,
+      left: selection.style.left || null,
+      top: selection.style.top || null,
+      width: selection.style.width || null,
+      height: selection.style.height || null,
+      transform: selection.style.transform || null,
+      "z-index": selection.style["z-index"] || null
+    };
+  }
+
+  function postHtmlElementPatchCommit(selection, layoutPatch) {
+    if (!selection) {
+      return false;
+    }
+
+    postMessage(CONFIG.messageTypes.commitElementPatch, {
+      patch: {
+        kind: "html-element",
+        locator: selection.locator,
+        tagName: selection.tagName,
+        layout: layoutPatch,
+        sourceSnapshot: {
+          style: buildHtmlElementStyleSnapshot(selection)
+        }
+      }
+    });
+    return true;
+  }
+
+  function beginHtmlElementDrag(event, element) {
+    if (
+      !activeElementSelection ||
+      activeElementSelection.element !== element ||
+      !activeElementSelection.selection
+    ) {
+      return false;
+    }
+
+    const selection = activeElementSelection.selection;
+    if (
+      selection.runtimeGenerated ||
+      currentSurfaceMode !== "visual-edit" ||
+      !detectSlideDocument().isSlideDocument
+    ) {
+      return false;
+    }
+
+    const computedStyle = window.getComputedStyle(element);
+    const currentPosition = computedStyle.position || "";
+    const isAbsoluteLike =
+      currentPosition === "absolute" || currentPosition === "fixed";
+
+    const shouldConvertToAbsolute =
+      !isAbsoluteLike || selection.parentLayout === "flex" || selection.parentLayout === "grid";
+    const rect = element.getBoundingClientRect();
+    const offsetParent =
+      currentPosition === "fixed"
+        ? null
+        : element.offsetParent instanceof HTMLElement
+          ? element.offsetParent
+          : element.parentElement instanceof HTMLElement
+            ? element.parentElement
+            : document.body;
+    const parentRect =
+      currentPosition === "fixed"
+        ? { left: 0, top: 0 }
+        : offsetParent && typeof offsetParent.getBoundingClientRect === "function"
+          ? offsetParent.getBoundingClientRect()
+          : { left: 0, top: 0 };
+
+    const baseLeft = rect.left - parentRect.left;
+    const baseTop = rect.top - parentRect.top;
+    const originalInlineStyle = element.getAttribute("style");
+    const originalSelection = selection;
+
+    if (shouldConvertToAbsolute) {
+      const approved = window.confirm(
+        "Convert this element to absolute positioning before dragging?"
+      );
+      if (!approved) {
+        return false;
+      }
+
+      applyHtmlElementVisualPatchToDom({
+        kind: "html-element",
+        locator: selection.locator,
+        layout: {
+          position: currentPosition === "fixed" ? "fixed" : "absolute",
+          left: formatCssPixelValue(baseLeft),
+          top: formatCssPixelValue(baseTop),
+          width: formatCssPixelValue(rect.width),
+          height: formatCssPixelValue(rect.height),
+          transform: selection.style.transform || null
+        }
+      });
+    }
+
+    activeElementDrag = {
+      pointerId: typeof event.pointerId === "number" ? event.pointerId : null,
+      element: element,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      baseLeft: baseLeft,
+      baseTop: baseTop,
+      previewLeft: baseLeft,
+      previewTop: baseTop,
+      position:
+        currentPosition === "fixed" ? "fixed" : "absolute",
+      originalTransform: element.style.transform || "",
+      originalInlineStyle: originalInlineStyle,
+      originalSelection: originalSelection,
+      committedWidth: shouldConvertToAbsolute ? formatCssPixelValue(rect.width) : null,
+      committedHeight: shouldConvertToAbsolute ? formatCssPixelValue(rect.height) : null
+    };
+
+    return true;
+  }
+
+  function updateHtmlElementDrag(event) {
+    if (!activeElementDrag || !activeElementDrag.element) {
+      return false;
+    }
+
+    const deltaX = event.clientX - activeElementDrag.startClientX;
+    const deltaY = event.clientY - activeElementDrag.startClientY;
+    const nextLeft = activeElementDrag.baseLeft + deltaX;
+    const nextTop = activeElementDrag.baseTop + deltaY;
+
+    activeElementDrag.previewLeft = nextLeft;
+    activeElementDrag.previewTop = nextTop;
+
+    const translateValue =
+      "translate(" +
+      String(Math.round(deltaX * 100) / 100) +
+      "px, " +
+      String(Math.round(deltaY * 100) / 100) +
+      "px)";
+    activeElementDrag.element.style.transform = activeElementDrag.originalTransform
+      ? activeElementDrag.originalTransform + " " + translateValue
+      : translateValue;
+    repaintElementSelectionOverlay();
+    return true;
+  }
+
+  function cancelHtmlElementDrag() {
+    if (!activeElementDrag || !activeElementDrag.element) {
+      activeElementDrag = null;
+      return;
+    }
+
+    if (activeElementDrag.originalInlineStyle === null) {
+      activeElementDrag.element.removeAttribute("style");
+    } else {
+      activeElementDrag.element.setAttribute(
+        "style",
+        activeElementDrag.originalInlineStyle
+      );
+    }
+
+    activeElementDrag = null;
+    if (activeElementSelection && activeElementSelection.element) {
+      activeElementSelection.selection = collectHtmlElementSelection(
+        activeElementSelection.element
+      );
+      repaintElementSelectionOverlay();
+      postMessage(CONFIG.messageTypes.selectElement, {
+        request: activeElementSelection.selection
+      });
+    }
+  }
+
+  function commitHtmlElementDrag() {
+    if (!activeElementDrag || !activeElementDrag.element) {
+      activeElementDrag = null;
+      return false;
+    }
+
+    const dragState = activeElementDrag;
+    activeElementDrag = null;
+
+    return postHtmlElementPatchCommit(dragState.originalSelection, {
+      position: dragState.position,
+      left: formatCssPixelValue(dragState.previewLeft),
+      top: formatCssPixelValue(dragState.previewTop),
+      ...(dragState.committedWidth ? { width: dragState.committedWidth } : {}),
+      ...(dragState.committedHeight ? { height: dragState.committedHeight } : {}),
+      transform: dragState.originalTransform || null
+    });
+  }
+
+  function nudgeSelectedHtmlElement(deltaX, deltaY) {
+    if (!activeElementSelection || !activeElementSelection.element) {
+      return false;
+    }
+
+    const selection = activeElementSelection.selection;
+    if (
+      !selection ||
+      selection.runtimeGenerated ||
+      !detectSlideDocument().isSlideDocument
+    ) {
+      return false;
+    }
+
+    const element = activeElementSelection.element;
+    const computedStyle = window.getComputedStyle(element);
+    const currentPosition = computedStyle.position || "";
+    const isAbsoluteLike =
+      currentPosition === "absolute" || currentPosition === "fixed";
+    const shouldConvertToAbsolute =
+      !isAbsoluteLike || selection.parentLayout === "flex" || selection.parentLayout === "grid";
+
+    const rect = element.getBoundingClientRect();
+    const offsetParent =
+      currentPosition === "fixed"
+        ? null
+        : element.offsetParent instanceof HTMLElement
+          ? element.offsetParent
+          : element.parentElement instanceof HTMLElement
+            ? element.parentElement
+            : document.body;
+    const parentRect =
+      currentPosition === "fixed"
+        ? { left: 0, top: 0 }
+        : offsetParent && typeof offsetParent.getBoundingClientRect === "function"
+          ? offsetParent.getBoundingClientRect()
+          : { left: 0, top: 0 };
+    const baseLeft = rect.left - parentRect.left;
+    const baseTop = rect.top - parentRect.top;
+
+    if (
+      shouldConvertToAbsolute &&
+      !window.confirm("Convert this element to absolute positioning before moving it?")
+    ) {
+      return false;
+    }
+
+    return postHtmlElementPatchCommit(selection, {
+      position: currentPosition === "fixed" ? "fixed" : "absolute",
+      left: formatCssPixelValue(baseLeft + deltaX),
+      top: formatCssPixelValue(baseTop + deltaY),
+      ...(shouldConvertToAbsolute ? { width: formatCssPixelValue(rect.width) } : {}),
+      ...(shouldConvertToAbsolute ? { height: formatCssPixelValue(rect.height) } : {}),
+      transform: selection.style.transform || null
+    });
+  }
+
+  function applyHtmlElementVisualPatchToDom(patch) {
+    if (!patch || !patch.locator || !Array.isArray(patch.locator.path)) {
+      return;
+    }
+
+    const element = findNodeByBodyPath(patch.locator.path);
+    if (!(element instanceof Element)) {
+      postMessage(CONFIG.messageTypes.elementPatchFailed, {
+        reason: "LOCATOR_NOT_FOUND",
+        locator: patch.locator
+      });
+      return;
+    }
+
+    if (typeof patch.text === "string" && canEditHtmlElementText(element)) {
+      element.textContent = patch.text;
+    }
+
+    if (patch.attributes && typeof patch.attributes === "object") {
+      Object.entries(patch.attributes).forEach(function ([attributeName, attributeValue]) {
+        if (attributeValue === null) {
+          element.removeAttribute(attributeName);
+        } else {
+          element.setAttribute(attributeName, attributeValue);
+        }
+      });
+    }
+
+    const stylePatch = Object.assign(
+      {},
+      patch.style || {},
+      patch.layout || {}
+    );
+    Object.entries(stylePatch).forEach(function ([propertyName, propertyValue]) {
+      const cssPropertyName =
+        propertyName === "zIndex"
+          ? "z-index"
+          : propertyName.replace(/[A-Z]/g, function (character) {
+              return "-" + character.toLowerCase();
+            });
+      if (propertyValue === null || propertyValue === "") {
+        element.style.removeProperty(cssPropertyName);
+      } else if (typeof propertyValue !== "undefined") {
+        element.style.setProperty(cssPropertyName, String(propertyValue));
+      }
+    });
+
+    if (
+      activeElementSelection &&
+      doesLocatorPathMatch(activeElementSelection.selection.locator.path, patch.locator.path)
+    ) {
+      activeElementSelection.selection = collectHtmlElementSelection(element);
+      repaintElementSelectionOverlay();
+      postMessage(CONFIG.messageTypes.selectElement, {
+        request: activeElementSelection.selection
+      });
+    }
+  }
+
+  function detectSlideDocument() {
+    const revealSections = Array.from(document.querySelectorAll(".reveal .slides section"));
+    if (revealSections.length > 0) {
+      return {
+        isSlideDocument: true,
+        kind: "reveal",
+        roots: revealSections
+      };
+    }
+
+    const genericSlides = Array.from(
+      document.querySelectorAll("[data-slide], [data-mdpad-slide]")
+    );
+    if (genericSlides.length > 0) {
+      return {
+        isSlideDocument: true,
+        kind: "generic",
+        roots: genericSlides
+      };
+    }
+
+    const sections = Array.from(document.querySelectorAll("section"));
+    if (sections.length >= 2) {
+      return {
+        isSlideDocument: true,
+        kind: "generic",
+        roots: sections
+      };
+    }
+
+    if (currentSlideTreatment === "slides") {
+      const fallbackRoots = Array.from(document.body.children || []);
+      if (fallbackRoots.length > 0) {
+        return {
+          isSlideDocument: true,
+          kind: "generic",
+          roots: fallbackRoots
+        };
+      }
+    }
+
+    return {
+      isSlideDocument: false,
+      kind: "none",
+      roots: []
+    };
+  }
+
+  function getRevealSlideIndex(slides) {
+    for (let index = 0; index < slides.length; index += 1) {
+      if (slides[index].classList.contains("present")) {
+        return index;
+      }
+    }
+    return 0;
+  }
+
+  function applyGenericSlideVisibility(slides, activeIndex) {
+    slides.forEach(function (slide, index) {
+      if (!(slide instanceof HTMLElement)) {
+        return;
+      }
+
+      if (
+        currentSurfaceMode === "slide-reading" ||
+        currentSurfaceMode === "slide-present"
+      ) {
+        slide.style.display = index === activeIndex ? "" : "none";
+      } else {
+        slide.style.display = "";
+      }
+    });
+  }
+
+  function updateSlideState(announce) {
+    const detected = detectSlideDocument();
+    if (!detected.isSlideDocument) {
+      currentSlideState = {
+        isSlideDocument: false,
+        kind: "none",
+        totalSlides: 0,
+        currentSlideIndex: 0
+      };
+    } else if (detected.kind === "reveal") {
+      currentSlideState = {
+        isSlideDocument: true,
+        kind: "reveal",
+        totalSlides: detected.roots.length,
+        currentSlideIndex: getRevealSlideIndex(detected.roots)
+      };
+    } else {
+      const boundedIndex = Math.max(
+        0,
+        Math.min(
+          currentSlideState.currentSlideIndex || 0,
+          Math.max(detected.roots.length - 1, 0)
+        )
+      );
+      applyGenericSlideVisibility(detected.roots, boundedIndex);
+      currentSlideState = {
+        isSlideDocument: true,
+        kind: "generic",
+        totalSlides: detected.roots.length,
+        currentSlideIndex: boundedIndex
+      };
+    }
+
+    if (announce) {
+      postMessage(CONFIG.messageTypes.slideStateChange, {
+        state: currentSlideState
+      });
+    }
+  }
+
+  function stepSlides(direction) {
+    const detected = detectSlideDocument();
+    if (!detected.isSlideDocument) {
+      return false;
+    }
+
+    if (detected.kind === "reveal") {
+      if (
+        window.Reveal &&
+        typeof window.Reveal[direction > 0 ? "next" : "prev"] === "function"
+      ) {
+        window.Reveal[direction > 0 ? "next" : "prev"]();
+        updateSlideState(true);
+        return true;
+      }
+      return false;
+    }
+
+    const nextIndex = Math.max(
+      0,
+      Math.min(
+        currentSlideState.currentSlideIndex + direction,
+        Math.max(detected.roots.length - 1, 0)
+      )
+    );
+    if (nextIndex === currentSlideState.currentSlideIndex) {
+      return false;
+    }
+    currentSlideState.currentSlideIndex = nextIndex;
+    applyGenericSlideVisibility(detected.roots, nextIndex);
+    updateSlideState(true);
+    return true;
+  }
+
+  function applySurfaceMode(mode, slideTreatment) {
+    currentSurfaceMode = mode || "preview";
+    currentSlideTreatment = slideTreatment || "auto";
+
+    if (activeElementDrag) {
+      cancelHtmlElementDrag();
+    }
+
+    if (currentSurfaceMode !== "visual-edit") {
+      dismissElementSelection(true);
+    }
+
+    updateSlideState(true);
   }
 
   function findSvgEditableElement(target) {
@@ -2043,6 +2926,64 @@ function buildPreviewHostScript(
     });
   }
 
+  function cloneJsonValue(value) {
+    return value === null || typeof value === "undefined"
+      ? value
+      : JSON.parse(JSON.stringify(value));
+  }
+
+  function buildSvgDragCommitPatchItem(baseItem, draftItem) {
+    const patchItem = {
+      locator: draftItem.locator,
+      tagName: draftItem.tagName
+    };
+    const sourceSnapshot = {};
+
+    if (draftItem.text !== baseItem.text) {
+      patchItem.text = draftItem.text;
+      sourceSnapshot.text = baseItem.text;
+    }
+
+    if (JSON.stringify(draftItem.geometry) !== JSON.stringify(baseItem.geometry)) {
+      patchItem.geometry = draftItem.geometry;
+      sourceSnapshot.geometry = cloneJsonValue(baseItem.geometry);
+    }
+
+    if (JSON.stringify(draftItem.transform) !== JSON.stringify(baseItem.transform)) {
+      patchItem.transform = draftItem.transform || null;
+      sourceSnapshot.transform = cloneJsonValue(baseItem.transform || null);
+    }
+
+    if (Object.keys(sourceSnapshot).length > 0) {
+      patchItem.sourceSnapshot = sourceSnapshot;
+    }
+
+    return patchItem;
+  }
+
+  function hasSvgPatchItemChange(patchItem) {
+    return (
+      "text" in patchItem ||
+      "geometry" in patchItem ||
+      "style" in patchItem ||
+      "transform" in patchItem
+    );
+  }
+
+  function postSvgCommitPatch(baseItem, draftItem) {
+    const patchItem = buildSvgDragCommitPatchItem(baseItem, draftItem);
+    if (!hasSvgPatchItemChange(patchItem)) {
+      return;
+    }
+
+    postMessage(CONFIG.messageTypes.svgCommitPatch, {
+      patch: {
+        kind: "svg-elements",
+        items: [patchItem]
+      }
+    });
+  }
+
   function syncSvgSelectionItem(item) {
     if (!activeSvgSelection) {
       return;
@@ -2054,7 +2995,7 @@ function buildPreviewHostScript(
     postSvgPreviewPatch(item);
   }
 
-  function buildSvgEditorRequest(svg) {
+  function buildSvgEditorRequest(svg, preferredTarget) {
     const locatorPath = getNodePathFromBody(svg);
     if (!locatorPath) {
       return null;
@@ -2069,6 +3010,18 @@ function buildPreviewHostScript(
       return null;
     }
 
+    let initialSelectedLocatorPath = null;
+    const preferredElement = findSvgEditableElement(preferredTarget);
+    if (preferredElement) {
+      const preferredLocatorPath = getNodePathFromBody(preferredElement);
+      if (preferredLocatorPath) {
+        initialSelectedLocatorPath = preferredLocatorPath;
+      }
+    }
+    if (!initialSelectedLocatorPath && items[0]) {
+      initialSelectedLocatorPath = items[0].locator.path.slice();
+    }
+
     return {
       kind: "svg-elements",
       svgLocator: {
@@ -2077,12 +3030,13 @@ function buildPreviewHostScript(
       },
       svgMarkup: svg.outerHTML,
       viewBox: collectSvgViewBox(svg),
-      items: items
+      items: items,
+      initialSelectedLocatorPath: initialSelectedLocatorPath
     };
   }
 
-  function openSvgEditor(svg) {
-    const request = buildSvgEditorRequest(svg);
+  function openSvgEditor(svg, preferredTarget) {
+    const request = buildSvgEditorRequest(svg, preferredTarget);
     if (!request) {
       if (!CONFIG.isEditable) {
         postReadOnlyBlocked();
@@ -2167,7 +3121,15 @@ function buildPreviewHostScript(
         library: parsed.library,
         chartType: typeof parsed.chartType === "string" ? parsed.chartType : undefined,
         labels: parsed.labels.slice(),
-        series: series
+        series: series,
+        presentation:
+          parsed.presentation && typeof parsed.presentation === "object"
+            ? JSON.parse(JSON.stringify(parsed.presentation))
+            : undefined,
+        sourceConfig:
+          parsed.sourceConfig && typeof parsed.sourceConfig === "object"
+            ? JSON.parse(JSON.stringify(parsed.sourceConfig))
+            : undefined
       };
     } catch {
       return null;
@@ -2205,11 +3167,181 @@ function buildPreviewHostScript(
     return null;
   }
 
+  function getChartRuntimeKeyword(library) {
+    return library === "echarts" ? "echarts" : library === "chartjs" ? "chartjs" : "";
+  }
+
+  function matchesChartRuntimeScript(library, rawUrl) {
+    if (typeof rawUrl !== "string" || !rawUrl.trim()) {
+      return false;
+    }
+
+    const normalized = rawUrl.trim().toLowerCase();
+    if (library === "chartjs") {
+      return (
+        normalized.includes("chartjs") ||
+        /(?:^|[\/._-])chart(?:\.min)?\.js(?:[?#].*)?$/iu.test(normalized)
+      );
+    }
+
+    if (library === "echarts") {
+      return normalized.includes("echarts");
+    }
+
+    return false;
+  }
+
+  function collectChartRuntimeScriptUrls(library) {
+    if (!getChartRuntimeKeyword(library)) {
+      return [];
+    }
+
+    const urls = [];
+    const seen = new Set();
+    document.querySelectorAll("script[src]").forEach(function (script) {
+      if (!(script instanceof HTMLScriptElement) || !script.src) {
+        return;
+      }
+
+      if (!matchesChartRuntimeScript(library, script.src)) {
+        return;
+      }
+
+      if (seen.has(script.src)) {
+        return;
+      }
+
+      seen.add(script.src);
+      urls.push(script.src);
+    });
+
+    return urls;
+  }
+
+  function hashChartSourceSnapshotSignature(signature) {
+    let hash = 2166136261;
+    for (let index = 0; index < signature.length; index += 1) {
+      hash ^= signature.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+
+    return "chart-" + (hash >>> 0).toString(36);
+  }
+
+  function collectChartSourceSnapshotAttributes(element) {
+    const snapshotAttributes = {};
+    [
+      "id",
+      "class",
+      "role",
+      "title"
+    ].forEach(function (attributeName) {
+      if (element.hasAttribute(attributeName)) {
+        snapshotAttributes[attributeName] = element.getAttribute(attributeName);
+      }
+    });
+
+    return snapshotAttributes;
+  }
+
+  function buildChartSourceSnapshot(element) {
+    if (!(element instanceof Element)) {
+      return null;
+    }
+
+    const sourcePath = element.getAttribute(HTML_SOURCE_PATH_ATTRIBUTE);
+    const attributes = collectChartSourceSnapshotAttributes(element);
+    const signature = [
+      element.tagName.toLowerCase(),
+      sourcePath || "",
+      Object.keys(attributes)
+        .sort()
+        .map(function (attributeName) {
+          return attributeName + "=" + (attributes[attributeName] || "");
+        })
+        .join("|")
+    ].join("::");
+
+    return {
+      tagName: element.tagName.toLowerCase(),
+      sourcePath: sourcePath,
+      attributes: attributes,
+      outerHtmlHash: hashChartSourceSnapshotSignature(signature)
+    };
+  }
+
+  function captureChartPreviewSnapshot(chartRoot, library) {
+    try {
+      if (library === "chartjs") {
+        const canvas =
+          chartRoot instanceof HTMLCanvasElement
+            ? chartRoot
+            : chartRoot instanceof Element
+              ? chartRoot.querySelector("canvas")
+              : null;
+        if (canvas instanceof HTMLCanvasElement && typeof canvas.toDataURL === "function") {
+          return canvas.toDataURL("image/png");
+        }
+      }
+
+      if (library === "echarts" && chartRoot instanceof Element) {
+        const canvas = chartRoot.querySelector("canvas");
+        if (canvas instanceof HTMLCanvasElement && typeof canvas.toDataURL === "function") {
+          return canvas.toDataURL("image/png");
+        }
+
+        const svg = chartRoot.querySelector("svg");
+        if (svg instanceof SVGSVGElement) {
+          return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg.outerHTML);
+        }
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
+  }
+
+  function buildChartPreviewDescriptor(chartRoot, sourceScript, model, nextBindingRequired) {
+    const runtimeScriptUrls = collectChartRuntimeScriptUrls(model.library);
+    const snapshotDataUrl =
+      runtimeScriptUrls.length === 0
+        ? captureChartPreviewSnapshot(chartRoot, model.library)
+        : null;
+
+    return {
+      bound: !nextBindingRequired,
+      containerHtml: chartRoot instanceof Element ? chartRoot.outerHTML : null,
+      sourceScriptHtml:
+        sourceScript instanceof HTMLScriptElement ? sourceScript.outerHTML : null,
+      runtimeScriptUrls: runtimeScriptUrls,
+      snapshotKind: snapshotDataUrl ? "image" : undefined,
+      snapshotDataUrl: snapshotDataUrl
+    };
+  }
+
   function buildChartRequest(chartRoot, nextBindingRequired, model) {
     const locatorPath = getNodePathFromBody(chartRoot);
     if (!locatorPath) {
       return null;
     }
+
+    const rawLibrary = (chartRoot.getAttribute("data-mdpad-chart") || "").trim().toLowerCase();
+    const rawSourceSelector = (chartRoot.getAttribute("data-mdpad-chart-source") || "").trim();
+    const sourceScript =
+      rawSourceSelector.startsWith("#")
+        ? document.querySelector(rawSourceSelector)
+        : null;
+    const sourceFingerprint = nextBindingRequired
+      ? null
+      : JSON.stringify({
+          library: SUPPORTED_CHART_LIBRARIES.has(rawLibrary) ? rawLibrary : null,
+          sourceId: rawSourceSelector.startsWith("#") ? rawSourceSelector.slice(1) : null
+        });
+    const captureMode = nextBindingRequired ? "runtime-only" : "bound";
+    const sourceSnapshot = nextBindingRequired
+      ? buildChartSourceSnapshot(chartRoot)
+      : undefined;
 
     return {
       root: chartRoot,
@@ -2220,7 +3352,16 @@ function buildPreviewHostScript(
           path: locatorPath
         },
         nextBindingRequired: nextBindingRequired,
-        model: model
+        model: model,
+        captureMode: captureMode,
+        sourceSnapshot: sourceSnapshot,
+        sourceFingerprint: sourceFingerprint,
+        preview: buildChartPreviewDescriptor(
+          chartRoot,
+          sourceScript instanceof HTMLScriptElement ? sourceScript : null,
+          model,
+          nextBindingRequired
+        )
       }
     };
   }
@@ -2284,7 +3425,11 @@ function buildPreviewHostScript(
             ? instance.config.type
             : undefined,
         labels: labels,
-        series: nextSeries
+        series: nextSeries,
+        sourceConfig:
+          instance.config && typeof instance.config === "object"
+            ? JSON.parse(JSON.stringify(instance.config))
+            : undefined
       }
     );
   }
@@ -2319,6 +3464,16 @@ function buildPreviewHostScript(
     return xAxis.data.map(function (label) {
       return String(label);
     });
+  }
+
+  function inferEChartsChartType(option) {
+    const series = Array.isArray(option && option.series) ? option.series : [];
+    const firstTypedSeries = series.find(function (entry) {
+      return entry && typeof entry === "object" && typeof entry.type === "string";
+    });
+    return firstTypedSeries && typeof firstTypedSeries.type === "string"
+      ? firstTypedSeries.type
+      : undefined;
   }
 
   function hasEChartsSurfaceHit(target, boundary) {
@@ -2373,8 +3528,13 @@ function buildPreviewHostScript(
     const chartRoot = boundRoot || runtimeBoundRoot || detected.root;
     return buildChartRequest(chartRoot, !boundRoot && !runtimeBoundRoot, {
       library: "echarts",
+      chartType: inferEChartsChartType(option),
       labels: labels,
-      series: series
+      series: series,
+      sourceConfig:
+        typeof detected.instance.getOption === "function"
+          ? JSON.parse(JSON.stringify(detected.instance.getOption()))
+          : undefined
     });
   }
 
@@ -2388,20 +3548,52 @@ function buildPreviewHostScript(
     if (boundRoot) {
       const library = (boundRoot.getAttribute("data-mdpad-chart") || "").trim().toLowerCase();
       if (SUPPORTED_CHART_LIBRARIES.has(library)) {
-        const model = readBoundChartModel(boundRoot);
-        if (model) {
-          if (library === "chartjs" && findChartJsCanvasTarget(target, boundRoot)) {
-            return buildChartRequest(boundRoot, false, model);
+        if (library === "chartjs") {
+          const runtimeRequest = readChartJsRequest(target, boundRoot);
+          if (runtimeRequest) {
+            return runtimeRequest;
           }
 
-          if (library === "echarts" && hasEChartsSurfaceHit(target, boundRoot)) {
-            return buildChartRequest(boundRoot, false, model);
+          if (findChartJsCanvasTarget(target, boundRoot)) {
+            const model = readBoundChartModel(boundRoot);
+            if (model) {
+              return buildChartRequest(boundRoot, false, model);
+            }
+          }
+        }
+
+        if (library === "echarts") {
+          const runtimeRequest = readEChartsRequest(target, boundRoot);
+          if (runtimeRequest) {
+            return runtimeRequest;
+          }
+
+          if (hasEChartsSurfaceHit(target, boundRoot)) {
+            const model = readBoundChartModel(boundRoot);
+            if (model) {
+              return buildChartRequest(boundRoot, false, model);
+            }
           }
         }
       }
     }
 
     return readChartJsRequest(target, null) || readEChartsRequest(target, null);
+  }
+
+  function openChartEditor(target) {
+    const chart = detectChartRequest(target);
+    if (!chart) {
+      return false;
+    }
+    if (!CONFIG.isEditable) {
+      postReadOnlyBlocked();
+      return true;
+    }
+    postMessage(CONFIG.messageTypes.openChartEditor, {
+      request: chart.request
+    });
+    return true;
   }
 
   function applyBoundChartJs(root, model) {
@@ -2498,6 +3690,26 @@ function buildPreviewHostScript(
     return false;
   }
 
+  function applyIncomingChartModel(chartLocator, model) {
+    if (!chartLocator || !Array.isArray(chartLocator.path) || !model) {
+      return;
+    }
+
+    const target = findNodeByBodyPath(chartLocator.path);
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    if (model.library === "chartjs") {
+      applyBoundChartJs(target, model);
+      return;
+    }
+
+    if (model.library === "echarts") {
+      applyBoundECharts(target, model);
+    }
+  }
+
   function rehydrateBoundCharts() {
     const boundCharts = document.querySelectorAll("[data-mdpad-chart][data-mdpad-chart-source]");
     boundCharts.forEach(function (element) {
@@ -2565,8 +3777,18 @@ function buildPreviewHostScript(
       return;
     }
 
-    if (data.type === CONFIG.messageTypes.syncSvgSession) {
-      applyIncomingSvgSession(data.session);
+    if (data.type === CONFIG.messageTypes.applyElementPatch) {
+      applyHtmlElementVisualPatchToDom(data.patch);
+      return;
+    }
+
+    if (data.type === CONFIG.messageTypes.applyChartModel) {
+      applyIncomingChartModel(data.chartLocator, data.model);
+      return;
+    }
+
+    if (data.type === CONFIG.messageTypes.setSurfaceMode) {
+      applySurfaceMode(data.mode, data.slideTreatment);
     }
   });
 
@@ -2578,6 +3800,26 @@ function buildPreviewHostScript(
       }
 
       if (event.defaultPrevented) {
+        const defaultPreventedContext = { kind: "none" };
+        if (!CONFIG.isEditable) {
+          return;
+        }
+        const chartAction = detectChartRequest(event.target);
+        if (chartAction) {
+          defaultPreventedContext.kind = "chart";
+          defaultPreventedContext.request = chartAction.request;
+        }
+        if (defaultPreventedContext.kind === "none") {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        postMessage(CONFIG.messageTypes.contextMenu, {
+          x: event.clientX,
+          y: event.clientY,
+          context: defaultPreventedContext
+        });
         return;
       }
 
@@ -2589,15 +3831,6 @@ function buildPreviewHostScript(
             kind: "chart",
             request: chartAction.request
           };
-        } else {
-          const inlineSvg = findInlineSvgRoot(event.target);
-          const svgRequest = inlineSvg ? buildSvgEditorRequest(inlineSvg) : null;
-          if (svgRequest) {
-            context = {
-              kind: "svg",
-              request: svgRequest
-            };
-          }
         }
       }
 
@@ -2626,71 +3859,23 @@ function buildPreviewHostScript(
         return;
       }
 
-      const handleTarget =
-        event.target instanceof Element
-          ? event.target.closest("[data-mdpad-svg-handle]")
-          : null;
-
-      if (handleTarget && activeSvgSelection && CONFIG.isEditable) {
-        const handleName = handleTarget.getAttribute("data-mdpad-svg-handle");
-        if (handleName) {
-          const viewBox = collectSvgViewBox(activeSvgSelection.svg);
-          activeSvgDrag = {
-            mode: "resize",
-            handleName: handleName,
-            viewBox: viewBox,
-            startClientX: event.clientX,
-            startClientY: event.clientY,
-            startItem: cloneSvgItem(activeSvgSelection.item)
-          };
+      if (currentSurfaceMode === "visual-edit") {
+        const visualTarget = findSelectableHtmlElement(event.target);
+        if (visualTarget) {
+          if (
+            activeElementSelection &&
+            activeElementSelection.element === visualTarget &&
+            beginHtmlElementDrag(event, visualTarget)
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          selectHtmlElement(visualTarget);
           event.preventDefault();
           event.stopPropagation();
           return;
         }
-      }
-
-      const inlineSvg = findInlineSvgRoot(event.target);
-      if (inlineSvg) {
-        dismissChartAction();
-
-        if (!CONFIG.isEditable) {
-          event.preventDefault();
-          event.stopPropagation();
-          postReadOnlyBlocked();
-          return;
-        }
-
-        const editableElement =
-          findSvgEditableElement(event.target) ||
-          findSvgEditableElementAtPoint(inlineSvg, event.clientX, event.clientY);
-        if (!editableElement) {
-          dismissSvgSelection(true);
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-
-        if (!selectSvgElement(editableElement)) {
-          dismissSvgSelection(true);
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-
-        activeSvgDrag = {
-          mode: "move",
-          viewBox: collectSvgViewBox(activeSvgSelection.svg),
-          startClientX: event.clientX,
-          startClientY: event.clientY,
-          startItem: cloneSvgItem(activeSvgSelection.item)
-        };
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-
-      if (activeSvgSelection) {
-        dismissSvgSelection(true);
       }
     },
     true
@@ -2699,41 +3884,12 @@ function buildPreviewHostScript(
   window.addEventListener(
     "mousemove",
     function (event) {
-      if (!activeSvgSelection || !activeSvgDrag) {
+      if (activeElementDrag) {
+        if (updateHtmlElementDrag(event)) {
+          event.preventDefault();
+        }
         return;
       }
-
-      const pointer = svgPointFromClient(
-        activeSvgSelection.svg,
-        event.clientX,
-        event.clientY,
-        activeSvgDrag.viewBox
-      );
-
-      if (activeSvgDrag.mode === "move") {
-        const startPointer = svgPointFromClient(
-          activeSvgSelection.svg,
-          activeSvgDrag.startClientX || event.clientX,
-          activeSvgDrag.startClientY || event.clientY,
-          activeSvgDrag.viewBox
-        );
-        const nextItem = buildMovedSvgItem(
-          activeSvgDrag.startItem,
-          pointer.x - startPointer.x,
-          pointer.y - startPointer.y
-        );
-        syncSvgSelectionItem(nextItem);
-      } else if (activeSvgDrag.mode === "resize") {
-        const nextItem = buildResizedSvgItem(
-          activeSvgDrag.startItem,
-          activeSvgDrag.handleName,
-          pointer.x,
-          pointer.y
-        );
-        syncSvgSelectionItem(nextItem);
-      }
-
-      event.preventDefault();
     },
     true
   );
@@ -2741,7 +3897,9 @@ function buildPreviewHostScript(
   window.addEventListener(
     "mouseup",
     function () {
-      clearSvgDragState();
+      if (activeElementDrag) {
+        commitHtmlElementDrag();
+      }
     },
     true
   );
@@ -2749,8 +3907,8 @@ function buildPreviewHostScript(
   window.addEventListener(
     "resize",
     function () {
-      if (activeSvgSelection) {
-        repaintSvgSelectionOverlay();
+      if (activeElementSelection) {
+        repaintElementSelectionOverlay();
       }
     },
     true
@@ -2759,8 +3917,8 @@ function buildPreviewHostScript(
   window.addEventListener(
     "scroll",
     function () {
-      if (activeSvgSelection) {
-        repaintSvgSelectionOverlay();
+      if (activeElementSelection) {
+        repaintElementSelectionOverlay();
       }
     },
     true
@@ -2769,10 +3927,87 @@ function buildPreviewHostScript(
   document.addEventListener(
     "keydown",
     function (event) {
-      if (event.key === "Escape" && activeSvgSelection) {
-        dismissSvgSelection(true);
+      if (activeElementDrag && event.key === "Escape") {
+        cancelHtmlElementDrag();
         event.preventDefault();
         event.stopPropagation();
+        return;
+      }
+
+      if (
+        currentSurfaceMode === "slide-reading" ||
+        currentSurfaceMode === "slide-present"
+      ) {
+        if (event.key === "ArrowRight" || event.key === " " || event.key === "PageDown") {
+          if (stepSlides(1)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+
+        if (event.key === "ArrowLeft" || event.key === "PageUp") {
+          if (stepSlides(-1)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+
+        if (event.key === "Escape") {
+          postMessage(CONFIG.messageTypes.setSurfaceMode, {
+            mode:
+              currentSurfaceMode === "slide-present"
+                ? "slide-reading"
+                : "preview",
+            slideTreatment: currentSlideTreatment
+          });
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
+
+      if (
+        currentSurfaceMode === "visual-edit" &&
+        activeElementSelection &&
+        (event.key === "ArrowRight" ||
+          event.key === "ArrowLeft" ||
+          event.key === "ArrowUp" ||
+          event.key === "ArrowDown")
+      ) {
+        if ((event.metaKey || event.ctrlKey) && detectSlideDocument().isSlideDocument) {
+          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+            if (stepSlides(1)) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          } else if (stepSlides(-1)) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          return;
+        }
+
+        const stepSize = event.shiftKey ? 10 : 1;
+        const deltaX =
+          event.key === "ArrowRight" ? stepSize : event.key === "ArrowLeft" ? -stepSize : 0;
+        const deltaY =
+          event.key === "ArrowDown" ? stepSize : event.key === "ArrowUp" ? -stepSize : 0;
+        if (deltaX !== 0 || deltaY !== 0) {
+          if (nudgeSelectedHtmlElement(deltaX, deltaY)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
+      }
+
+      if (event.key === "Escape" && activeElementSelection) {
+        dismissElementSelection(true);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
       }
     },
     true
@@ -2787,31 +4022,10 @@ function buildPreviewHostScript(
 
       const chart = detectChartRequest(event.target);
       if (chart) {
-        if (!CONFIG.isEditable) {
-          dismissChartAction();
+        if (openChartEditor(event.target)) {
           event.preventDefault();
           event.stopPropagation();
-          postReadOnlyBlocked();
-          return;
         }
-
-        event.preventDefault();
-        event.stopPropagation();
-        chartActionVisible = true;
-        postMessage(CONFIG.messageTypes.showChartAction, {
-          x: event.clientX,
-          y: event.clientY,
-          request: chart.request
-        });
-        return;
-      }
-
-      dismissChartAction();
-
-      const inlineSvg = findInlineSvgRoot(event.target);
-      if (inlineSvg) {
-        event.preventDefault();
-        event.stopPropagation();
         return;
       }
 
@@ -2886,20 +4100,6 @@ function buildPreviewHostScript(
         return;
       }
 
-      const inlineSvg = findInlineSvgRoot(event.target);
-      if (inlineSvg) {
-        if (
-          CONFIG.isEditable &&
-          activeSvgSelection &&
-          activeSvgSelection.svg === inlineSvg &&
-          openSvgEditor(inlineSvg)
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-        return;
-      }
-
       if (detectChartRequest(event.target)) {
         return;
       }
@@ -2941,12 +4141,32 @@ function buildPreviewHostScript(
     return null;
   };
 
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", markSourceBackedElements, {
+      once: true
+    });
+  } else {
+    markSourceBackedElements();
+  }
+
+  updateSlideState(false);
+
   if (document.readyState === "complete") {
     scheduleChartRehydrate();
+    updateSlideState(true);
   } else {
     window.addEventListener("load", scheduleChartRehydrate, {
       once: true
     });
+    window.addEventListener(
+      "load",
+      function () {
+        updateSlideState(true);
+      },
+      {
+        once: true
+      }
+    );
   }
 })();
 </script>`;
@@ -3024,8 +4244,14 @@ function isHtmlNodeLocator(value: unknown): value is HtmlNodeLocator {
   return (
     isRecord(value) &&
     value.root === "body" &&
-    Array.isArray(value.path) &&
-    value.path.every(
+    isLocatorPath(value.path)
+  );
+}
+
+function isLocatorPath(value: unknown): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
       (entry) =>
         typeof entry === "number" &&
         Number.isInteger(entry) &&
@@ -3049,135 +4275,150 @@ function isHtmlPreviewClientRect(value: unknown): value is HtmlPreviewClientRect
   );
 }
 
-function isSvgViewBox(value: unknown): value is SvgViewBox {
+function isHtmlPreviewSurfaceMode(value: unknown): value is HtmlPreviewSurfaceMode {
   return (
-    isRecord(value) &&
-    isFiniteNumber(value.minX) &&
-    isFiniteNumber(value.minY) &&
-    isFiniteNumber(value.width) &&
-    isFiniteNumber(value.height)
+    value === "preview" ||
+    value === "visual-edit" ||
+    value === "slide-reading" ||
+    value === "slide-present"
   );
 }
 
-function isSvgBoundingBox(value: unknown): value is SvgBoundingBox {
-  return (
-    isRecord(value) &&
-    isFiniteNumber(value.x) &&
-    isFiniteNumber(value.y) &&
-    isFiniteNumber(value.width) &&
-    isFiniteNumber(value.height)
-  );
+function isHtmlSlideTreatmentValue(value: unknown): value is HtmlSlideTreatment {
+  return value === "auto" || value === "slides" || value === "document";
 }
 
-function isSvgEditableTagName(value: unknown): value is SvgEditableTagName {
-  return (
-    typeof value === "string" &&
-    SVG_EDITABLE_TAG_NAMES.has(value as SvgEditableTagName)
-  );
-}
-
-function isSvgEditableGeometry(value: unknown): value is SvgEditableGeometry {
-  return (
-    isRecord(value) &&
-    (!("x" in value) || typeof value.x === "undefined" || isFiniteNumber(value.x)) &&
-    (!("y" in value) || typeof value.y === "undefined" || isFiniteNumber(value.y)) &&
-    (!("width" in value) || typeof value.width === "undefined" || isFiniteNumber(value.width)) &&
-    (!("height" in value) || typeof value.height === "undefined" || isFiniteNumber(value.height)) &&
-    (!("rx" in value) || typeof value.rx === "undefined" || isFiniteNumber(value.rx)) &&
-    (!("ry" in value) || typeof value.ry === "undefined" || isFiniteNumber(value.ry)) &&
-    (!("cx" in value) || typeof value.cx === "undefined" || isFiniteNumber(value.cx)) &&
-    (!("cy" in value) || typeof value.cy === "undefined" || isFiniteNumber(value.cy)) &&
-    (!("r" in value) || typeof value.r === "undefined" || isFiniteNumber(value.r)) &&
-    (!("x1" in value) || typeof value.x1 === "undefined" || isFiniteNumber(value.x1)) &&
-    (!("y1" in value) || typeof value.y1 === "undefined" || isFiniteNumber(value.y1)) &&
-    (!("x2" in value) || typeof value.x2 === "undefined" || isFiniteNumber(value.x2)) &&
-    (!("y2" in value) || typeof value.y2 === "undefined" || isFiniteNumber(value.y2)) &&
-    (!("points" in value) || value.points === null || typeof value.points === "string") &&
-    (!("pathData" in value) || value.pathData === null || typeof value.pathData === "string")
-  );
-}
-
-function isSvgEditableStyle(value: unknown): value is SvgEditableStyle {
-  return (
-    isRecord(value) &&
-    (value.fill === null || typeof value.fill === "string") &&
-    (value.stroke === null || typeof value.stroke === "string") &&
-    (value.strokeWidth === null || isFiniteNumber(value.strokeWidth)) &&
-    (value.opacity === null || isFiniteNumber(value.opacity)) &&
-    (value.fontSize === null || isFiniteNumber(value.fontSize)) &&
-    (!("textAnchor" in value) || value.textAnchor === null || typeof value.textAnchor === "string") &&
-    (!("fontFamily" in value) || value.fontFamily === null || typeof value.fontFamily === "string") &&
-    (!("markerStart" in value) || value.markerStart === null || typeof value.markerStart === "string") &&
-    (!("markerEnd" in value) || value.markerEnd === null || typeof value.markerEnd === "string") &&
-    (!("strokeDasharray" in value) || value.strokeDasharray === null || typeof value.strokeDasharray === "string") &&
-    (!("strokeLinecap" in value) || value.strokeLinecap === null || typeof value.strokeLinecap === "string") &&
-    (!("strokeLinejoin" in value) || value.strokeLinejoin === null || typeof value.strokeLinejoin === "string")
-  );
-}
-
-function isSvgTransformTranslation(value: unknown): value is SvgTransformTranslation {
-  return (
-    isRecord(value) &&
-    isFiniteNumber(value.translateX) &&
-    isFiniteNumber(value.translateY)
-  );
-}
-
-  function isSvgEditableItem(value: unknown): value is SvgEditableItem {
-    return (
-      isRecord(value) &&
-      isHtmlNodeLocator(value.locator) &&
-      isSvgEditableTagName(value.tagName) &&
-      isSvgBoundingBox(value.bbox) &&
-      (!("text" in value) || typeof value.text === "string") &&
-      (!("kind" in value) ||
-        value.kind === "shape" ||
-        value.kind === "connector" ||
-        value.kind === "text") &&
-      (!("routeCandidate" in value) || typeof value.routeCandidate === "boolean") &&
-      isSvgEditableGeometry(value.geometry) &&
-      isSvgEditableStyle(value.style) &&
-      (value.transform === null || isSvgTransformTranslation(value.transform)) &&
-      typeof value.canEditText === "boolean"
-    );
-}
-
-function isPartialSvgEditableStyle(value: unknown): value is Partial<SvgEditableStyle> {
-  return (
-    isRecord(value) &&
-    (!("fill" in value) || value.fill === null || typeof value.fill === "string") &&
-    (!("stroke" in value) || value.stroke === null || typeof value.stroke === "string") &&
-    (!("strokeWidth" in value) || value.strokeWidth === null || isFiniteNumber(value.strokeWidth)) &&
-    (!("opacity" in value) || value.opacity === null || isFiniteNumber(value.opacity)) &&
-    (!("fontSize" in value) || value.fontSize === null || isFiniteNumber(value.fontSize)) &&
-    (!("textAnchor" in value) || value.textAnchor === null || typeof value.textAnchor === "string") &&
-    (!("fontFamily" in value) || value.fontFamily === null || typeof value.fontFamily === "string") &&
-    (!("markerStart" in value) || value.markerStart === null || typeof value.markerStart === "string") &&
-    (!("markerEnd" in value) || value.markerEnd === null || typeof value.markerEnd === "string") &&
-    (!("strokeDasharray" in value) || value.strokeDasharray === null || typeof value.strokeDasharray === "string") &&
-    (!("strokeLinecap" in value) || value.strokeLinecap === null || typeof value.strokeLinecap === "string") &&
-    (!("strokeLinejoin" in value) || value.strokeLinejoin === null || typeof value.strokeLinejoin === "string")
-  );
-}
-
-function isSvgPatchItem(
+function isStringRecord(
   value: unknown
-): value is {
-  locator: HtmlNodeLocator;
-  tagName: SvgEditableTagName;
-  text?: string;
-  geometry?: SvgEditableGeometry;
-  style?: Partial<SvgEditableStyle>;
-  transform?: SvgTransformTranslation | null;
-} {
+): value is Record<string, string> {
+  return (
+    isRecord(value) &&
+    Object.values(value).every((entry) => typeof entry === "string")
+  );
+}
+
+function isNullableStringRecord(
+  value: unknown
+): value is Record<string, string | null> {
+  return (
+    isRecord(value) &&
+    Object.values(value).every(
+      (entry) => entry === null || typeof entry === "string"
+    )
+  );
+}
+
+function isHtmlElementLayoutPatch(
+  value: unknown
+): value is HtmlElementVisualPatch["layout"] {
+  return (
+    isRecord(value) &&
+    (!("position" in value) ||
+      value.position === null ||
+      value.position === "static" ||
+      value.position === "relative" ||
+      value.position === "absolute" ||
+      value.position === "fixed" ||
+      value.position === "sticky") &&
+    (!("left" in value) || value.left === null || typeof value.left === "string") &&
+    (!("top" in value) || value.top === null || typeof value.top === "string") &&
+    (!("width" in value) || value.width === null || typeof value.width === "string") &&
+    (!("height" in value) || value.height === null || typeof value.height === "string") &&
+    (!("transform" in value) ||
+      value.transform === null ||
+      typeof value.transform === "string") &&
+    (!("zIndex" in value) || value.zIndex === null || typeof value.zIndex === "string")
+  );
+}
+
+function isHtmlElementSourceSnapshot(
+  value: unknown
+): value is HtmlElementVisualPatch["sourceSnapshot"] {
+  return (
+    isRecord(value) &&
+    (!("text" in value) || value.text === null || typeof value.text === "string") &&
+    (!("attributes" in value) ||
+      typeof value.attributes === "undefined" ||
+      isNullableStringRecord(value.attributes)) &&
+    (!("style" in value) ||
+      typeof value.style === "undefined" ||
+      isNullableStringRecord(value.style))
+  );
+}
+
+function isHtmlElementVisualPatch(
+  value: unknown
+): value is HtmlElementVisualPatch {
+  return (
+    isRecord(value) &&
+    value.kind === "html-element" &&
+    isHtmlNodeLocator(value.locator) &&
+    (!("tagName" in value) || typeof value.tagName === "string") &&
+    (!("text" in value) || typeof value.text === "string") &&
+    (!("attributes" in value) ||
+      typeof value.attributes === "undefined" ||
+      isNullableStringRecord(value.attributes)) &&
+    (!("style" in value) ||
+      typeof value.style === "undefined" ||
+      isNullableStringRecord(value.style)) &&
+    (!("layout" in value) ||
+      typeof value.layout === "undefined" ||
+      isHtmlElementLayoutPatch(value.layout)) &&
+    (!("sourceSnapshot" in value) ||
+      typeof value.sourceSnapshot === "undefined" ||
+      isHtmlElementSourceSnapshot(value.sourceSnapshot))
+  );
+}
+
+function isHtmlElementSelection(
+  value: unknown
+): value is HtmlElementSelection {
   return (
     isRecord(value) &&
     isHtmlNodeLocator(value.locator) &&
-    isSvgEditableTagName(value.tagName) &&
-    (!("text" in value) || typeof value.text === "string") &&
-    (!("geometry" in value) || typeof value.geometry === "undefined" || isSvgEditableGeometry(value.geometry)) &&
-    (!("style" in value) || typeof value.style === "undefined" || isPartialSvgEditableStyle(value.style)) &&
-    (!("transform" in value) || value.transform === null || isSvgTransformTranslation(value.transform))
+    typeof value.tagName === "string" &&
+    (value.text === null || typeof value.text === "string") &&
+    typeof value.textEditable === "boolean" &&
+    (value.sourcePath === null || typeof value.sourcePath === "string") &&
+    typeof value.runtimeGenerated === "boolean" &&
+    isStringRecord(value.attributes) &&
+    isStringRecord(value.style) &&
+    isRecord(value.layout) &&
+    typeof value.layout.position === "string" &&
+    typeof value.layout.left === "string" &&
+    typeof value.layout.top === "string" &&
+    typeof value.layout.width === "string" &&
+    typeof value.layout.height === "string" &&
+    typeof value.layout.transform === "string" &&
+    typeof value.layout.zIndex === "string" &&
+    (value.parentLayout === "flow" ||
+      value.parentLayout === "flex" ||
+      value.parentLayout === "grid" ||
+      value.parentLayout === "absolute")
+  );
+}
+
+function isHtmlElementFrameRequestValue(
+  value: unknown
+): value is HtmlElementFrameRequest {
+  return (
+    isRecord(value) &&
+    isHtmlNodeLocator(value.locator) &&
+    (value.clientRect === null ||
+      typeof value.clientRect === "undefined" ||
+      isHtmlPreviewClientRect(value.clientRect))
+  );
+}
+
+function isHtmlSlideState(
+  value: unknown
+): value is HtmlSlideState {
+  return (
+    isRecord(value) &&
+    typeof value.isSlideDocument === "boolean" &&
+    (value.kind === "none" || value.kind === "reveal" || value.kind === "generic") &&
+    isFiniteNumber(value.totalSlides) &&
+    isFiniteNumber(value.currentSlideIndex)
   );
 }
 
@@ -3198,6 +4439,38 @@ function isChartSeries(value: unknown): value is MdpadChartModel["series"][numbe
   );
 }
 
+function isChartPresentationSection(
+  value: unknown
+): value is { visible: boolean } {
+  return isRecord(value) && typeof value.visible === "boolean";
+}
+
+function isChartAxisPresentation(
+  value: unknown
+): value is { visible: boolean; name: string } {
+  return (
+    isRecord(value) &&
+    typeof value.visible === "boolean" &&
+    typeof value.name === "string"
+  );
+}
+
+function isChartPresentation(
+  value: unknown
+): value is MdpadChartModel["presentation"] {
+  return (
+    isRecord(value) &&
+    isRecord(value.title) &&
+    typeof value.title.visible === "boolean" &&
+    typeof value.title.text === "string" &&
+    isChartPresentationSection(value.legend) &&
+    isChartAxisPresentation(value.xAxis) &&
+    isChartAxisPresentation(value.yAxis) &&
+    Array.isArray(value.seriesColors) &&
+    value.seriesColors.every((entry) => typeof entry === "string")
+  );
+}
+
 function isChartModel(value: unknown): value is MdpadChartModel {
   return (
     isRecord(value) &&
@@ -3206,19 +4479,41 @@ function isChartModel(value: unknown): value is MdpadChartModel {
     Array.isArray(value.labels) &&
     value.labels.every((entry) => typeof entry === "string") &&
     Array.isArray(value.series) &&
-    value.series.every(isChartSeries)
+    value.series.every(isChartSeries) &&
+    (!("presentation" in value) ||
+      typeof value.presentation === "undefined" ||
+      isChartPresentation(value.presentation))
   );
 }
 
-function isHtmlSvgEditRequest(value: unknown): value is HtmlSvgEditRequest {
+function isChartPreviewDescriptor(
+  value: unknown
+): value is NonNullable<HtmlChartEditRequest["preview"]> {
   return (
     isRecord(value) &&
-    value.kind === "svg-elements" &&
-    isHtmlNodeLocator(value.svgLocator) &&
-    typeof value.svgMarkup === "string" &&
-    isSvgViewBox(value.viewBox) &&
-    Array.isArray(value.items) &&
-    value.items.every(isSvgEditableItem)
+    typeof value.bound === "boolean" &&
+    (value.containerHtml === null || typeof value.containerHtml === "string") &&
+    (value.sourceScriptHtml === null || typeof value.sourceScriptHtml === "string") &&
+    Array.isArray(value.runtimeScriptUrls) &&
+    value.runtimeScriptUrls.every((entry) => typeof entry === "string") &&
+    (!("snapshotKind" in value) ||
+      typeof value.snapshotKind === "undefined" ||
+      value.snapshotKind === "image") &&
+    (!("snapshotDataUrl" in value) ||
+      value.snapshotDataUrl === null ||
+      typeof value.snapshotDataUrl === "string")
+  );
+}
+
+function isHtmlChartSourceSnapshot(
+  value: unknown
+): value is NonNullable<HtmlChartEditRequest["sourceSnapshot"]> {
+  return (
+    isRecord(value) &&
+    typeof value.tagName === "string" &&
+    (value.sourcePath === null || typeof value.sourcePath === "string") &&
+    isNullableStringRecord(value.attributes) &&
+    typeof value.outerHtmlHash === "string"
   );
 }
 
@@ -3228,7 +4523,17 @@ function isHtmlChartEditRequest(value: unknown): value is HtmlChartEditRequest {
     value.kind === "chart" &&
     isHtmlNodeLocator(value.chartLocator) &&
     typeof value.nextBindingRequired === "boolean" &&
-    isChartModel(value.model)
+    isChartModel(value.model) &&
+    (!("captureMode" in value) ||
+      typeof value.captureMode === "undefined" ||
+      value.captureMode === "bound" ||
+      value.captureMode === "runtime-only") &&
+    (!("sourceSnapshot" in value) ||
+      typeof value.sourceSnapshot === "undefined" ||
+      isHtmlChartSourceSnapshot(value.sourceSnapshot)) &&
+    (!("preview" in value) ||
+      typeof value.preview === "undefined" ||
+      isChartPreviewDescriptor(value.preview))
   );
 }
 
@@ -3245,10 +4550,6 @@ function isHtmlPreviewContextMenuContext(
 
   if (value.kind === "chart") {
     return isHtmlChartEditRequest(value.request);
-  }
-
-  if (value.kind === "svg") {
-    return isHtmlSvgEditRequest(value.request);
   }
 
   return false;
@@ -3335,159 +4636,144 @@ export function extractInlineTextCommitFromPreviewMessage(
   return {
     kind: "inline-text",
     locator: payload.locator,
-    nextText: payload.nextText
+    nextText: payload.nextText,
+    ...(typeof payload.currentText === "string"
+      ? { currentText: payload.currentText }
+      : {})
   };
 }
 
-export function extractSvgEditorRequestFromPreviewMessage(
+export function extractElementSelectionFromPreviewMessage(
   data: unknown,
   expectedToken: string,
   source: unknown,
   frameWindow: WindowProxy | null
-): HtmlSvgEditRequest | null {
+): HtmlElementSelection | null {
   const payload = extractPreviewMessagePayload(
     data,
-    HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
+    HTML_PREVIEW_SELECT_ELEMENT_MESSAGE_TYPE,
     expectedToken,
     source,
     frameWindow
   );
-  if (!payload || !isRecord(payload.request)) {
+  if (!payload || !isHtmlElementSelection(payload.request)) {
     return null;
   }
 
-  const request = payload.request;
-  if (!isHtmlSvgEditRequest(request)) {
-    return null;
-  }
-
-  return request;
+  return payload.request;
 }
 
-export function extractSvgSelectionRequestFromPreviewMessage(
+export function extractElementFrameFromPreviewMessage(
   data: unknown,
   expectedToken: string,
   source: unknown,
   frameWindow: WindowProxy | null
-): HtmlSvgSelectionRequest | null {
+): HtmlElementFrameRequest | null {
   const payload = extractPreviewMessagePayload(
     data,
-    HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE,
+    HTML_PREVIEW_ELEMENT_FRAME_MESSAGE_TYPE,
     expectedToken,
     source,
     frameWindow
   );
-  if (!payload || !isRecord(payload.request)) {
+  if (!payload || !isHtmlElementFrameRequestValue(payload.request)) {
     return null;
   }
 
-  const request = payload.request;
+  return payload.request;
+}
+
+export function extractElementCommitPatchFromPreviewMessage(
+  data: unknown,
+  expectedToken: string,
+  source: unknown,
+  frameWindow: WindowProxy | null
+): HtmlElementVisualPatch | null {
+  const payload = extractPreviewMessagePayload(
+    data,
+    HTML_PREVIEW_COMMIT_ELEMENT_PATCH_MESSAGE_TYPE,
+    expectedToken,
+    source,
+    frameWindow
+  );
+  if (!payload || !isHtmlElementVisualPatch(payload.patch)) {
+    return null;
+  }
+
+  return payload.patch;
+}
+
+export function extractElementPatchFailedFromPreviewMessage(
+  data: unknown,
+  expectedToken: string,
+  source: unknown,
+  frameWindow: WindowProxy | null
+): { reason: string; locator?: HtmlNodeLocator } | null {
+  const payload = extractPreviewMessagePayload(
+    data,
+    HTML_PREVIEW_ELEMENT_PATCH_FAILED_MESSAGE_TYPE,
+    expectedToken,
+    source,
+    frameWindow
+  );
+  if (!payload || typeof payload.reason !== "string") {
+    return null;
+  }
+
+  return {
+    reason: payload.reason,
+    ...(isHtmlNodeLocator(payload.locator) ? { locator: payload.locator } : {})
+  };
+}
+
+export function extractSurfaceModeFromPreviewMessage(
+  data: unknown,
+  expectedToken: string,
+  source: unknown,
+  frameWindow: WindowProxy | null
+): {
+  mode: HtmlPreviewSurfaceMode;
+  slideTreatment: HtmlSlideTreatment;
+} | null {
+  const payload = extractPreviewMessagePayload(
+    data,
+    HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
+    expectedToken,
+    source,
+    frameWindow
+  );
   if (
-    request.kind !== "svg-elements" ||
-    !isHtmlNodeLocator(request.svgLocator) ||
-    typeof request.svgMarkup !== "string" ||
-    !isSvgViewBox(request.viewBox) ||
-    !Array.isArray(request.items) ||
-    !request.items.every(isSvgEditableItem) ||
-    !isHtmlNodeLocator(request.selectedLocator)
+    !payload ||
+    !isHtmlPreviewSurfaceMode(payload.mode) ||
+    !isHtmlSlideTreatmentValue(payload.slideTreatment)
   ) {
     return null;
   }
 
   return {
-    kind: "svg-elements",
-    svgLocator: request.svgLocator,
-    svgMarkup: request.svgMarkup,
-    viewBox: request.viewBox,
-    items: request.items,
-    selectedLocator: request.selectedLocator
+    mode: payload.mode,
+    slideTreatment: payload.slideTreatment
   };
 }
 
-export function extractSvgSelectionFrameFromPreviewMessage(
+export function extractSlideStateFromPreviewMessage(
   data: unknown,
   expectedToken: string,
   source: unknown,
   frameWindow: WindowProxy | null
-): HtmlSvgSelectionFrameRequest | null {
+): HtmlSlideState | null {
   const payload = extractPreviewMessagePayload(
     data,
-    HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE,
+    HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
     expectedToken,
     source,
     frameWindow
   );
-  if (!payload || !isRecord(payload.request)) {
+  if (!payload || !isHtmlSlideState(payload.state)) {
     return null;
   }
 
-  const request = payload.request;
-  if (
-    !isHtmlNodeLocator(request.svgLocator) ||
-    !isHtmlNodeLocator(request.selectedLocator) ||
-    !(
-      request.clientRect === null ||
-      typeof request.clientRect === "undefined" ||
-      isHtmlPreviewClientRect(request.clientRect)
-    )
-  ) {
-    return null;
-  }
-
-  return {
-    svgLocator: request.svgLocator,
-    selectedLocator: request.selectedLocator,
-    clientRect: request.clientRect ?? null
-  };
-}
-
-export function extractSvgPreviewPatchFromPreviewMessage(
-  data: unknown,
-  expectedToken: string,
-  source: unknown,
-  frameWindow: WindowProxy | null
-): HtmlSvgPatch | null {
-  const payload = extractPreviewMessagePayload(
-    data,
-    HTML_PREVIEW_SVG_PREVIEW_PATCH_MESSAGE_TYPE,
-    expectedToken,
-    source,
-    frameWindow
-  );
-  if (!payload || !isRecord(payload.patch)) {
-    return null;
-  }
-
-  const patch = payload.patch;
-  if (
-    patch.kind !== "svg-elements" ||
-    !Array.isArray(patch.items) ||
-    !patch.items.every(isSvgPatchItem)
-  ) {
-    return null;
-  }
-
-  return {
-    kind: "svg-elements" as const,
-    items: patch.items
-  };
-}
-
-export function extractDismissSvgSelectionFromPreviewMessage(
-  data: unknown,
-  expectedToken: string,
-  source: unknown,
-  frameWindow: WindowProxy | null
-): boolean {
-  return Boolean(
-    extractPreviewMessagePayload(
-      data,
-      HTML_PREVIEW_DISMISS_SVG_SELECTION_MESSAGE_TYPE,
-      expectedToken,
-      source,
-      frameWindow
-    )
-  );
+  return payload.state;
 }
 
 export function extractChartActionFromPreviewMessage(
@@ -3524,7 +4810,12 @@ export function extractChartActionFromPreviewMessage(
       kind: "chart",
       chartLocator: request.chartLocator,
       nextBindingRequired: request.nextBindingRequired,
-      model: request.model
+      model: request.model,
+      captureMode: request.captureMode,
+      sourceSnapshot: request.sourceSnapshot,
+      sourceFingerprint:
+        typeof request.sourceFingerprint === "string" ? request.sourceFingerprint : null,
+      preview: request.preview
     }
   };
 }
@@ -3544,6 +4835,31 @@ export function extractDismissChartActionFromPreviewMessage(
       frameWindow
     )
   );
+}
+
+export function extractChartEditorRequestFromPreviewMessage(
+  data: unknown,
+  expectedToken: string,
+  source: unknown,
+  frameWindow: WindowProxy | null
+): HtmlChartEditRequest | null {
+  const payload = extractPreviewMessagePayload(
+    data,
+    HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
+    expectedToken,
+    source,
+    frameWindow
+  );
+  if (!payload || !isRecord(payload.request)) {
+    return null;
+  }
+
+  const request = payload.request;
+  if (!isHtmlChartEditRequest(request)) {
+    return null;
+  }
+
+  return request;
 }
 
 export function extractReadOnlyBlockedFromPreviewMessage(

@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { getAppCopy } from "../../shared/i18n/appI18n";
 import ChartDataEditor from "./components/ChartDataEditor";
-import SvgTextCanvasEditor from "./components/SvgTextCanvasEditor";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -39,537 +38,42 @@ function dispatchInput(element: HTMLInputElement | HTMLTextAreaElement, value: s
   if (!descriptor?.set) {
     throw new Error("Unable to set form control value in test.");
   }
-  const setValue = descriptor.set;
 
   act(() => {
-    setValue.call(element, value);
+    descriptor.set?.call(element, value);
     element.dispatchEvent(new Event("input", { bubbles: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
 
-function dispatchBlur(element: HTMLElement) {
-  act(() => {
-    element.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
-    element.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-  });
+function createDragDataTransfer() {
+  return {
+    dropEffect: "move",
+    effectAllowed: "move",
+    setData: vi.fn(),
+    getData: vi.fn()
+  };
 }
 
-function findFieldControl(
-  container: HTMLElement,
-  labelText: string
-): HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
-  const label = Array.from(container.querySelectorAll("label")).find((candidate) =>
-    candidate.textContent?.includes(labelText)
-  );
-  if (!(label instanceof HTMLLabelElement)) {
-    throw new Error(`Unable to find field label: ${labelText}`);
-  }
+function dispatchDragEvent(
+  element: Element,
+  type: "dragstart" | "dragover" | "drop" | "dragend",
+  dataTransfer = createDragDataTransfer()
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", {
+    configurable: true,
+    value: dataTransfer
+  });
 
-  const control = label.querySelector("input, textarea, select");
-  if (
-    !(control instanceof HTMLInputElement) &&
-    !(control instanceof HTMLTextAreaElement) &&
-    !(control instanceof HTMLSelectElement)
-  ) {
-    throw new Error(`Unable to find control for label: ${labelText}`);
-  }
+  act(() => {
+    element.dispatchEvent(event);
+  });
 
-  return control;
+  return dataTransfer;
 }
 
 describe("html preview editors", () => {
-  it("emits svg text patches from the canvas editor", () => {
-    const onApply = vi.fn();
-    const rendered = renderElement(
-      React.createElement(SvgTextCanvasEditor, {
-        copy: getAppCopy("en").editor,
-        onApply,
-        onCancel: () => undefined,
-        request: {
-          kind: "svg-elements",
-          svgLocator: {
-            root: "body",
-            path: [0]
-          },
-          svgMarkup:
-            '<svg viewBox="0 0 100 60"><text x="10" y="20">Title</text></svg>',
-          viewBox: {
-            minX: 0,
-            minY: 0,
-            width: 100,
-            height: 60
-          },
-          items: [
-            {
-              locator: {
-                root: "body",
-                path: [0, 0]
-              },
-              tagName: "text",
-              bbox: {
-                x: 10,
-                y: 10,
-                width: 30,
-                height: 10
-              },
-              text: "Title",
-              geometry: {
-                x: 10,
-                y: 20
-              },
-              style: {
-                fill: "#111111",
-                stroke: null,
-                strokeWidth: null,
-                opacity: 1,
-                fontSize: 14
-              },
-              transform: null,
-              canEditText: true
-            }
-          ]
-        }
-      })
-    );
-
-    const textarea = rendered.container.querySelector("textarea");
-    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
-    dispatchInput(textarea as HTMLTextAreaElement, "Renamed");
-
-    const applyButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === getAppCopy("en").editor.prompts.apply
-    );
-    expect(applyButton).toBeInstanceOf(HTMLButtonElement);
-
-    act(() => {
-      (applyButton as HTMLButtonElement).click();
-    });
-
-    expect(onApply).toHaveBeenCalledWith({
-      kind: "svg-elements",
-      items: [
-        {
-          locator: {
-            root: "body",
-            path: [0, 0]
-          },
-          tagName: "text",
-          text: "Renamed",
-          geometry: {
-            x: 10,
-            y: 20
-          },
-          style: {
-            fill: "#111111",
-            stroke: null,
-            strokeWidth: null,
-            opacity: 1,
-            fontSize: 14
-          },
-          transform: null
-        }
-      ]
-    });
-    rendered.unmount();
-  });
-
-  it("switches to shape fields and emits shape geometry/style patches", () => {
-    const copy = getAppCopy("en").editor;
-    const onApply = vi.fn();
-    const rendered = renderElement(
-      React.createElement(SvgTextCanvasEditor, {
-        copy,
-        onApply,
-        onCancel: () => undefined,
-        request: {
-          kind: "svg-elements",
-          svgLocator: {
-            root: "body",
-            path: [0]
-          },
-          svgMarkup:
-            '<svg viewBox="0 0 100 60"><rect x="10" y="12" width="30" height="18" fill="#eee"></rect><text x="20" y="40">Label</text></svg>',
-          viewBox: {
-            minX: 0,
-            minY: 0,
-            width: 100,
-            height: 60
-          },
-          items: [
-            {
-              locator: {
-                root: "body",
-                path: [0, 0]
-              },
-              tagName: "rect",
-              bbox: {
-                x: 10,
-                y: 12,
-                width: 30,
-                height: 18
-              },
-              geometry: {
-                x: 10,
-                y: 12,
-                width: 30,
-                height: 18
-              },
-              style: {
-                fill: "#eeeeee",
-                stroke: null,
-                strokeWidth: null,
-                opacity: null,
-                fontSize: null
-              },
-              transform: null,
-              canEditText: false
-            },
-            {
-              locator: {
-                root: "body",
-                path: [0, 1]
-              },
-              tagName: "text",
-              bbox: {
-                x: 20,
-                y: 30,
-                width: 20,
-                height: 10
-              },
-              text: "Label",
-              geometry: {
-                x: 20,
-                y: 40
-              },
-              style: {
-                fill: "#111111",
-                stroke: null,
-                strokeWidth: null,
-                opacity: 1,
-                fontSize: 12
-              },
-              transform: null,
-              canEditText: true
-            }
-          ]
-        }
-      })
-    );
-
-    expect(rendered.container.querySelector("textarea")).toBeNull();
-    expect(rendered.container.textContent).toContain(copy.htmlPreview.widthLabel);
-    expect(rendered.container.textContent).toContain(copy.htmlPreview.fillLabel);
-
-    const numberInputs = Array.from(
-      rendered.container.querySelectorAll('input[type="number"]')
-    ) as HTMLInputElement[];
-    dispatchInput(numberInputs[0], "16");
-    dispatchInput(numberInputs[1], "20");
-    dispatchInput(numberInputs[2], "42");
-    dispatchInput(numberInputs[3], "22");
-
-    const fillInput = Array.from(rendered.container.querySelectorAll('input[type="text"]')).find(
-      (input) => (input as HTMLInputElement).value === "#eeeeee"
-    ) as HTMLInputElement | undefined;
-    expect(fillInput).toBeInstanceOf(HTMLInputElement);
-    dispatchInput(fillInput as HTMLInputElement, "#ffffff");
-
-    const applyButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === copy.prompts.apply
-    );
-    expect(applyButton).toBeInstanceOf(HTMLButtonElement);
-
-    act(() => {
-      (applyButton as HTMLButtonElement).click();
-    });
-
-    expect(onApply).toHaveBeenCalledWith({
-      kind: "svg-elements",
-      items: [
-        {
-          locator: {
-            root: "body",
-            path: [0, 0]
-          },
-          tagName: "rect",
-          geometry: {
-            x: 16,
-            y: 20,
-            width: 42,
-            height: 22
-          },
-          style: {
-            fill: "#ffffff",
-            stroke: null,
-            strokeWidth: null,
-            opacity: null,
-            fontSize: null
-          },
-          transform: null
-        },
-        {
-          locator: {
-            root: "body",
-            path: [0, 1]
-          },
-          tagName: "text",
-          text: "Label",
-          geometry: {
-            x: 20,
-            y: 40
-          },
-          style: {
-            fill: "#111111",
-            stroke: null,
-            strokeWidth: null,
-            opacity: 1,
-            fontSize: 12
-          },
-          transform: null
-        }
-      ]
-    });
-    rendered.unmount();
-  });
-
-  it("emits advanced text style patches and keeps empty text as a warning-only edit", () => {
-    const copy = getAppCopy("en").editor;
-    const onApply = vi.fn();
-    const rendered = renderElement(
-      React.createElement(SvgTextCanvasEditor, {
-        copy,
-        onApply,
-        onCancel: () => undefined,
-        request: {
-          kind: "svg-elements",
-          svgLocator: {
-            root: "body",
-            path: [0]
-          },
-          svgMarkup:
-            '<svg viewBox="0 0 100 60"><text x="10" y="20" text-anchor="start" font-family="serif">Title</text></svg>',
-          viewBox: {
-            minX: 0,
-            minY: 0,
-            width: 100,
-            height: 60
-          },
-          items: [
-            {
-              locator: {
-                root: "body",
-                path: [0, 0]
-              },
-              tagName: "text",
-              bbox: {
-                x: 10,
-                y: 10,
-                width: 30,
-                height: 10
-              },
-              text: "Title",
-              geometry: {
-                x: 10,
-                y: 20
-              },
-              style: {
-                fill: "#111111",
-                stroke: null,
-                strokeWidth: null,
-                opacity: 1,
-                fontSize: 14,
-                textAnchor: "start",
-                fontFamily: "serif"
-              },
-              transform: null,
-              canEditText: true
-            }
-          ]
-        }
-      })
-    );
-
-    const textArea = findFieldControl(
-      rendered.container,
-      copy.htmlPreview.textLabel
-    ) as HTMLTextAreaElement;
-    dispatchInput(textArea, "");
-
-    const textAnchorSelect = findFieldControl(
-      rendered.container,
-      copy.htmlPreview.textAnchorLabel
-    ) as HTMLSelectElement;
-    act(() => {
-      textAnchorSelect.value = "middle";
-      textAnchorSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-
-    const fontFamilyInput = findFieldControl(
-      rendered.container,
-      copy.htmlPreview.fontFamilyLabel
-    ) as HTMLInputElement;
-    dispatchInput(fontFamilyInput, "Fira Code");
-
-    expect(rendered.container.textContent).toContain(copy.htmlPreview.emptySvgTextWarning);
-
-    const applyButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === copy.prompts.apply
-    ) as HTMLButtonElement | undefined;
-    expect(applyButton).toBeInstanceOf(HTMLButtonElement);
-    expect(applyButton?.disabled).toBe(false);
-
-    act(() => {
-      applyButton?.click();
-    });
-
-    expect(onApply).toHaveBeenCalledWith({
-      kind: "svg-elements",
-      items: [
-        {
-          locator: {
-            root: "body",
-            path: [0, 0]
-          },
-          tagName: "text",
-          text: "",
-          geometry: {
-            x: 10,
-            y: 20
-          },
-          style: {
-            fill: "#111111",
-            stroke: null,
-            strokeWidth: null,
-            opacity: 1,
-            fontSize: 14,
-            textAnchor: "middle",
-            fontFamily: "Fira Code"
-          },
-          transform: null
-        }
-      ]
-    });
-    rendered.unmount();
-  });
-
-  it("blocks invalid path data and emits raw path edits after they are fixed", () => {
-    const copy = getAppCopy("en").editor;
-    const onApply = vi.fn();
-    const rendered = renderElement(
-      React.createElement(SvgTextCanvasEditor, {
-        copy,
-        onApply,
-        onCancel: () => undefined,
-        request: {
-          kind: "svg-elements",
-          svgLocator: {
-            root: "body",
-            path: [0]
-          },
-          svgMarkup:
-            '<svg viewBox="0 0 100 60"><path d="M0 0 L10 10" stroke="#111" fill="none"></path></svg>',
-          viewBox: {
-            minX: 0,
-            minY: 0,
-            width: 100,
-            height: 60
-          },
-          items: [
-            {
-              locator: {
-                root: "body",
-                path: [0, 0]
-              },
-              tagName: "path",
-              bbox: {
-                x: 0,
-                y: 0,
-                width: 10,
-                height: 10
-              },
-              geometry: {
-                pathData: "M0 0 L10 10"
-              },
-              style: {
-                fill: "none",
-                stroke: "#111111",
-                strokeWidth: 1,
-                opacity: 1,
-                fontSize: null,
-                markerStart: null,
-                markerEnd: null,
-                strokeDasharray: null,
-                strokeLinecap: null,
-                strokeLinejoin: null
-              },
-              transform: null,
-              canEditText: false
-            }
-          ]
-        }
-      })
-    );
-
-    const pathDataTextArea = findFieldControl(
-      rendered.container,
-      copy.htmlPreview.pathDataLabel
-    ) as HTMLTextAreaElement;
-    dispatchInput(pathDataTextArea, "not a path");
-
-    expect(rendered.container.textContent).toContain(copy.htmlPreview.invalidSvgPathData);
-
-    const applyButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === copy.prompts.apply
-    ) as HTMLButtonElement | undefined;
-    expect(applyButton).toBeInstanceOf(HTMLButtonElement);
-    expect(applyButton?.disabled).toBe(true);
-
-    dispatchInput(pathDataTextArea, "M5 5 L25 25");
-    const markerEndInput = findFieldControl(
-      rendered.container,
-      copy.htmlPreview.markerEndLabel
-    ) as HTMLInputElement;
-    dispatchInput(markerEndInput, "url(#arrowhead)");
-
-    expect(rendered.container.textContent).not.toContain(copy.htmlPreview.invalidSvgPathData);
-    expect(applyButton?.disabled).toBe(false);
-
-    act(() => {
-      applyButton?.click();
-    });
-
-    expect(onApply).toHaveBeenCalledWith({
-      kind: "svg-elements",
-      items: [
-        {
-          locator: {
-            root: "body",
-            path: [0, 0]
-          },
-          tagName: "path",
-          geometry: {
-            pathData: "M5 5 L25 25"
-          },
-          style: {
-            fill: "none",
-            stroke: "#111111",
-            strokeWidth: 1,
-            opacity: 1,
-            fontSize: null,
-            markerStart: null,
-            markerEnd: "url(#arrowhead)",
-            strokeDasharray: null,
-            strokeLinecap: null,
-            strokeLinejoin: null
-          },
-          transform: null
-        }
-      ]
-    });
-    rendered.unmount();
-  });
-
   it("emits chart patches with parsed numeric cells", () => {
     const copy = getAppCopy("en").editor;
     const onApply = vi.fn();
@@ -585,6 +89,7 @@ describe("html preview editors", () => {
             path: [0]
           },
           nextBindingRequired: true,
+          sourceFingerprint: '{"library":"chartjs","sourceId":"mdpad-chart-source-chartjs-0"}',
           model: {
             library: "chartjs",
             chartType: "line",
@@ -595,15 +100,43 @@ describe("html preview editors", () => {
                 type: "line",
                 data: [1, 2]
               }
-            ]
+            ],
+            sourceConfig: {
+              type: "bar",
+              data: {
+                labels: ["legacy"],
+                datasets: [
+                  {
+                    label: "Legacy",
+                    data: [1],
+                    backgroundColor: ["#2563eb", "#93c5fd"]
+                  }
+                ]
+              },
+              options: {
+                indexAxis: "y"
+              }
+            }
           }
         }
       })
     );
 
     expect(rendered.container.textContent).toContain(copy.htmlPreview.autoBindingHint);
+    expect(rendered.container.textContent).toContain(copy.htmlPreview.chartPreviewSectionTitle);
+    expect(rendered.container.textContent).not.toContain(
+      copy.htmlPreview.chartPresentationSectionTitle
+    );
+    expect(rendered.container.textContent).not.toContain(copy.htmlPreview.chartBasicsSectionTitle);
+    expect(rendered.container.textContent).not.toContain(copy.htmlPreview.chartAxesSectionTitle);
+    expect(rendered.container.textContent).toContain(copy.htmlPreview.chartDataSectionTitle);
+    expect(
+      rendered.container.querySelector('iframe[title="Chart Preview"]')
+    ).toBeInstanceOf(HTMLIFrameElement);
+    expect(rendered.container.querySelector('select')).toBeNull();
+    expect(rendered.container.querySelector('input[type="color"]')).toBeNull();
 
-    const numberInputs = rendered.container.querySelectorAll('input[type="number"]');
+    const numberInputs = rendered.container.querySelectorAll('input[data-chart-value="true"]');
     expect(numberInputs).toHaveLength(2);
     dispatchInput(numberInputs[1] as HTMLInputElement, "6.5");
 
@@ -616,377 +149,307 @@ describe("html preview editors", () => {
       (applyButton as HTMLButtonElement).click();
     });
 
-    expect(onApply).toHaveBeenCalledWith({
-      kind: "chart",
-      chartLocator: {
-        root: "body",
-        path: [0]
-      },
-      nextModel: {
-        library: "chartjs",
-        chartType: "line",
-        labels: ["Jan", "Feb"],
-        series: [
-          {
-            name: "Sales",
-            type: "line",
-            data: [1, 6.5]
-          }
-        ]
-      }
-    });
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "chart",
+        chartLocator: {
+          root: "body",
+          path: [0]
+        },
+        sourceFingerprint: '{"library":"chartjs","sourceId":"mdpad-chart-source-chartjs-0"}',
+        nextModel: expect.objectContaining({
+          library: "chartjs",
+          chartType: "line",
+          labels: ["Jan", "Feb"],
+          presentation: expect.objectContaining({
+            title: { visible: false, text: "" },
+            legend: { visible: true },
+            xAxis: { visible: true, name: "" },
+            yAxis: { visible: true, name: "" },
+            seriesColors: ["#2563eb"]
+          }),
+          sourceConfig: expect.objectContaining({
+            options: {
+              indexAxis: "y"
+            }
+          }),
+          series: [
+            {
+              name: "Sales",
+              type: "line",
+              data: [1, 6.5]
+            }
+          ]
+        })
+      })
+    );
     rendered.unmount();
   });
 
-  it("supports shift multi-select and batch style apply for multiple SVG items", () => {
+  it("supports chart label and series structure editing before apply", () => {
     const copy = getAppCopy("en").editor;
     const onApply = vi.fn();
     const rendered = renderElement(
-      React.createElement(SvgTextCanvasEditor, {
+      React.createElement(ChartDataEditor, {
         copy,
         onApply,
         onCancel: () => undefined,
         request: {
-          kind: "svg-elements",
-          svgLocator: {
+          kind: "chart",
+          chartLocator: {
             root: "body",
             path: [0]
           },
-          svgMarkup:
-            '<svg viewBox="0 0 120 80"><rect x="10" y="10" width="24" height="18" fill="#aaaaaa"></rect><rect x="60" y="12" width="24" height="18" fill="#bbbbbb"></rect></svg>',
-          viewBox: {
-            minX: 0,
-            minY: 0,
-            width: 120,
-            height: 80
-          },
-          items: [
-            {
-              locator: {
-                root: "body",
-                path: [0, 0]
-              },
-              tagName: "rect",
-              bbox: {
-                x: 10,
-                y: 10,
-                width: 24,
-                height: 18
-              },
-              geometry: {
-                x: 10,
-                y: 10,
-                width: 24,
-                height: 18
-              },
-              style: {
-                fill: "#aaaaaa",
-                stroke: null,
-                strokeWidth: null,
-                opacity: 1,
-                fontSize: null
-              },
-              transform: null,
-              canEditText: false
-            },
-            {
-              locator: {
-                root: "body",
-                path: [0, 1]
-              },
-              tagName: "rect",
-              bbox: {
-                x: 60,
-                y: 12,
-                width: 24,
-                height: 18
-              },
-              geometry: {
-                x: 60,
-                y: 12,
-                width: 24,
-                height: 18
-              },
-              style: {
-                fill: "#bbbbbb",
-                stroke: null,
-                strokeWidth: null,
-                opacity: 1,
-                fontSize: null
-              },
-              transform: null,
-              canEditText: false
-            }
-          ]
+          sourceFingerprint: '{"library":"echarts","sourceId":"sales-chart"}',
+          nextBindingRequired: false,
+          model: {
+            library: "echarts",
+            labels: ["Jan"],
+            series: [
+              {
+                name: "Sales",
+                data: [1]
+              }
+            ]
+          }
         }
       })
     );
 
-    const itemButtons = Array.from(
-      rendered.container.querySelectorAll(".html-preview-svg-item")
-    ) as HTMLButtonElement[];
-    expect(itemButtons).toHaveLength(2);
+    const addLabelButton = Array.from(rendered.container.querySelectorAll("button")).find(
+      (button) => button.textContent === copy.htmlPreview.addChartLabel
+    );
+    const addSeriesButton = Array.from(rendered.container.querySelectorAll("button")).find(
+      (button) => button.textContent === copy.htmlPreview.addChartSeries
+    );
+    expect(addLabelButton).toBeInstanceOf(HTMLButtonElement);
+    expect(addSeriesButton).toBeInstanceOf(HTMLButtonElement);
 
     act(() => {
-      itemButtons[1]?.dispatchEvent(
-        new PointerEvent("pointerdown", {
-          bubbles: true,
-          shiftKey: true,
-          pointerId: 2,
-          clientX: 0,
-          clientY: 0
-        })
-      );
+      (addLabelButton as HTMLButtonElement).click();
+    });
+    act(() => {
+      (addSeriesButton as HTMLButtonElement).click();
     });
 
-    expect(rendered.container.textContent).toContain("2 elements selected");
+    const labelInputs = Array.from(
+      rendered.container.querySelectorAll("thead input[type='text']")
+    ) as HTMLInputElement[];
+    const seriesNameInputs = Array.from(
+      rendered.container.querySelectorAll("tbody th input[type='text']")
+    ) as HTMLInputElement[];
+    expect(labelInputs.length).toBe(2);
+    expect(seriesNameInputs.length).toBe(2);
+    dispatchInput(labelInputs[1], "Feb");
+    dispatchInput(seriesNameInputs[1], "Profit");
 
-    const fillInput = findFieldControl(
-      rendered.container,
-      copy.htmlPreview.fillLabel
-    ) as HTMLInputElement;
-    dispatchInput(fillInput, "#334455");
-    dispatchBlur(fillInput);
+    const numberInputs = Array.from(
+      rendered.container.querySelectorAll('input[data-chart-value="true"]')
+    ) as HTMLInputElement[];
+    expect(numberInputs).toHaveLength(4);
+    dispatchInput(numberInputs[1], "2");
+    dispatchInput(numberInputs[2], "3");
+    dispatchInput(numberInputs[3], "4");
 
     const applyButton = Array.from(rendered.container.querySelectorAll("button")).find(
       (button) => button.textContent === copy.prompts.apply
-    ) as HTMLButtonElement | undefined;
+    );
     expect(applyButton).toBeInstanceOf(HTMLButtonElement);
 
     act(() => {
-      applyButton?.click();
+      (applyButton as HTMLButtonElement).click();
     });
 
-    expect(onApply).toHaveBeenCalledWith({
-      kind: "svg-elements",
-      items: [
-        {
-          locator: {
-            root: "body",
-            path: [0, 0]
-          },
-          tagName: "rect",
-          geometry: {
-            x: 10,
-            y: 10,
-            width: 24,
-            height: 18
-          },
-          style: {
-            fill: "#334455",
-            stroke: null,
-            strokeWidth: null,
-            opacity: 1,
-            fontSize: null
-          },
-          transform: null
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "chart",
+        chartLocator: {
+          root: "body",
+          path: [0]
         },
-        {
-          locator: {
-            root: "body",
-            path: [0, 1]
-          },
-          tagName: "rect",
-          geometry: {
-            x: 60,
-            y: 12,
-            width: 24,
-            height: 18
-          },
-          style: {
-            fill: "#334455",
-            stroke: null,
-            strokeWidth: null,
-            opacity: 1,
-            fontSize: null
-          },
-          transform: null
-        }
-      ]
-    });
-    rendered.unmount();
-  });
-
-  it("expands connector hit areas without changing connector classification", () => {
-    const copy = getAppCopy("en").editor;
-    const rendered = renderElement(
-      React.createElement(SvgTextCanvasEditor, {
-        copy,
-        onApply: vi.fn(),
-        onCancel: () => undefined,
-        request: {
-          kind: "svg-elements",
-          svgLocator: {
-            root: "body",
-            path: [0]
-          },
-          svgMarkup:
-            '<svg viewBox="0 0 120 60"><line x1="10" y1="18" x2="96" y2="18" stroke="#222"></line></svg>',
-          viewBox: {
-            minX: 0,
-            minY: 0,
-            width: 120,
-            height: 60
-          },
-          items: [
+        sourceFingerprint: '{"library":"echarts","sourceId":"sales-chart"}',
+        nextModel: expect.objectContaining({
+          library: "echarts",
+          chartType: "bar",
+          labels: ["Jan", "Feb"],
+          presentation: expect.objectContaining({
+            title: { visible: false, text: "" },
+            legend: { visible: true },
+            xAxis: { visible: true, name: "" },
+            yAxis: { visible: true, name: "" },
+            seriesColors: ["#2563eb", "#dc2626"]
+          }),
+          series: [
             {
-              locator: {
-                root: "body",
-                path: [0, 0]
-              },
-              tagName: "line",
-              kind: "connector",
-              routeCandidate: true,
-              bbox: {
-                x: 10,
-                y: 18,
-                width: 86,
-                height: 0
-              },
-              geometry: {
-                x1: 10,
-                y1: 18,
-                x2: 96,
-                y2: 18
-              },
-              style: {
-                fill: null,
-                stroke: "#222222",
-                strokeWidth: 2,
-                opacity: 1,
-                fontSize: null
-              },
-              transform: null,
-              canEditText: false
+              name: "Sales",
+              type: "bar",
+              data: [1, 2]
+            },
+            {
+              name: "Profit",
+              type: "bar",
+              data: [3, 4]
             }
           ]
-        }
+        })
       })
     );
-
-    const connectorButton = rendered.container.querySelector(
-      ".html-preview-svg-item.is-connector"
-    ) as HTMLButtonElement | null;
-    expect(connectorButton).toBeInstanceOf(HTMLButtonElement);
-    expect(connectorButton?.style.getPropertyValue("--svg-hit-pad-left")).not.toBe("0%");
-    expect(connectorButton?.style.getPropertyValue("--svg-hit-pad-top")).not.toBe("0%");
-
     rendered.unmount();
   });
 
-  it("keeps SVG history inside the editor session with undo and redo", () => {
+  it("reorders labels and series through drag and drop before apply", () => {
     const copy = getAppCopy("en").editor;
     const onApply = vi.fn();
     const rendered = renderElement(
-      React.createElement(SvgTextCanvasEditor, {
+      React.createElement(ChartDataEditor, {
         copy,
         onApply,
         onCancel: () => undefined,
         request: {
-          kind: "svg-elements",
-          svgLocator: {
+          kind: "chart",
+          chartLocator: {
             root: "body",
             path: [0]
           },
-          svgMarkup:
-            '<svg viewBox="0 0 100 60"><text x="10" y="20">Title</text></svg>',
-          viewBox: {
-            minX: 0,
-            minY: 0,
-            width: 100,
-            height: 60
-          },
-          items: [
-            {
-              locator: {
-                root: "body",
-                path: [0, 0]
+          nextBindingRequired: false,
+          model: {
+            library: "chartjs",
+            chartType: "bar",
+            labels: ["A", "B"],
+            series: [
+              {
+                name: "North",
+                type: "bar",
+                data: [1, 2]
               },
-              tagName: "text",
-              bbox: {
-                x: 10,
-                y: 10,
-                width: 30,
-                height: 10
-              },
-              text: "Title",
-              geometry: {
-                x: 10,
-                y: 20
-              },
-              style: {
-                fill: "#111111",
-                stroke: null,
-                strokeWidth: null,
-                opacity: 1,
-                fontSize: 14
-              },
-              transform: null,
-              canEditText: true
-            }
-          ]
+              {
+                name: "South",
+                type: "bar",
+                data: [3, 4]
+              }
+            ]
+          }
         }
       })
     );
 
-    const textArea = findFieldControl(
-      rendered.container,
-      copy.htmlPreview.textLabel
-    ) as HTMLTextAreaElement;
-    dispatchInput(textArea, "Draft");
-    dispatchBlur(textArea);
-    expect(textArea.value).toBe("Draft");
+    const labelHeaders = rendered.container.querySelectorAll("[data-chart-label-index]");
+    const seriesHeaders = rendered.container.querySelectorAll("[data-chart-series-index]");
+    const labelHandles = rendered.container.querySelectorAll(
+      '[data-chart-drag-handle^="label-"]'
+    );
+    const seriesHandles = rendered.container.querySelectorAll(
+      '[data-chart-drag-handle^="series-"]'
+    );
+    const labelInputs = rendered.container.querySelectorAll("thead input[type='text']");
+    expect(labelHeaders).toHaveLength(2);
+    expect(seriesHeaders).toHaveLength(2);
+    expect(labelHandles).toHaveLength(2);
+    expect(seriesHandles).toHaveLength(2);
+    expect(labelHeaders[0].getAttribute("draggable")).toBeNull();
+    expect(seriesHeaders[0].getAttribute("draggable")).toBeNull();
+    expect(labelHandles[0].getAttribute("draggable")).toBe("true");
+    expect(seriesHandles[0].getAttribute("draggable")).toBe("true");
 
-    const undoButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Undo"
-    ) as HTMLButtonElement | undefined;
-    const redoButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Redo"
-    ) as HTMLButtonElement | undefined;
+    const noopLabelDrag = dispatchDragEvent(labelInputs[0], "dragstart");
+    dispatchDragEvent(labelHeaders[1], "dragover", noopLabelDrag);
+    dispatchDragEvent(labelHeaders[1], "drop", noopLabelDrag);
 
-    expect(undoButton?.disabled).toBe(false);
-    act(() => {
-      undoButton?.click();
-    });
-    expect(textArea.value).toBe("Title");
+    const labelDrag = dispatchDragEvent(labelHandles[0], "dragstart");
+    dispatchDragEvent(labelHeaders[1], "dragover", labelDrag);
+    dispatchDragEvent(labelHeaders[1], "drop", labelDrag);
+    dispatchDragEvent(labelHandles[0], "dragend", labelDrag);
 
-    act(() => {
-      redoButton?.click();
-    });
-    expect(textArea.value).toBe("Draft");
+    const seriesDrag = dispatchDragEvent(seriesHandles[0], "dragstart");
+    dispatchDragEvent(seriesHeaders[1], "dragover", seriesDrag);
+    dispatchDragEvent(seriesHeaders[1], "drop", seriesDrag);
+    dispatchDragEvent(seriesHandles[0], "dragend", seriesDrag);
 
     const applyButton = Array.from(rendered.container.querySelectorAll("button")).find(
       (button) => button.textContent === copy.prompts.apply
-    ) as HTMLButtonElement | undefined;
+    );
+    expect(applyButton).toBeInstanceOf(HTMLButtonElement);
+
     act(() => {
-      applyButton?.click();
+      (applyButton as HTMLButtonElement).click();
     });
 
-    expect(onApply).toHaveBeenCalledWith({
-      kind: "svg-elements",
-      items: [
-        {
-          locator: {
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nextModel: expect.objectContaining({
+          labels: ["B", "A"],
+          series: [
+            {
+              name: "South",
+              type: "bar",
+              data: [4, 3]
+            },
+            {
+              name: "North",
+              type: "bar",
+              data: [2, 1]
+            }
+          ]
+        })
+      })
+    );
+    rendered.unmount();
+  });
+
+  it("renders a snapshot fallback preview for runtime-only charts without reusable scripts", () => {
+    const copy = getAppCopy("zh").editor;
+    const rendered = renderElement(
+      React.createElement(ChartDataEditor, {
+        copy,
+        onApply: () => undefined,
+        onCancel: () => undefined,
+        request: {
+          kind: "chart",
+          chartLocator: {
             root: "body",
-            path: [0, 0]
+            path: [0]
           },
-          tagName: "text",
-          text: "Draft",
-          geometry: {
-            x: 10,
-            y: 20
+          nextBindingRequired: true,
+          captureMode: "runtime-only",
+          sourceSnapshot: {
+            tagName: "canvas",
+            sourcePath: "0",
+            attributes: {
+              id: "runtime-chart",
+              "data-mdpad-source-path": "0"
+            },
+            outerHtmlHash: "chart-runtime"
           },
-          style: {
-            fill: "#111111",
-            stroke: null,
-            strokeWidth: null,
-            opacity: 1,
-            fontSize: 14
+          model: {
+            library: "chartjs",
+            chartType: "bar",
+            labels: ["A"],
+            series: [
+              {
+                name: "Value",
+                data: [3]
+              }
+            ]
           },
-          transform: null
+          preview: {
+            bound: false,
+            containerHtml: '<canvas id="runtime-chart" data-mdpad-source-path="0"></canvas>',
+            sourceScriptHtml: null,
+            runtimeScriptUrls: [],
+            snapshotKind: "image",
+            snapshotDataUrl: "data:image/png;base64,runtime-preview"
+          }
         }
-      ]
-    });
+      })
+    );
+
+    expect(rendered.container.querySelector('iframe[title="Chart Preview"]')).toBeNull();
+    expect(
+      rendered.container.querySelector(
+        'img[src="data:image/png;base64,runtime-preview"]'
+      )
+    ).toBeInstanceOf(HTMLImageElement);
+    expect(rendered.container.textContent).toContain(copy.htmlPreview.chartPreviewSnapshotHint);
     rendered.unmount();
   });
 });
