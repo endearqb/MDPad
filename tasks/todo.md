@@ -4,7 +4,7 @@
 - [x] 盘点当前 `main` 工作区待提交的 HTML preview / chart editor 相关改动，并整理成新的 `update/` 说明文档
 - [x] 按仓库规范新增 `update/updatenote_2026042223.md`
 - [x] 运行本轮推送前的主链验证
-- [ ] 提交当前工作区改动并推送到 `origin/main`
+- [x] 提交当前工作区改动并推送到 `origin/main`
 - [x] 在本节补齐 Review
 
 ## Progress Notes
@@ -16,7 +16,8 @@
 ## Review
 - 结果：新的 [update/updatenote_2026042223.md](/D:/MyProject/MDPad/update/updatenote_2026042223.md) 已补齐，覆盖本轮 HTML 预览工具栏收口、滚动条统一和图表数据编辑菜单化改造。
 - 结果：本轮推送前验证已完成，主链相关 `HtmlPreview` / `htmlPreviewDocument` / `htmlPreviewEditors` 回归与 TypeScript 类型检查均已通过。
-- 待补充：提交 SHA 与 `origin/main` 推送结果会在完成后回填到本节。
+- 结果：已在本地 `main` 创建提交 `30cf5ab`（`Refine HTML preview and chart editor UX`），并成功推送到 `origin/main`。
+- 说明：工作区里仍保留两处既有未提交状态 `src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`；这两处在 `git diff` 下没有实际文本差异，本轮没有把它们带进提交。
 
 # 移除 HTML 工具栏中的“预览/编辑”并下线通用可视编辑（2026-04-22）
 
