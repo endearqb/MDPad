@@ -46,31 +46,23 @@ function dispatchInput(element: HTMLInputElement | HTMLTextAreaElement, value: s
   });
 }
 
-function createDragDataTransfer() {
-  return {
-    dropEffect: "move",
-    effectAllowed: "move",
-    setData: vi.fn(),
-    getData: vi.fn()
-  };
+function clickElement(element: Element) {
+  act(() => {
+    (element as HTMLElement).click();
+  });
 }
 
-function dispatchDragEvent(
-  element: Element,
-  type: "dragstart" | "dragover" | "drop" | "dragend",
-  dataTransfer = createDragDataTransfer()
-) {
-  const event = new Event(type, { bubbles: true, cancelable: true });
-  Object.defineProperty(event, "dataTransfer", {
-    configurable: true,
-    value: dataTransfer
-  });
-
+function dispatchKeydown(element: Element, key: string) {
   act(() => {
-    element.dispatchEvent(event);
+    element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key }));
   });
+}
 
-  return dataTransfer;
+function dispatchBlur(element: Element) {
+  act(() => {
+    element.dispatchEvent(new FocusEvent("blur"));
+    element.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
 }
 
 describe("html preview editors", () => {
@@ -232,16 +224,45 @@ describe("html preview editors", () => {
       (addSeriesButton as HTMLButtonElement).click();
     });
 
-    const labelInputs = Array.from(
-      rendered.container.querySelectorAll("thead input[type='text']")
-    ) as HTMLInputElement[];
-    const seriesNameInputs = Array.from(
-      rendered.container.querySelectorAll("tbody th input[type='text']")
-    ) as HTMLInputElement[];
-    expect(labelInputs.length).toBe(2);
-    expect(seriesNameInputs.length).toBe(2);
-    dispatchInput(labelInputs[1], "Feb");
-    dispatchInput(seriesNameInputs[1], "Profit");
+    const labelTriggers = rendered.container.querySelectorAll(
+      '[data-chart-structure-trigger^="label-"]'
+    );
+    const seriesTriggers = rendered.container.querySelectorAll(
+      '[data-chart-structure-trigger^="series-"]'
+    );
+    expect(labelTriggers).toHaveLength(2);
+    expect(seriesTriggers).toHaveLength(2);
+
+    clickElement(labelTriggers[1]);
+    const editLabelButton = rendered.container.querySelector(
+      '[data-chart-structure-menu-item="label-1-edit"]'
+    );
+    expect(editLabelButton).toBeInstanceOf(HTMLButtonElement);
+    clickElement(editLabelButton as HTMLButtonElement);
+
+    const labelEditInput = rendered.container.querySelector(
+      'input[data-chart-structure-input="label"]'
+    );
+    expect(labelEditInput).toBeInstanceOf(HTMLInputElement);
+    dispatchInput(labelEditInput as HTMLInputElement, "Feb");
+    dispatchKeydown(labelEditInput as HTMLInputElement, "Enter");
+
+    const refreshedSeriesTriggers = rendered.container.querySelectorAll(
+      '[data-chart-structure-trigger^="series-"]'
+    );
+    clickElement(refreshedSeriesTriggers[1]);
+    const editSeriesButton = rendered.container.querySelector(
+      '[data-chart-structure-menu-item="series-1-edit"]'
+    );
+    expect(editSeriesButton).toBeInstanceOf(HTMLButtonElement);
+    clickElement(editSeriesButton as HTMLButtonElement);
+
+    const seriesEditInput = rendered.container.querySelector(
+      'input[data-chart-structure-input="series"]'
+    );
+    expect(seriesEditInput).toBeInstanceOf(HTMLInputElement);
+    dispatchInput(seriesEditInput as HTMLInputElement, "Profit");
+    dispatchKeydown(seriesEditInput as HTMLInputElement, "Enter");
 
     const numberInputs = Array.from(
       rendered.container.querySelectorAll('input[data-chart-value="true"]')
@@ -297,13 +318,12 @@ describe("html preview editors", () => {
     rendered.unmount();
   });
 
-  it("reorders labels and series through drag and drop before apply", () => {
+  it("uses menu mode for inline edit and hides legacy drag/delete controls", () => {
     const copy = getAppCopy("en").editor;
-    const onApply = vi.fn();
     const rendered = renderElement(
       React.createElement(ChartDataEditor, {
         copy,
-        onApply,
+        onApply: () => undefined,
         onCancel: () => undefined,
         request: {
           kind: "chart",
@@ -321,11 +341,6 @@ describe("html preview editors", () => {
                 name: "North",
                 type: "bar",
                 data: [1, 2]
-              },
-              {
-                name: "South",
-                type: "bar",
-                data: [3, 4]
               }
             ]
           }
@@ -333,46 +348,157 @@ describe("html preview editors", () => {
       })
     );
 
-    const labelHeaders = rendered.container.querySelectorAll("[data-chart-label-index]");
-    const seriesHeaders = rendered.container.querySelectorAll("[data-chart-series-index]");
-    const labelHandles = rendered.container.querySelectorAll(
-      '[data-chart-drag-handle^="label-"]'
+    expect(rendered.container.querySelector("[data-chart-drag-handle]")).toBeNull();
+    expect(rendered.container.querySelector(".html-preview-chart-grid-delete")).toBeNull();
+
+    const labelTrigger = rendered.container.querySelector(
+      '[data-chart-structure-trigger="label-0"]'
     );
-    const seriesHandles = rendered.container.querySelectorAll(
-      '[data-chart-drag-handle^="series-"]'
+    expect(labelTrigger).toBeInstanceOf(HTMLButtonElement);
+    clickElement(labelTrigger as HTMLButtonElement);
+    expect(
+      rendered.container.querySelector('[data-chart-structure-menu-item="label-0-left"]')
+    ).toHaveProperty("disabled", true);
+
+    const editLabelButton = rendered.container.querySelector(
+      '[data-chart-structure-menu-item="label-0-edit"]'
     );
-    const labelInputs = rendered.container.querySelectorAll("thead input[type='text']");
-    expect(labelHeaders).toHaveLength(2);
-    expect(seriesHeaders).toHaveLength(2);
-    expect(labelHandles).toHaveLength(2);
-    expect(seriesHandles).toHaveLength(2);
-    expect(labelHeaders[0].getAttribute("draggable")).toBeNull();
-    expect(seriesHeaders[0].getAttribute("draggable")).toBeNull();
-    expect(labelHandles[0].getAttribute("draggable")).toBe("true");
-    expect(seriesHandles[0].getAttribute("draggable")).toBe("true");
+    expect(editLabelButton).toBeInstanceOf(HTMLButtonElement);
+    clickElement(editLabelButton as HTMLButtonElement);
 
-    const noopLabelDrag = dispatchDragEvent(labelInputs[0], "dragstart");
-    dispatchDragEvent(labelHeaders[1], "dragover", noopLabelDrag);
-    dispatchDragEvent(labelHeaders[1], "drop", noopLabelDrag);
+    const labelEditInput = rendered.container.querySelector(
+      'input[data-chart-structure-input="label"]'
+    );
+    expect(labelEditInput).toBeInstanceOf(HTMLInputElement);
+    dispatchInput(labelEditInput as HTMLInputElement, "Draft");
+    dispatchKeydown(labelEditInput as HTMLInputElement, "Escape");
+    expect(
+      (
+        rendered.container.querySelector(
+          '[data-chart-structure-trigger="label-0"]'
+        ) as HTMLButtonElement
+      ).textContent
+    ).toContain("A");
 
-    const labelDrag = dispatchDragEvent(labelHandles[0], "dragstart");
-    dispatchDragEvent(labelHeaders[1], "dragover", labelDrag);
-    dispatchDragEvent(labelHeaders[1], "drop", labelDrag);
-    dispatchDragEvent(labelHandles[0], "dragend", labelDrag);
+    const reopenedLabelTrigger = rendered.container.querySelector(
+      '[data-chart-structure-trigger="label-0"]'
+    );
+    expect(reopenedLabelTrigger).toBeInstanceOf(HTMLButtonElement);
+    clickElement(reopenedLabelTrigger as HTMLButtonElement);
+    clickElement(
+      rendered.container.querySelector(
+        '[data-chart-structure-menu-item="label-0-edit"]'
+      ) as HTMLButtonElement
+    );
+    const committedLabelInput = rendered.container.querySelector(
+      'input[data-chart-structure-input="label"]'
+    );
+    expect(committedLabelInput).toBeInstanceOf(HTMLInputElement);
+    dispatchInput(committedLabelInput as HTMLInputElement, "Renamed");
+    dispatchBlur(committedLabelInput as HTMLInputElement);
+    expect(
+      (
+        rendered.container.querySelector(
+          '[data-chart-structure-trigger="label-0"]'
+        ) as HTMLButtonElement
+      ).textContent
+    ).toContain("Renamed");
+    rendered.unmount();
+  });
 
-    const seriesDrag = dispatchDragEvent(seriesHandles[0], "dragstart");
-    dispatchDragEvent(seriesHeaders[1], "dragover", seriesDrag);
-    dispatchDragEvent(seriesHeaders[1], "drop", seriesDrag);
-    dispatchDragEvent(seriesHandles[0], "dragend", seriesDrag);
+  it("moves and deletes labels and series through structure menus before apply", () => {
+    const copy = getAppCopy("en").editor;
+    const onApply = vi.fn();
+    const rendered = renderElement(
+      React.createElement(ChartDataEditor, {
+        copy,
+        onApply,
+        onCancel: () => undefined,
+        request: {
+          kind: "chart",
+          chartLocator: {
+            root: "body",
+            path: [0]
+          },
+          nextBindingRequired: false,
+          model: {
+            library: "chartjs",
+            chartType: "bar",
+            labels: ["A", "B", "C"],
+            series: [
+              {
+                name: "North",
+                type: "bar",
+                data: [1, 2, 3]
+              },
+              {
+                name: "South",
+                type: "bar",
+                data: [4, 5, 6]
+              }
+            ]
+          }
+        }
+      })
+    );
+
+    clickElement(
+      rendered.container.querySelector(
+        '[data-chart-structure-trigger="label-0"]'
+      ) as HTMLButtonElement
+    );
+    const moveLeftButton = rendered.container.querySelector(
+      '[data-chart-structure-menu-item="label-0-left"]'
+    ) as HTMLButtonElement;
+    const moveRightButton = rendered.container.querySelector(
+      '[data-chart-structure-menu-item="label-0-right"]'
+    ) as HTMLButtonElement;
+    expect(moveLeftButton.disabled).toBe(true);
+    expect(moveRightButton.disabled).toBe(false);
+    clickElement(moveRightButton);
+
+    clickElement(
+      rendered.container.querySelector(
+        '[data-chart-structure-trigger="series-0"]'
+      ) as HTMLButtonElement
+    );
+    const moveUpButton = rendered.container.querySelector(
+      '[data-chart-structure-menu-item="series-0-up"]'
+    ) as HTMLButtonElement;
+    const moveDownButton = rendered.container.querySelector(
+      '[data-chart-structure-menu-item="series-0-down"]'
+    ) as HTMLButtonElement;
+    expect(moveUpButton.disabled).toBe(true);
+    expect(moveDownButton.disabled).toBe(false);
+    clickElement(moveDownButton);
+
+    clickElement(
+      rendered.container.querySelector(
+        '[data-chart-structure-trigger="label-2"]'
+      ) as HTMLButtonElement
+    );
+    clickElement(
+      rendered.container.querySelector(
+        '[data-chart-structure-menu-item="label-2-remove"]'
+      ) as HTMLButtonElement
+    );
+
+    clickElement(
+      rendered.container.querySelector(
+        '[data-chart-structure-trigger="series-1"]'
+      ) as HTMLButtonElement
+    );
+    clickElement(
+      rendered.container.querySelector(
+        '[data-chart-structure-menu-item="series-1-remove"]'
+      ) as HTMLButtonElement
+    );
 
     const applyButton = Array.from(rendered.container.querySelectorAll("button")).find(
       (button) => button.textContent === copy.prompts.apply
     );
     expect(applyButton).toBeInstanceOf(HTMLButtonElement);
-
-    act(() => {
-      (applyButton as HTMLButtonElement).click();
-    });
+    clickElement(applyButton as HTMLButtonElement);
 
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -382,12 +508,7 @@ describe("html preview editors", () => {
             {
               name: "South",
               type: "bar",
-              data: [4, 3]
-            },
-            {
-              name: "North",
-              type: "bar",
-              data: [2, 1]
+              data: [5, 4]
             }
           ]
         })

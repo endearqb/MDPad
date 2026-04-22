@@ -1937,6 +1937,8 @@ export default function App() {
                     documentPath={doc.currentPath}
                     html={doc.content}
                     isEditable={editorMode === "editable"}
+                    themeMode={themeMode}
+                    uiTheme={uiTheme}
                     onHtmlChange={handleMarkdownChange}
                     onReadOnlyInteraction={handleReadOnlyInteraction}
                     onRequestExport={handleDocumentExportRequest}

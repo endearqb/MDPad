@@ -8,6 +8,7 @@ import {
   extractContextMenuPositionFromPreviewMessage,
   extractExternalOpenUrlFromPreviewMessage,
   extractInlineTextCommitFromPreviewMessage,
+  extractSurfaceModeFromPreviewMessage,
   findHtmlPreviewAnchorTarget,
   HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
   HTML_PREVIEW_MESSAGE_SOURCE,
@@ -260,6 +261,30 @@ describe("htmlPreviewDocument", () => {
     }
   });
 
+  it("injects preview scrollbar styles for the viewport and nested scroll containers", () => {
+    const document = buildControlledHtmlPreviewDocument({
+      html: "<html><body><div style='overflow:auto'><table><tr><td>Wide</td></tr></table></div></body></html>",
+      documentPath: null,
+      instanceToken: "token-scrollbar",
+      isEditable: false,
+      scrollbarTheme: {
+        track: "rgba(15, 23, 42, 0.95)",
+        thumb: "rgba(71, 85, 105, 0.82)",
+        thumbHover: "rgba(100, 116, 139, 0.88)"
+      }
+    });
+
+    expect(document).toContain('data-mdpad-html-preview-scrollbar="true"');
+    expect(document).toContain("--mdpad-preview-scrollbar-track: rgba(15, 23, 42, 0.95);");
+    expect(document).toContain("--mdpad-preview-scrollbar-thumb: rgba(71, 85, 105, 0.82);");
+    expect(document).toContain("--mdpad-preview-scrollbar-thumb-hover: rgba(100, 116, 139, 0.88);");
+    expect(document).toContain("html,\nbody,\n* {");
+    expect(document).toContain("html::-webkit-scrollbar,\nbody::-webkit-scrollbar,\n*::-webkit-scrollbar {");
+    expect(document).toContain(
+      "html::-webkit-scrollbar-button,\nhtml::-webkit-scrollbar-button:single-button,"
+    );
+  });
+
   it("extracts external, inline-text and chart-context preview messages", () => {
     const frameWindow = {} as WindowProxy;
 
@@ -362,6 +387,25 @@ describe("htmlPreviewDocument", () => {
         }
       }
     });
+  });
+
+  it("rejects removed visual-edit surface mode messages", () => {
+    const frameWindow = {} as WindowProxy;
+
+    expect(
+      extractSurfaceModeFromPreviewMessage(
+        {
+          type: "mdpad:html-preview:set-surface-mode",
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "token-surface",
+          mode: "visual-edit",
+          slideTreatment: "auto"
+        },
+        "token-surface",
+        frameWindow,
+        frameWindow
+      )
+    ).toBeNull();
   });
 
   it("rejects svg edit context from preview messages", () => {

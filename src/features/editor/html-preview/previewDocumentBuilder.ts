@@ -1,4 +1,5 @@
 export {
   buildControlledHtmlPreviewDocument,
-  createHtmlPreviewInstanceToken
+  createHtmlPreviewInstanceToken,
+  type HtmlPreviewScrollbarTheme
 } from "../htmlPreviewDocument";

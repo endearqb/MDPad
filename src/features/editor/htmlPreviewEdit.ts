@@ -23,7 +23,6 @@ export interface HtmlInlineTextPatch {
 
 export type HtmlPreviewSurfaceMode =
   | "preview"
-  | "visual-edit"
   | "slide-reading"
   | "slide-present";
 

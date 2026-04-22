@@ -61,11 +61,18 @@ const SUPPORTED_CHART_LIBRARIES = new Set<SupportedChartLibrary>([
   "echarts"
 ]);
 
+export interface HtmlPreviewScrollbarTheme {
+  track: string;
+  thumb: string;
+  thumbHover: string;
+}
+
 interface ControlledHtmlPreviewDocumentOptions {
   html: string;
   documentPath: string | null;
   instanceToken: string;
   isEditable: boolean;
+  scrollbarTheme?: HtmlPreviewScrollbarTheme;
 }
 
 export interface HtmlPreviewClientRect {
@@ -184,6 +191,102 @@ function getPreviewBaseHref(documentPath: string | null): string | null {
     return null;
   }
   return resolveMediaSource("./", documentPath);
+}
+
+function normalizeScrollbarThemeValue(
+  value: string | null | undefined,
+  fallback: string
+): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+function buildPreviewScrollbarStyle(
+  scrollbarTheme?: HtmlPreviewScrollbarTheme
+): string {
+  const track = normalizeScrollbarThemeValue(scrollbarTheme?.track, "transparent");
+  const thumb = normalizeScrollbarThemeValue(
+    scrollbarTheme?.thumb,
+    "rgba(148, 163, 184, 0.48)"
+  );
+  const thumbHover = normalizeScrollbarThemeValue(
+    scrollbarTheme?.thumbHover,
+    "rgba(100, 116, 139, 0.56)"
+  );
+
+  return `<style data-mdpad-html-preview-scrollbar="true">
+:root {
+  --mdpad-preview-scrollbar-track: ${track};
+  --mdpad-preview-scrollbar-thumb: ${thumb};
+  --mdpad-preview-scrollbar-thumb-hover: ${thumbHover};
+}
+
+html,
+body,
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--mdpad-preview-scrollbar-thumb) var(--mdpad-preview-scrollbar-track);
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background: var(--mdpad-preview-scrollbar-thumb);
+  border-radius: 999px;
+  border: 3px solid transparent;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--mdpad-preview-scrollbar-thumb-hover);
+}
+
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-button,
+html::-webkit-scrollbar-button:single-button,
+html::-webkit-scrollbar-button:vertical:decrement,
+html::-webkit-scrollbar-button:vertical:increment,
+html::-webkit-scrollbar-button:horizontal:decrement,
+html::-webkit-scrollbar-button:horizontal:increment,
+body::-webkit-scrollbar-button,
+body::-webkit-scrollbar-button:single-button,
+body::-webkit-scrollbar-button:vertical:decrement,
+body::-webkit-scrollbar-button:vertical:increment,
+body::-webkit-scrollbar-button:horizontal:decrement,
+body::-webkit-scrollbar-button:horizontal:increment,
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button:single-button,
+*::-webkit-scrollbar-button:vertical:decrement,
+*::-webkit-scrollbar-button:vertical:increment,
+*::-webkit-scrollbar-button:horizontal:decrement,
+*::-webkit-scrollbar-button:horizontal:increment {
+  width: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
+  display: none;
+  -webkit-appearance: none;
+}
+</style>`;
 }
 
 export function decodeHtmlPreviewAnchorHash(rawHref: string): string | null {
@@ -4186,13 +4289,16 @@ export function buildControlledHtmlPreviewDocument({
   html,
   documentPath,
   instanceToken,
-  isEditable
+  isEditable,
+  scrollbarTheme
 }: ControlledHtmlPreviewDocumentOptions): string {
   const baseHref = getPreviewBaseHref(documentPath);
   const baseTag = baseHref
     ? `<base href="${escapeHtmlAttribute(baseHref)}">`
     : "";
-  const headContent = `${baseTag}${buildPreviewHostScript(
+  const headContent = `${baseTag}${buildPreviewScrollbarStyle(
+    scrollbarTheme
+  )}${buildPreviewHostScript(
     instanceToken,
     isEditable
   )}`;
@@ -4278,7 +4384,6 @@ function isHtmlPreviewClientRect(value: unknown): value is HtmlPreviewClientRect
 function isHtmlPreviewSurfaceMode(value: unknown): value is HtmlPreviewSurfaceMode {
   return (
     value === "preview" ||
-    value === "visual-edit" ||
     value === "slide-reading" ||
     value === "slide-present"
   );

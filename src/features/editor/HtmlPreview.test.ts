@@ -3,7 +3,7 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAppCopy } from "../../shared/i18n/appI18n";
 
 const { openExternalUrlMock } = vi.hoisted(() => ({
@@ -31,7 +31,6 @@ import {
   HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE
 } from "./htmlPreviewDocument";
 import {
-  HTML_PREVIEW_COMMIT_ELEMENT_PATCH_MESSAGE_TYPE,
   HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
   HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE
 } from "./html-visual/htmlVisualBridge";
@@ -46,6 +45,10 @@ function extractPreviewToken(iframe: HTMLIFrameElement): string {
     throw new Error("Preview token was not embedded in srcdoc.");
   }
   return matched[1];
+}
+
+function extractPreviewSrcDoc(iframe: HTMLIFrameElement): string {
+  return iframe.getAttribute("srcdoc") ?? "";
 }
 
 function renderPreview(props: React.ComponentProps<typeof HtmlPreview>) {
@@ -127,6 +130,10 @@ function dispatchInput(element: HTMLInputElement | HTMLTextAreaElement, value: s
   });
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("HtmlPreview", () => {
   it("renders preview iframe with script-only sandbox and controlled srcdoc", () => {
     const markup = renderToStaticMarkup(
@@ -144,7 +151,7 @@ describe("HtmlPreview", () => {
     expect(markup).toContain("data-mdpad-html-preview-host");
   });
 
-  it("renders the surface toolbar for editable html previews", () => {
+  it("renders the surface toolbar without preview/edit buttons", () => {
     const rendered = renderPreview({
       copy: getAppCopy("en").editor,
       documentPath: null,
@@ -155,9 +162,87 @@ describe("HtmlPreview", () => {
     expect(
       rendered.container.querySelector(".html-preview-toolbar-hover-shell")
     ).toBeInstanceOf(HTMLDivElement);
-    expect(rendered.container.textContent).toContain("Preview");
-    expect(rendered.container.textContent).toContain("Edit");
     expect(rendered.container.textContent).toContain("Auto");
+    expect(rendered.container.textContent).not.toContain("Preview");
+    expect(rendered.container.textContent).not.toContain("Edit");
+    rendered.unmount();
+  });
+
+  it("reads scrollbar theme tokens from the preview shell and injects them into srcdoc", () => {
+    const scrollbarTokens = {
+      "--scrollbar-track": "rgba(15, 23, 42, 0.95)",
+      "--scrollbar-thumb": "rgba(71, 85, 105, 0.82)",
+      "--scrollbar-thumb-hover": "rgba(100, 116, 139, 0.88)"
+    };
+
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      () =>
+        ({
+          getPropertyValue: (name: string) => scrollbarTokens[name as keyof typeof scrollbarTokens] ?? ""
+        }) as CSSStyleDeclaration
+    );
+
+    const rendered = renderPreview({
+      copy: getAppCopy("en").editor,
+      documentPath: null,
+      html: "<div style='overflow:auto;max-width:10rem'><table><tr><td>Wide</td></tr></table></div>",
+      isEditable: false,
+      themeMode: "dark",
+      uiTheme: "classic"
+    });
+
+    const srcDoc = extractPreviewSrcDoc(rendered.iframe);
+    expect(srcDoc).toContain('data-mdpad-html-preview-scrollbar="true"');
+    expect(srcDoc).toContain(scrollbarTokens["--scrollbar-track"]);
+    expect(srcDoc).toContain(scrollbarTokens["--scrollbar-thumb"]);
+    expect(srcDoc).toContain(scrollbarTokens["--scrollbar-thumb-hover"]);
+    rendered.unmount();
+  });
+
+  it("refreshes iframe scrollbar theme tokens when the app theme changes", () => {
+    const scrollbarTokens = {
+      "--scrollbar-track": "rgba(203, 213, 225, 0.84)",
+      "--scrollbar-thumb": "rgba(148, 163, 184, 0.48)",
+      "--scrollbar-thumb-hover": "rgba(100, 116, 139, 0.56)"
+    };
+
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      () =>
+        ({
+          getPropertyValue: (name: string) => scrollbarTokens[name as keyof typeof scrollbarTokens] ?? ""
+        }) as CSSStyleDeclaration
+    );
+
+    const rendered = renderPreview({
+      copy: getAppCopy("en").editor,
+      documentPath: null,
+      html: "<p>Hello</p>",
+      isEditable: false,
+      themeMode: "light",
+      uiTheme: "modern"
+    });
+
+    const initialSrcDoc = extractPreviewSrcDoc(rendered.iframe);
+    expect(initialSrcDoc).toContain(scrollbarTokens["--scrollbar-thumb"]);
+
+    scrollbarTokens["--scrollbar-track"] = "rgba(15, 23, 42, 0.95)";
+    scrollbarTokens["--scrollbar-thumb"] = "rgba(71, 85, 105, 0.82)";
+    scrollbarTokens["--scrollbar-thumb-hover"] = "rgba(100, 116, 139, 0.88)";
+
+    const nextIframe = rendered.rerender({
+      copy: getAppCopy("en").editor,
+      documentPath: null,
+      html: "<p>Hello</p>",
+      isEditable: false,
+      themeMode: "dark",
+      uiTheme: "classic"
+    });
+
+    const nextSrcDoc = extractPreviewSrcDoc(nextIframe);
+    expect(nextSrcDoc).toContain(scrollbarTokens["--scrollbar-track"]);
+    expect(nextSrcDoc).toContain(scrollbarTokens["--scrollbar-thumb"]);
+    expect(nextSrcDoc).toContain(scrollbarTokens["--scrollbar-thumb-hover"]);
+    expect(nextSrcDoc).not.toBe(initialSrcDoc);
     rendered.unmount();
   });
 
@@ -185,7 +270,7 @@ describe("HtmlPreview", () => {
 
     expect(rendered.container.textContent).toContain("Read");
     expect(rendered.container.textContent).toContain("Present");
-    expect(rendered.container.textContent).toContain("Treat as Slides");
+    expect(rendered.container.textContent).toContain("Slides");
     expect(rendered.container.textContent).toContain("Document");
     expect(rendered.container.textContent).toContain("1 / 11");
     rendered.unmount();
@@ -217,42 +302,6 @@ describe("HtmlPreview", () => {
     rendered.unmount();
   });
 
-  it("keeps iframe srcdoc stable for committed visual element patches", () => {
-    const onHtmlChange = vi.fn();
-    const rendered = renderPreview({
-      copy: getAppCopy("en").editor,
-      documentPath: null,
-      html: '<p style="color: red;">Hello</p>',
-      isEditable: true,
-      onHtmlChange
-    });
-
-    const token = extractPreviewToken(rendered.iframe);
-    const initialSrcDoc = rendered.iframe.getAttribute("srcdoc");
-
-    dispatchPreviewMessage(rendered.frameWindow, {
-      type: HTML_PREVIEW_COMMIT_ELEMENT_PATCH_MESSAGE_TYPE,
-      source: HTML_PREVIEW_MESSAGE_SOURCE,
-      token,
-      patch: {
-        kind: "html-element",
-        locator: {
-          root: "body",
-          path: [0]
-        },
-        tagName: "p",
-        style: {
-          color: "#2563eb"
-        }
-      }
-    });
-
-    expect(onHtmlChange).toHaveBeenCalledTimes(1);
-    expect(onHtmlChange.mock.calls[0]?.[0]).toContain('color: #2563eb');
-    expect(rendered.iframe.getAttribute("srcdoc")).toBe(initialSrcDoc);
-    rendered.unmount();
-  });
-
   it("rebuilds iframe srcdoc when html source changes externally", () => {
     const props = {
       copy: getAppCopy("en").editor,
@@ -274,29 +323,111 @@ describe("HtmlPreview", () => {
     rendered.unmount();
   });
 
-  it("posts surface mode updates to the iframe when switching into visual edit", () => {
+  it("toggles read mode back to preview when clicking the active read button", () => {
     const rendered = renderPreview({
       copy: getAppCopy("en").editor,
       documentPath: null,
-      html: "<p>Hello</p>",
-      isEditable: true,
+      html: "<section>Slide 1</section><section>Slide 2</section>",
+      isEditable: false,
       onHtmlChange: vi.fn()
     });
 
-    const editButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Edit"
+    const token = extractPreviewToken(rendered.iframe);
+    dispatchPreviewMessage(rendered.frameWindow, {
+      type: HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
+      source: HTML_PREVIEW_MESSAGE_SOURCE,
+      token,
+      state: {
+        isSlideDocument: true,
+        kind: "generic",
+        totalSlides: 2,
+        currentSlideIndex: 0
+      }
+    });
+    vi.mocked(rendered.frameWindow.postMessage).mockClear();
+
+    const readButton = Array.from(rendered.container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Read"
     );
-    expect(editButton).toBeInstanceOf(HTMLButtonElement);
+    expect(readButton).toBeInstanceOf(HTMLButtonElement);
 
     act(() => {
-      (editButton as HTMLButtonElement).click();
+      (readButton as HTMLButtonElement).click();
     });
 
-    expect(rendered.frameWindow.postMessage).toHaveBeenCalledWith(
+    expect(rendered.frameWindow.postMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
         source: HTML_PREVIEW_MESSAGE_SOURCE,
-        mode: "visual-edit"
+        mode: "slide-reading"
+      }),
+      "*"
+    );
+
+    act(() => {
+      (readButton as HTMLButtonElement).click();
+    });
+
+    expect(rendered.frameWindow.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
+        source: HTML_PREVIEW_MESSAGE_SOURCE,
+        mode: "preview"
+      }),
+      "*"
+    );
+    rendered.unmount();
+  });
+
+  it("toggles present mode back to preview when clicking the active present button", () => {
+    const rendered = renderPreview({
+      copy: getAppCopy("en").editor,
+      documentPath: null,
+      html: "<section>Slide 1</section><section>Slide 2</section>",
+      isEditable: false
+    });
+
+    const token = extractPreviewToken(rendered.iframe);
+    dispatchPreviewMessage(rendered.frameWindow, {
+      type: HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
+      source: HTML_PREVIEW_MESSAGE_SOURCE,
+      token,
+      state: {
+        isSlideDocument: true,
+        kind: "generic",
+        totalSlides: 2,
+        currentSlideIndex: 0
+      }
+    });
+    vi.mocked(rendered.frameWindow.postMessage).mockClear();
+
+    const presentButton = Array.from(rendered.container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Present"
+    );
+    expect(presentButton).toBeInstanceOf(HTMLButtonElement);
+
+    act(() => {
+      (presentButton as HTMLButtonElement).click();
+    });
+
+    expect(rendered.frameWindow.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
+        source: HTML_PREVIEW_MESSAGE_SOURCE,
+        mode: "slide-present"
+      }),
+      "*"
+    );
+
+    act(() => {
+      (presentButton as HTMLButtonElement).click();
+    });
+
+    expect(rendered.frameWindow.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
+        source: HTML_PREVIEW_MESSAGE_SOURCE,
+        mode: "preview"
       }),
       "*"
     );

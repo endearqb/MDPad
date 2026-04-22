@@ -1,3 +1,70 @@
+# 编写 updatenote 并推送 GitHub main（2026-04-22 23:00）
+
+## Plan
+- [x] 盘点当前 `main` 工作区待提交的 HTML preview / chart editor 相关改动，并整理成新的 `update/` 说明文档
+- [x] 按仓库规范新增 `update/updatenote_2026042223.md`
+- [x] 运行本轮推送前的主链验证
+- [ ] 提交当前工作区改动并推送到 `origin/main`
+- [x] 在本节补齐 Review
+
+## Progress Notes
+- 当前分支仍为 `main`，本轮准备一起入库的是今天新增的 HTML 预览工具栏收口、滚动条样式统一、通用可视编辑下线，以及图表数据编辑菜单化改造。
+- 已新增 [update/updatenote_2026042223.md](/D:/MyProject/MDPad/update/updatenote_2026042223.md)，内容聚焦这轮晚间的交互收口，不重复展开更早一轮 slide/runtime chart 的背景。
+- `git diff -- src-tauri/Cargo.toml src-tauri/tauri.conf.json` 当前为空，说明这两处虽然仍显示在工作区状态里，但没有可提交的实际文本差异；本轮提交会继续聚焦编辑器与文档层改动。
+- 推送前验证已完成：`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/HtmlPreview.test.ts` 通过（3 个文件 / 39 个测试），`pnpm exec tsc --noEmit` 通过。
+
+## Review
+- 结果：新的 [update/updatenote_2026042223.md](/D:/MyProject/MDPad/update/updatenote_2026042223.md) 已补齐，覆盖本轮 HTML 预览工具栏收口、滚动条统一和图表数据编辑菜单化改造。
+- 结果：本轮推送前验证已完成，主链相关 `HtmlPreview` / `htmlPreviewDocument` / `htmlPreviewEditors` 回归与 TypeScript 类型检查均已通过。
+- 待补充：提交 SHA 与 `origin/main` 推送结果会在完成后回填到本节。
+
+# 移除 HTML 工具栏中的“预览/编辑”并下线通用可视编辑（2026-04-22）
+
+## Plan
+- [x] 从 HTML 预览顶部工具栏移除“预览”“编辑”按钮，并将“按幻灯片处理”文案改为“幻灯片”
+- [x] 收缩 `HtmlPreviewSurfaceMode` 与 `HtmlPreview` 状态机，保留普通预览、阅读、演示和现有图表/文字编辑链路
+- [x] 下线 `visual-edit` 对应的通用 HTML 元素可视编辑入口、消息消费和无消费者组件/桥接文件
+- [x] 更新 `HtmlPreview` / `htmlPreviewDocument` / i18n 相关测试与文案，并运行定向 `vitest` 与 `tsc --noEmit`
+- [x] 在本节补齐 Progress Notes 与 Review
+
+## Progress Notes
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已移除顶部工具栏中的 `预览 / 编辑` 两个按钮；当前只保留 `阅读 / 演示 / 自动 / 幻灯片 / 文档 / 页码`。普通预览仍是默认内部状态，但不再暴露单独按钮。
+- 同一组件里已删除 `visual-edit` 相关的消息消费、选中状态、patch 提交和右侧 inspector 渲染；双击文字编辑、图表弹窗编辑、只读拦截和 slide state 同步都保留原链路。
+- `阅读` 与 `演示` 现在支持再次点击当前激活按钮回到普通预览，避免移除“预览”按钮后只能依赖 `Esc` 才能退出。
+- [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 已把 `HtmlPreviewSurfaceMode` 收缩为 `preview | slide-reading | slide-present`；[src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 的 surface mode 解析也同步拒绝 `visual-edit`。
+- 已删除无消费者的通用可视编辑 UI 文件：`html-visual/HtmlVisualEditor.tsx`、`HtmlElementInspector.tsx`、`HtmlSelectionOverlay.tsx`、`htmlElementPatch.ts`、`htmlElementLocator.ts`；[src/styles.css](/D:/MyProject/MDPad/src/styles.css) 里对应的 inline inspector 布局样式也已移除。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 已移除 HTML preview 文案里的 `surfaceModePreview` / `surfaceModeEdit`，并将 `treatAsSlides` 改为英文 `Slides`、中文 `幻灯片`。
+- [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 已把旧的 `Preview/Edit/visual-edit` 断言收口为“工具栏不再出现这两个按钮”“阅读/演示可点击返回预览”；[src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 新增了“拒绝 visual-edit surface mode 消息”的回归。
+
+## Review
+- 结果：HTML 预览顶部不再出现“预览”“编辑”，用户只能在普通预览、阅读和演示之间切换；其中阅读/演示都可以再次点击返回普通预览。
+- 结果：`编辑` 按钮对应的通用 HTML 元素可视编辑链路已下线，但双击文字编辑和图表编辑弹窗未受影响，仍可继续使用。
+- 结果：“按幻灯片处理”已改为“幻灯片”，英文界面同步显示为 `Slides`。
+- 验证：`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/HtmlPreview.test.ts` 通过（2 个文件 / 34 个测试）；`pnpm exec tsc --noEmit` 通过。
+- 说明：定向测试里仍会看到既有的 jsdom `HTMLCanvasElement.toDataURL()` 非实现告警，以及两条旧错误分支测试里的 `console.error` 输出；这些是已有 chart/inline-text 用例行为，不是本轮改动新增的问题。
+
+# 统一 HTML 预览滚动条与 Markdown 滚动条（2026-04-22）
+
+## Plan
+- [x] 将当前任务的实现范围写入任务记录，并锁定改动入口为 `App.tsx`、`HtmlPreview.tsx`、`htmlPreviewDocument.ts` 与对应测试
+- [x] 在 `HtmlPreview` 中采集当前主题解析后的滚动条 token，并传入 iframe `srcDoc` 构建链路
+- [x] 在 `htmlPreviewDocument` 中注入 preview-only 滚动条样式，使 HTML 预览窗口与内部滚动容器统一跟随主应用滚动条视觉
+- [x] 更新 `HtmlPreview` / `htmlPreviewDocument` 测试，并运行定向 `vitest` 与 `tsc --noEmit` 验证
+- [x] 在本节补齐 Progress Notes 与 Review
+
+## Progress Notes
+- [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 已把 `themeMode` 与 `uiTheme` 传给 [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx)，让 HTML 预览在宿主主题切换时能重新解析滚动条 token，而不是继续使用 iframe 内的默认浏览器滚动条。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已新增 `.html-preview-shell` ref，并在主题变化时通过 `getComputedStyle(...)` 读取 `--scrollbar-track`、`--scrollbar-thumb`、`--scrollbar-thumb-hover`；读取结果会进入 `srcDoc` 构建依赖，触发 iframe 文档刷新。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已扩展 `buildControlledHtmlPreviewDocument(...)` 的 `scrollbarTheme` 选项，并注入 `data-mdpad-html-preview-scrollbar="true"` 的 preview-only `<style>`；当前覆盖了 `html/body` 主视口以及任意内部滚动容器的 `scrollbar-width`、`scrollbar-color`、`::-webkit-scrollbar*`、corner 和 button 隐藏规则。
+- [src/features/editor/HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts) 已新增两条回归：一条锁定 `HtmlPreview` 会从宿主壳层读取 token 并写入 `srcdoc`，另一条锁定主题从 `light/modern` 切到 `dark/classic` 后 iframe 文档会刷新为新的滚动条 token。
+- [src/features/editor/htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts) 已新增滚动条样式注入断言，明确要求生成文档同时包含 viewport 滚动条和通用 `*::-webkit-scrollbar*` 规则，避免后续只修主窗口、不修表格容器。
+
+## Review
+- 结果：HTML 预览现在不再依赖 iframe 默认白色滚动条；主窗口纵向滚动条和 HTML 内部宽表格等滚动容器，都会跟随当前宿主主题解析出的滚动条 thumb/hover 配色。
+- 结果：这次没有改用户 HTML 源内容，也没有去动 Markdown 侧现有 `.editor-surface` / `.tableWrapper` 样式；HTML 预览只是复用了主应用已经产出的 CSS 变量，保持主题来源单一。
+- 验证：`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/HtmlPreview.test.ts` 通过（2 个文件 / 33 个测试）；`pnpm exec tsc --noEmit` 通过。
+- 说明：定向测试里保留了既有的 jsdom `HTMLCanvasElement.toDataURL()` 非实现告警，来自 chart 相关旧用例，不是这轮滚动条改动引入的新失败。
+
 # 编写 updatenote 并推送 GitHub main（2026-04-22 17:00）
 
 ## Plan
@@ -1410,3 +1477,26 @@
 - 结果：`.editorconfig` 与 `.gitattributes` 现在都达到适合提交到仓库的状态，既覆盖了当前项目真实存在的文件类型，也把这次 `git pull` 暴露出的行尾策略缺口补齐到了仓库级。
 - 验证：重新执行 `git check-attr text eol --` 后，`.editorconfig`、`.gitattributes`、`package.json`、`pnpm-lock.yaml`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`README.md` 均稳定命中 `eol=lf`，`src-tauri/windows/add-user-path.ps1`、`src-tauri/windows/remove-user-path.ps1` 与 `src-tauri/windows/nsis-hooks.nsh` 命中 `eol=crlf`。
 - 说明：这次只修正规则文件，没有批量重写现有工作树文件的换行；因此提交这两个文件本身不会制造一次“大规模格式化提交”，后续文件会在重新 checkout 或按新规则保存时逐步收敛。
+
+# 图表数据编辑改为“混合模式”菜单交互（2026-04-22）
+
+## Plan
+- [x] 重构 `ChartDataEditor` 的标签/系列头部交互，改为点击名称打开结构菜单并支持就地编辑
+- [x] 移除旧的拖拽柄与悬浮删除按钮，保留数值网格直接编辑
+- [x] 调整 `styles.css` 与 `appI18n.ts`，补齐菜单态视觉与文案/可访问性
+- [x] 更新 `htmlPreviewEditors.test.ts` 覆盖菜单、边界禁用、就地编辑、移动和删除行为
+- [x] 运行定向验证并回填本节 Progress Notes / Review
+
+## Progress Notes
+- [src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 已把标签列头和系列行头从“拖拽柄 + 输入框 + 悬浮删除”重构为单一结构按钮；点击按钮后会在当前 header/row head 下方打开局部菜单，只暴露 `编辑`、方向移动和 `删除` 四类动作。
+- 同一组件现已改为单一 `activeMenu` + 单一 `activeEdit` 状态机：任一时刻只允许一个结构菜单或一个就地编辑输入框存在；名称编辑改成原地输入，支持 `Enter` 提交、`Escape` 取消、失焦提交。
+- 新增标签/系列后会直接进入该项的就地重命名态，但数值单元格矩阵、数值校验、`Apply` patch 写回和 chart preview runtime 链路都保持原实现，没有改 `HtmlChartEditRequest` / `HtmlChartPatch` 契约。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已移除 chart 数据表里的拖拽柄与悬浮 `×` 删除视觉，并新增结构按钮、局部菜单、菜单图标和 classic theme 圆角适配；整体变成“结构轻、数据重”的矩阵样式。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 已补齐标签/系列菜单、编辑、左右/上下移动及输入框 aria 文案，并删除旧的拖拽文案字段。
+- [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已把旧拖拽回归改成菜单交互回归，覆盖新增后重命名、菜单边界禁用、`Escape` 取消、`blur`/`Enter` 提交、移动与删除后的 patch 正确性。
+
+## Review
+- 结果：图表数据编辑现在保留了数值网格的录入效率，但把标签/系列的结构操作从表头噪声中抽离出来，视觉焦点明显更干净；用户面对的是“名称按钮 + 菜单”，而不是一排长期暴露的拖拽柄、输入框和删除按钮。
+- 结果：结构操作已经统一为菜单语义。标签支持 `编辑 / 左移 / 右移 / 删除`，系列支持 `编辑 / 上移 / 下移 / 删除`，边界禁用规则和“仅剩一个时不可删”都已落地。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts` 通过（3 个文件 / 35 个测试）；`pnpm build` 通过。
+- 说明：工作区原本就有用户现成未提交改动 `src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json`；本轮只增量修改 chart editor、样式、i18n、测试和本节任务记录，没有回退这些既有变更。

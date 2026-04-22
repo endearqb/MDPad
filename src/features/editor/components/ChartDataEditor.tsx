@@ -1,4 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Ellipsis,
+  PencilLine,
+  Trash2
+} from "lucide-react";
 import type { EditorCopy } from "../../../shared/i18n/appI18n";
 import {
   buildChartRuntimeConfig,
@@ -25,7 +34,7 @@ interface EditableSeries {
   type?: string;
 }
 
-interface DragState {
+interface StructureTarget {
   kind: "label" | "series";
   index: number;
 }
@@ -40,6 +49,17 @@ const PREVIEW_SLICE_COLORS = [
 ];
 
 const CHART_PREVIEW_UPDATE_MESSAGE_TYPE = "mdpad:chart-preview:update";
+
+function isSameStructureTarget(
+  left: StructureTarget | null,
+  right: StructureTarget | null
+): boolean {
+  return left?.kind === right?.kind && left?.index === right?.index;
+}
+
+function getStructureTargetId(target: StructureTarget): string {
+  return `${target.kind}-${target.index}`;
+}
 
 function buildEditableSeries(series: MdpadChartSeries[]): EditableSeries[] {
   return series.map((entry) => ({
@@ -476,31 +496,31 @@ function ChartPreviewSurface({
   return <ChartSnapshotPreviewFrame copy={copy} request={request} />;
 }
 
-function DragHandle({
-  label,
-  onDragEnd,
-  onDragStart,
+function StructureMenuItem({
+  children,
+  disabled = false,
+  icon,
+  onClick,
   testId
 }: {
-  label: string;
-  onDragEnd: () => void;
-  onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
+  children: string;
+  disabled?: boolean;
+  icon: React.ReactNode;
+  onClick: () => void;
   testId: string;
 }) {
   return (
     <button
-      aria-label={label}
-      className="html-preview-chart-drag-handle"
-      data-chart-drag-handle={testId}
-      draggable
-      onDragEnd={onDragEnd}
-      onDragStart={onDragStart}
-      title={label}
+      className="editor-context-menu-item html-preview-chart-structure-menu-item"
+      data-chart-structure-menu-item={testId}
+      disabled={disabled}
+      onClick={onClick}
       type="button"
     >
-      <span aria-hidden="true" className="html-preview-chart-drag-handle-glyph">
-        ⋮⋮
+      <span aria-hidden="true" className="html-preview-chart-structure-menu-icon">
+        {icon}
       </span>
+      <span>{children}</span>
     </button>
   );
 }
@@ -523,21 +543,80 @@ export default function ChartDataEditor({
   const [series, setSeries] = useState<EditableSeries[]>(
     buildEditableSeries(normalizedRequestModel.series)
   );
-  const [dragState, setDragState] = useState<DragState | null>(null);
-  const [dragOverLabelIndex, setDragOverLabelIndex] = useState<number | null>(null);
-  const [dragOverSeriesIndex, setDragOverSeriesIndex] = useState<number | null>(null);
+  const [activeMenu, setActiveMenu] = useState<StructureTarget | null>(null);
+  const [activeEdit, setActiveEdit] = useState<StructureTarget | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const activeEditInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const nextModel = normalizeChartModel(request.model);
     setSeriesColors(normalizeChartPresentation(nextModel).seriesColors);
     setLabels(nextModel.labels);
     setSeries(buildEditableSeries(nextModel.series));
-    setDragState(null);
-    setDragOverLabelIndex(null);
-    setDragOverSeriesIndex(null);
+    setActiveMenu(null);
+    setActiveEdit(null);
+    setEditDraft("");
     setError(null);
   }, [request]);
+
+  useEffect(() => {
+    if (!activeMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          `[data-chart-structure-root="${getStructureTargetId(activeMenu)}"]`
+        )
+      ) {
+        return;
+      }
+
+      setActiveMenu(null);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [activeMenu]);
+
+  useEffect(() => {
+    if (!activeEdit) {
+      return;
+    }
+
+    activeEditInputRef.current?.focus();
+    activeEditInputRef.current?.select();
+  }, [activeEdit]);
+
+  useEffect(() => {
+    if (!activeEdit && !activeMenu) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (activeEdit) {
+        setActiveEdit(null);
+        setEditDraft("");
+        return;
+      }
+
+      setActiveMenu(null);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeEdit, activeMenu]);
 
   const hasEditableData = useMemo(
     () => labels.length > 0 && series.length > 0,
@@ -549,17 +628,67 @@ export default function ChartDataEditor({
     [labels, request, series, seriesColors]
   );
 
+  const startEditing = useCallback(
+    (target: StructureTarget) => {
+      setActiveMenu(null);
+      setActiveEdit(target);
+      setEditDraft(
+        target.kind === "label" ? labels[target.index] ?? "" : series[target.index]?.name ?? ""
+      );
+    },
+    [labels, series]
+  );
+
+  const commitEdit = useCallback(() => {
+    if (!activeEdit) {
+      return;
+    }
+
+    if (activeEdit.kind === "label") {
+      setLabels((current) =>
+        current.map((entry, index) => (index === activeEdit.index ? editDraft : entry))
+      );
+    } else {
+      setSeries((current) =>
+        current.map((entry, index) =>
+          index === activeEdit.index
+            ? {
+                ...entry,
+                name: editDraft
+              }
+            : entry
+        )
+      );
+    }
+
+    setActiveEdit(null);
+    setEditDraft("");
+  }, [activeEdit, editDraft]);
+
+  const cancelEdit = useCallback(() => {
+    setActiveEdit(null);
+    setEditDraft("");
+  }, []);
+
   const addLabel = () => {
-    setLabels((current) => [
-      ...current,
-      `${copy.htmlPreview.chartLabelFallback} ${current.length + 1}`
-    ]);
+    let nextIndex = -1;
+    let nextLabel = "";
+    setLabels((current) => {
+      nextIndex = current.length;
+      nextLabel = `${copy.htmlPreview.chartLabelFallback} ${current.length + 1}`;
+      return [...current, nextLabel];
+    });
     setSeries((current) =>
       current.map((entry) => ({
         ...entry,
         data: [...entry.data, ""]
       }))
     );
+    if (nextIndex >= 0) {
+      setActiveMenu(null);
+      setActiveEdit({ kind: "label", index: nextIndex });
+      setEditDraft(nextLabel);
+    }
   };
 
   const removeLabel = (columnIndex: number) => {
@@ -580,105 +709,67 @@ export default function ChartDataEditor({
         data: moveItem(entry.data, fromIndex, toIndex)
       }))
     );
+    setActiveMenu(null);
   };
 
   const addSeries = () => {
+    let nextIndex = -1;
+    let nextName = "";
     setSeries((current) => [
       ...current,
-      {
-        name: `${copy.htmlPreview.chartSeriesFallback} ${current.length + 1}`,
-        data: labels.map(() => ""),
-        type: chartType
-      }
+      (() => {
+        nextIndex = current.length;
+        nextName = `${copy.htmlPreview.chartSeriesFallback} ${current.length + 1}`;
+        return {
+          name: nextName,
+          data: labels.map(() => ""),
+          type: chartType
+        };
+      })()
     ]);
     setSeriesColors((current) => [
       ...current,
       PREVIEW_SLICE_COLORS[current.length % PREVIEW_SLICE_COLORS.length]
     ]);
+    if (nextIndex >= 0) {
+      setActiveMenu(null);
+      setActiveEdit({ kind: "series", index: nextIndex });
+      setEditDraft(nextName);
+    }
   };
 
   const removeSeries = (rowIndex: number) => {
     setSeries((current) => current.filter((_, index) => index !== rowIndex));
     setSeriesColors((current) => current.filter((_, index) => index !== rowIndex));
+    setActiveMenu(null);
   };
 
   const moveSeries = (fromIndex: number, toIndex: number) => {
     setSeries((current) => moveItem(current, fromIndex, toIndex));
     setSeriesColors((current) => moveItem(current, fromIndex, toIndex));
+    setActiveMenu(null);
   };
 
-  const clearDragState = useCallback(() => {
-    setDragState(null);
-    setDragOverLabelIndex(null);
-    setDragOverSeriesIndex(null);
+  const toggleMenu = useCallback((target: StructureTarget) => {
+    setActiveEdit(null);
+    setEditDraft("");
+    setActiveMenu((current) => (isSameStructureTarget(current, target) ? null : target));
   }, []);
 
-  const handleLabelDragStart = useCallback(
-    (labelIndex: number) => (event: React.DragEvent<HTMLElement>) => {
-      setDragState({ kind: "label", index: labelIndex });
-      setDragOverLabelIndex(labelIndex);
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", `label:${labelIndex}`);
-    },
-    []
-  );
-
-  const handleLabelDragOver = useCallback(
-    (labelIndex: number) => (event: React.DragEvent<HTMLElement>) => {
-      if (dragState?.kind !== "label") {
+  const handleEditInputKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitEdit();
         return;
       }
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      setDragOverLabelIndex(labelIndex);
-    },
-    [dragState]
-  );
 
-  const handleLabelDrop = useCallback(
-    (labelIndex: number) => (event: React.DragEvent<HTMLElement>) => {
-      if (dragState?.kind !== "label") {
-        return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelEdit();
       }
-      event.preventDefault();
-      moveLabel(dragState.index, labelIndex);
-      clearDragState();
     },
-    [clearDragState, dragState]
-  );
-
-  const handleSeriesDragStart = useCallback(
-    (seriesIndex: number) => (event: React.DragEvent<HTMLElement>) => {
-      setDragState({ kind: "series", index: seriesIndex });
-      setDragOverSeriesIndex(seriesIndex);
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", `series:${seriesIndex}`);
-    },
-    []
-  );
-
-  const handleSeriesDragOver = useCallback(
-    (seriesIndex: number) => (event: React.DragEvent<HTMLElement>) => {
-      if (dragState?.kind !== "series") {
-        return;
-      }
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      setDragOverSeriesIndex(seriesIndex);
-    },
-    [dragState]
-  );
-
-  const handleSeriesDrop = useCallback(
-    (seriesIndex: number) => (event: React.DragEvent<HTMLElement>) => {
-      if (dragState?.kind !== "series") {
-        return;
-      }
-      event.preventDefault();
-      moveSeries(dragState.index, seriesIndex);
-      clearDragState();
-    },
-    [clearDragState, dragState]
+    [cancelEdit, commitEdit]
   );
 
   const handleApply = () => {
@@ -793,132 +884,202 @@ export default function ChartDataEditor({
                       <th className="html-preview-chart-matrix-corner" scope="col">
                         {copy.htmlPreview.labelsRow}
                       </th>
-                      {labels.map((label, columnIndex) => (
-                        <th
-                          aria-grabbed={dragState?.kind === "label" && dragState.index === columnIndex}
-                          className={
-                            dragOverLabelIndex === columnIndex && dragState?.kind === "label"
-                              ? "is-drag-target"
-                              : undefined
-                          }
-                          data-chart-label-index={columnIndex}
-                          key={`label-${columnIndex}`}
-                          onDragOver={handleLabelDragOver(columnIndex)}
-                          onDrop={handleLabelDrop(columnIndex)}
-                          scope="col"
-                        >
-                          <div className="html-preview-chart-header-cell">
-                            <DragHandle
-                              label={copy.htmlPreview.chartDragLabelHandle}
-                              onDragEnd={clearDragState}
-                              onDragStart={handleLabelDragStart(columnIndex)}
-                              testId={`label-${columnIndex}`}
-                            />
-                            <input
-                              className="html-preview-input html-preview-chart-grid-input html-preview-chart-header-input"
-                              onChange={(event) =>
-                                setLabels((current) =>
-                                  current.map((entry, index) =>
-                                    index === columnIndex ? event.target.value : entry
-                                  )
-                                )
-                              }
-                              type="text"
-                              value={label}
-                            />
-                            <button
-                              className="html-preview-chart-grid-delete"
-                              disabled={labels.length <= 1}
-                              onClick={() => removeLabel(columnIndex)}
-                              aria-label={copy.htmlPreview.chartRemoveLabel}
-                              type="button"
+                      {labels.map((label, columnIndex) => {
+                        const target = { kind: "label" as const, index: columnIndex };
+                        const isEditing = isSameStructureTarget(activeEdit, target);
+                        const isMenuOpen = isSameStructureTarget(activeMenu, target);
+
+                        return (
+                          <th data-chart-label-index={columnIndex} key={`label-${columnIndex}`} scope="col">
+                            <div
+                              className="html-preview-chart-header-cell html-preview-chart-structure-root"
+                              data-chart-structure-root={getStructureTargetId(target)}
                             >
-                              ×
-                            </button>
-                          </div>
-                        </th>
-                      ))}
+                              {isEditing ? (
+                                <input
+                                  aria-label={copy.htmlPreview.chartLabelNameInput}
+                                  className="html-preview-input html-preview-chart-grid-input html-preview-chart-header-input"
+                                  data-chart-structure-input="label"
+                                  onBlur={commitEdit}
+                                  onChange={(event) => setEditDraft(event.target.value)}
+                                  onKeyDown={handleEditInputKeyDown}
+                                  ref={activeEditInputRef}
+                                  type="text"
+                                  value={editDraft}
+                                />
+                              ) : (
+                                <button
+                                  aria-expanded={isMenuOpen}
+                                  aria-haspopup="menu"
+                                  aria-label={copy.htmlPreview.chartLabelActions}
+                                  className="html-preview-chart-structure-trigger"
+                                  data-chart-structure-trigger={`label-${columnIndex}`}
+                                  onClick={() => toggleMenu(target)}
+                                  type="button"
+                                >
+                                  <span className="html-preview-chart-structure-trigger-label">
+                                    {label.trim() || `${copy.htmlPreview.chartLabelFallback} ${columnIndex + 1}`}
+                                  </span>
+                                  <Ellipsis aria-hidden="true" className="html-preview-chart-structure-trigger-glyph" />
+                                </button>
+                              )}
+
+                              {isMenuOpen ? (
+                                <div
+                                  className="editor-context-menu html-preview-chart-structure-menu"
+                                  data-chart-structure-menu="label"
+                                  role="menu"
+                                >
+                                  <StructureMenuItem
+                                    icon={<PencilLine size={14} />}
+                                    onClick={() => startEditing(target)}
+                                    testId={`label-${columnIndex}-edit`}
+                                  >
+                                    {copy.htmlPreview.chartEditLabel}
+                                  </StructureMenuItem>
+                                  <StructureMenuItem
+                                    disabled={columnIndex === 0}
+                                    icon={<ArrowLeft size={14} />}
+                                    onClick={() => moveLabel(columnIndex, columnIndex - 1)}
+                                    testId={`label-${columnIndex}-left`}
+                                  >
+                                    {copy.htmlPreview.chartMoveLabelLeft}
+                                  </StructureMenuItem>
+                                  <StructureMenuItem
+                                    disabled={columnIndex === labels.length - 1}
+                                    icon={<ArrowRight size={14} />}
+                                    onClick={() => moveLabel(columnIndex, columnIndex + 1)}
+                                    testId={`label-${columnIndex}-right`}
+                                  >
+                                    {copy.htmlPreview.chartMoveLabelRight}
+                                  </StructureMenuItem>
+                                  <StructureMenuItem
+                                    disabled={labels.length <= 1}
+                                    icon={<Trash2 size={14} />}
+                                    onClick={() => removeLabel(columnIndex)}
+                                    testId={`label-${columnIndex}-remove`}
+                                  >
+                                    {copy.htmlPreview.chartRemoveLabel}
+                                  </StructureMenuItem>
+                                </div>
+                              ) : null}
+                            </div>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
-                    {series.map((entry, rowIndex) => (
-                      <tr key={`series-${rowIndex}`}>
-                        <th
-                          aria-grabbed={dragState?.kind === "series" && dragState.index === rowIndex}
-                          className={
-                            dragOverSeriesIndex === rowIndex && dragState?.kind === "series"
-                              ? "is-drag-target"
-                              : undefined
-                          }
-                          data-chart-series-index={rowIndex}
-                          onDragOver={handleSeriesDragOver(rowIndex)}
-                          onDrop={handleSeriesDrop(rowIndex)}
-                          scope="row"
-                        >
-                          <div className="html-preview-chart-series-meta">
-                            <DragHandle
-                              label={copy.htmlPreview.chartDragSeriesHandle}
-                              onDragEnd={clearDragState}
-                              onDragStart={handleSeriesDragStart(rowIndex)}
-                              testId={`series-${rowIndex}`}
-                            />
-                            <input
-                              className="html-preview-input html-preview-chart-grid-input html-preview-chart-header-input"
-                              onChange={(event) =>
-                                setSeries((current) =>
-                                  current.map((seriesEntry, index) =>
-                                    index === rowIndex
-                                      ? {
-                                          ...seriesEntry,
-                                          name: event.target.value
-                                        }
-                                      : seriesEntry
-                                  )
-                                )
-                              }
-                              type="text"
-                              value={entry.name}
-                            />
-                            <button
-                              className="html-preview-chart-grid-delete"
-                              disabled={series.length <= 1}
-                              onClick={() => removeSeries(rowIndex)}
-                              aria-label={copy.htmlPreview.chartRemoveSeries}
-                              type="button"
+                    {series.map((entry, rowIndex) => {
+                      const target = { kind: "series" as const, index: rowIndex };
+                      const isEditing = isSameStructureTarget(activeEdit, target);
+                      const isMenuOpen = isSameStructureTarget(activeMenu, target);
+
+                      return (
+                        <tr key={`series-${rowIndex}`}>
+                          <th data-chart-series-index={rowIndex} scope="row">
+                            <div
+                              className="html-preview-chart-series-meta html-preview-chart-structure-root"
+                              data-chart-structure-root={getStructureTargetId(target)}
                             >
-                              ×
-                            </button>
-                          </div>
-                        </th>
-                        {entry.data.map((value, columnIndex) => (
-                          <td key={`series-${rowIndex}-value-${columnIndex}`}>
-                            <input
-                              className="html-preview-input html-preview-chart-grid-input html-preview-chart-value-input"
-                              data-chart-value="true"
-                              inputMode="decimal"
-                              onChange={(event) =>
-                                setSeries((current) =>
-                                  current.map((seriesEntry, seriesIndex) =>
-                                    seriesIndex === rowIndex
-                                      ? {
-                                          ...seriesEntry,
-                                          data: seriesEntry.data.map((cell, dataIndex) =>
-                                            dataIndex === columnIndex
-                                              ? event.target.value
-                                              : cell
-                                          )
-                                        }
-                                      : seriesEntry
+                              {isEditing ? (
+                                <input
+                                  aria-label={copy.htmlPreview.chartSeriesNameInput}
+                                  className="html-preview-input html-preview-chart-grid-input html-preview-chart-header-input"
+                                  data-chart-structure-input="series"
+                                  onBlur={commitEdit}
+                                  onChange={(event) => setEditDraft(event.target.value)}
+                                  onKeyDown={handleEditInputKeyDown}
+                                  ref={activeEditInputRef}
+                                  type="text"
+                                  value={editDraft}
+                                />
+                              ) : (
+                                <button
+                                  aria-expanded={isMenuOpen}
+                                  aria-haspopup="menu"
+                                  aria-label={copy.htmlPreview.chartSeriesActions}
+                                  className="html-preview-chart-structure-trigger"
+                                  data-chart-structure-trigger={`series-${rowIndex}`}
+                                  onClick={() => toggleMenu(target)}
+                                  type="button"
+                                >
+                                  <span className="html-preview-chart-structure-trigger-label">
+                                    {entry.name.trim() || `${copy.htmlPreview.chartSeriesFallback} ${rowIndex + 1}`}
+                                  </span>
+                                  <Ellipsis aria-hidden="true" className="html-preview-chart-structure-trigger-glyph" />
+                                </button>
+                              )}
+
+                              {isMenuOpen ? (
+                                <div
+                                  className="editor-context-menu html-preview-chart-structure-menu"
+                                  data-chart-structure-menu="series"
+                                  role="menu"
+                                >
+                                  <StructureMenuItem
+                                    icon={<PencilLine size={14} />}
+                                    onClick={() => startEditing(target)}
+                                    testId={`series-${rowIndex}-edit`}
+                                  >
+                                    {copy.htmlPreview.chartEditSeries}
+                                  </StructureMenuItem>
+                                  <StructureMenuItem
+                                    disabled={rowIndex === 0}
+                                    icon={<ArrowUp size={14} />}
+                                    onClick={() => moveSeries(rowIndex, rowIndex - 1)}
+                                    testId={`series-${rowIndex}-up`}
+                                  >
+                                    {copy.htmlPreview.chartMoveSeriesUp}
+                                  </StructureMenuItem>
+                                  <StructureMenuItem
+                                    disabled={rowIndex === series.length - 1}
+                                    icon={<ArrowDown size={14} />}
+                                    onClick={() => moveSeries(rowIndex, rowIndex + 1)}
+                                    testId={`series-${rowIndex}-down`}
+                                  >
+                                    {copy.htmlPreview.chartMoveSeriesDown}
+                                  </StructureMenuItem>
+                                  <StructureMenuItem
+                                    disabled={series.length <= 1}
+                                    icon={<Trash2 size={14} />}
+                                    onClick={() => removeSeries(rowIndex)}
+                                    testId={`series-${rowIndex}-remove`}
+                                  >
+                                    {copy.htmlPreview.chartRemoveSeries}
+                                  </StructureMenuItem>
+                                </div>
+                              ) : null}
+                            </div>
+                          </th>
+                          {entry.data.map((value, columnIndex) => (
+                            <td key={`series-${rowIndex}-value-${columnIndex}`}>
+                              <input
+                                className="html-preview-input html-preview-chart-grid-input html-preview-chart-value-input"
+                                data-chart-value="true"
+                                inputMode="decimal"
+                                onChange={(event) =>
+                                  setSeries((current) =>
+                                    current.map((seriesEntry, seriesIndex) =>
+                                      seriesIndex === rowIndex
+                                        ? {
+                                            ...seriesEntry,
+                                            data: seriesEntry.data.map((cell, dataIndex) =>
+                                              dataIndex === columnIndex ? event.target.value : cell
+                                            )
+                                          }
+                                        : seriesEntry
+                                    )
                                   )
-                                )
-                              }
-                              type="text"
-                              value={value}
-                            />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
+                                }
+                                type="text"
+                                value={value}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
