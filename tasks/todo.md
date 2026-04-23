@@ -1,3 +1,102 @@
+# 发布 v0.2.7 并同步 GitHub Releases（2026-04-23 13:00）
+
+## Plan
+- [ ] 盘点当前将要入库的代码与文档改动，整理一份面向用户的 `docs/release-notes-v0.2.7.md` 和一份仓库内 `update/updatenote_2026042313.md`
+- [ ] 复核本地现有 `MDPad_0.2.7_x64-setup.exe` 构建产物与 SHA256，确保发布文案和上传资产信息一致
+- [ ] 完成必要验证后提交当前 `main` 工作区改动并推送到 `origin/main`
+- [ ] 创建 GitHub tag/release `v0.2.7`，上传现有 NSIS 安装包并使用本轮 release note 作为发布说明
+
+## Progress Notes
+- 已确认仓库版本号为 `0.2.7`，本地安装包 `src-tauri/target/release/bundle/nsis/MDPad_0.2.7_x64-setup.exe` 已存在，SHA256 为 `5C3A74794E23B93A3557DC3FAFCB3CCF21408132518CBE2F84E16AD4823CA73E`。
+- 当前 GitHub 最新 release 为 `v0.2.5`，因此本轮 release note 会覆盖 `v0.2.5 -> v0.2.7` 期间的 HTML 预览、图表编辑、slide 阅读/演示及相关体验收口。
+
+# 图表结构菜单防遮挡与图标化 Tooltip 改造（2026-04-23 11:xx）
+
+## Plan
+- [x] 将本轮范围锁定为图表数据弹窗结构菜单“防遮挡 + 图标化 tooltip”改造，并保持数据 patch / 预览链路不变
+- [x] 重构 `ChartDataEditor.tsx`，把标签/系列结构菜单改为单实例 portal 浮层，并加入贴边/翻转定位
+- [x] 调整 `styles.css`，把结构菜单项收口为 icon-only 浮层按钮，同时保留 classic / modern 主题兼容
+- [x] 补充 `htmlPreviewEditors` 与定位 helper 测试，锁定 tooltip、边界禁用和定位回退行为
+- [x] 运行定向 `vitest` 与 `pnpm build` 验证，并在本节回填 Progress Notes / Review 与 `update/` 说明
+
+## Progress Notes
+- 已确认根因是 `.html-preview-chart-table-wrap` 的 `overflow: auto` 裁剪了当前渲染在表头单元格内部的绝对定位菜单；本轮不再继续在单元格内硬调 `z-index`，而是改成脱离滚动容器的单实例浮层。
+- [src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 已将原先分散在表头/行头单元格内部的局部菜单收口为单实例 portal 浮层；菜单现在会挂到 modal/backdrop 容器下，用 `fixed` 定位脱离表格滚动裁剪，并在 `scroll` / `resize` / `Escape` / 外部点击时同步重算或关闭。
+- 同组件新增了结构菜单定位 helper [src/features/editor/components/chartStructureMenuPosition.ts](/D:/MyProject/MDPad/src/features/editor/components/chartStructureMenuPosition.ts)，负责处理默认向下展开、右侧贴边、底部翻转和极窄视口 clamp；这样定位逻辑不再散落在 JSX 和 effect 里。
+- 结构菜单项现已改为 icon-only：按钮只显示图标，不再渲染文字节点；hover 文案与无障碍名称统一复用现有 i18n 文案，通过原生 `title` + `aria-label` 暴露，不新增翻译字段。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已把 `.html-preview-chart-structure-menu` 改为 fixed 浮层样式，并把 `.html-preview-chart-structure-menu-item` 收口为 32px 图标按钮；classic 主题菜单圆角兼容仍保留。
+- 测试已补齐：[src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 现在会断言菜单按钮的 `title` / `aria-label`、icon-only 文本为空、边界动作禁用和 `Escape` 关闭；[src/features/editor/components/chartStructureMenuPosition.test.ts](/D:/MyProject/MDPad/src/features/editor/components/chartStructureMenuPosition.test.ts) 覆盖了正常下拉、右侧贴边、底部翻转与窄视口 clamp 四个定位场景。
+- 验证已完成：`pnpm exec vitest run src/features/editor/components/chartStructureMenuPosition.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过，`pnpm exec tsc --noEmit` 通过，`pnpm build` 通过。
+
+## Review
+- 结果：图表数据弹窗中的标签/系列结构菜单不再受表格滚动容器裁剪影响；即使在最右列、最底部可见行或滚动后的边缘位置打开菜单，也会通过 portal + 自动贴边/翻转保持可见。
+- 结果：结构菜单项已改为仅显示图标，hover 时用原生 tooltip 展示“编辑 / 移动 / 删除”等文案；无障碍名称继续通过 `aria-label` 保留，没有因为去文字而丢失可访问性。
+- 结果：这轮没有改 `HtmlChartEditRequest` / `HtmlChartPatch`、图表预览 runtime 或数值矩阵编辑链路，影响面集中在结构菜单渲染和定位层。
+- 说明：终端侧只能覆盖 DOM 与定位 helper 回归，无法替代桌面 GUI 手工验收；建议你本地重点再看一下最后一列、最后一行、classic / modern 两套主题，以及横向滚动到最右后菜单的实际观感。
+
+# 图表列头宽度与数值输入框对齐（2026-04-23 11:00）
+
+## Plan
+- [x] 将本轮范围锁定为图表数据弹窗列头宽度收口，保持菜单、sticky 表头和数据 patch 逻辑不变
+- [x] 调整 `styles.css`，让列头 wrapper 宽度直接复用 `--html-preview-chart-cell-width`，与下方数值输入框统一
+- [x] 运行定向 `vitest` 与 `tsc --noEmit` 验证，并补齐 `tasks/todo.md` 与 `update/` 说明
+
+## Progress Notes
+- 已确认当前宽度差异来自 `.html-preview-chart-header-cell` 的 `min-width: max(8.4em, ...)`，这轮只收口列头宽度来源，不去改首列、菜单定位或表格结构。
+- 进一步复查后确认，上一次只收口了表头内部 wrapper 宽度，但数据列本身的 `th/td` 仍未绑定到同一固定列宽，所以视觉上仍会表现为“表头列更宽、输入框只是放在更宽的单元格里”。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 现已进一步把 `thead th:not(:first-child)` 和 `tbody td` 统一绑定到 `--html-preview-chart-cell-width`，并让表头 wrapper 与数值输入框都填满各自单元格；这样列宽和控件宽度会真正走同一套来源，而不只是“内部控件看起来接近”。
+- 这轮没有修改 `ChartDataEditor` 的 DOM，也没有调整 `chartStructureMenuPosition`、sticky 表头、首列宽度或图表数据 patch 逻辑，影响面限定在列头宽度本身。
+- 验证已完成：`pnpm exec vitest run src/features/editor/components/chartStructureMenuPosition.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（2 个文件 / 9 个测试），`pnpm exec tsc --noEmit` 通过。
+
+## Review
+- 结果：图表顶部列头和下方数字输入框现在不只是“看起来接近”，而是数据列本身已经统一绑定到同一个 `--html-preview-chart-cell-width`，控件也都填满各自单元格。
+- 结果：后续桌面端与窄屏宽度切换也会一起收口，不会再出现“表头一套、单元格一套”的宽度漂移。
+- 结果：现有结构菜单定位、icon-only tooltip、编辑/移动/删除交互和图表预览链路都未受影响。
+- 说明：终端侧无法直接看 GUI 宽度效果，建议你本地再看一下中文长站点名是否会按预期被截断，以及横向滚动到最右时各列表头和输入框的列宽是否已经完全一致。
+
+# 修复图表数据表头留白与左上角单元格错位（2026-04-23 10:00）
+
+## Plan
+- [x] 将本轮范围锁定为图表数据弹窗表头留白与左上角“标签”单元格错位修复，避免改动菜单状态机和数据逻辑
+- [x] 调整 `styles.css` 中图表数据表头相关布局，消除列标题下方额外留白并让角单元格与同一行表头对齐
+- [x] 补一条轻量 `htmlPreviewEditors.test.ts` 回归断言，锁定角单元格与表头基础结构仍可用
+- [x] 运行定向 `vitest` 与 `tsc --noEmit` 验证，并补齐 `tasks/todo.md` 与 `update/` 说明
+
+## Progress Notes
+- 已根据截图和交互结构定位问题根因：这轮聚焦样式层，优先处理表头 trigger 的基线空隙，以及左上角“标签”单元格缺少与表头一致的显式高度/垂直居中。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已将 `.html-preview-chart-structure-trigger` 从 `inline-flex` 收口为块级 `flex`，并给 `.html-preview-chart-header-cell`、`.html-preview-chart-series-meta`、`.html-preview-chart-header-input` 增加显式块级布局，避免表头单元格继续保留基线空隙。
+- 同一文件中，`.html-preview-chart-matrix-corner` 已补齐与表头 trigger 一致的高度、`line-height`、`vertical-align` 与 `white-space` 约束，用最小改动让左上角“标签”角单元格与同一行表头对齐。
+- [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已增加角单元格文本存在的轻量回归断言，同时保留原有 trigger 打开菜单和进入编辑态的行为覆盖。
+- 验证已完成：`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts` 通过（1 个文件 / 5 个测试），`pnpm exec tsc --noEmit` 通过。
+
+## Review
+- 结果：列标题表头下方的多余空白带已按布局根因处理，当前表头高度应由 trigger / input 本身直接决定，不再额外留下基线空隙。
+- 结果：左上角“标签”单元格已补齐显式高度和垂直对齐约束，视觉上会和同一行标签表头更一致，不再显得矮一截或漂在上方。
+- 结果：这轮没有改动 `ChartDataEditor` 的 DOM、菜单动作集合或数据 patch 链路，横向菜单展开、编辑、移动、删除行为不受影响。
+- 说明：终端侧验证只能覆盖结构与类型检查；建议你本地重点再看一下 classic / modern 两套主题下的表头顶边、左上角 sticky 单元格，以及横向滚动后首列和表头的拼缝是否都自然。
+
+# 图表标签菜单横向化与去除省略号触发图标（2026-04-23 10:00）
+
+## Plan
+- [x] 将本轮范围锁定为图表数据弹窗的标签/系列头菜单横向化、去除省略号触发图标，以及对应测试与说明文档更新
+- [x] 调整 `ChartDataEditor.tsx`，移除三个点触发图标并保持现有编辑/移动/删除菜单动作不变
+- [x] 调整 `styles.css`，让图表结构菜单改为与 markdown 划词菜单同风格的横向工具条式浮层
+- [x] 更新 `htmlPreviewEditors.test.ts`，补强“无省略号图标且菜单行为不回退”的断言
+- [x] 运行定向 `vitest` 与 `tsc --noEmit` 验证，并在本节补齐 Review 与必要的 `update/` 说明
+
+## Progress Notes
+- 已收到并确认执行方案；本轮不改图表数据模型与菜单动作集合，只收口 trigger 外观和菜单展开方向。
+- [src/features/editor/components/ChartDataEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/ChartDataEditor.tsx) 已移除标签头和系列头 trigger 内的 `Ellipsis` 图标；当前点击整块标签/系列按钮仍会打开原有结构菜单，编辑、移动、删除动作链路保持不变。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已把 `.html-preview-chart-structure-menu` 从竖向菜单覆写为单行 `inline-flex` 工具条，并同步收紧 trigger 内边距、去掉 glyph 样式、调整 classic 主题圆角，让视觉更接近 markdown 划词 bubble menu。
+- [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已新增 “trigger 不再渲染 `.html-preview-chart-structure-trigger-glyph`” 的稳定断言，并保留菜单编辑/移动/删除行为回归覆盖。
+- 验证已完成：`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts` 通过（1 个文件 / 5 个测试），`pnpm exec tsc --noEmit` 通过。
+
+## Review
+- 结果：图表数据弹窗中的标签头和系列头不再显示三个点图标，菜单入口收口为直接点击当前标题按钮本身。
+- 结果：结构菜单现在以横向工具条样式展开，仍复用现有动作集合和状态管理，没有引入新的交互模式或数据模型变化。
+- 结果：classic 主题下补了独立的菜单/菜单项圆角覆写，避免直接沿用 modern 菜单圆角后和现有经典主题控件显得不协调。
+- 说明：终端验证覆盖了结构与行为回归，但无法替代桌面 GUI 手工验收；建议你本地再看一下长标题场景下的横向菜单是否会遮挡相邻列头，以及 classic / modern 两套主题下的视觉密度是否都符合预期。
+
 # 编写 updatenote 并推送 GitHub main（2026-04-22 23:00）
 
 ## Plan

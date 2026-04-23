@@ -1857,6 +1857,13 @@ body {
   z-index: 2;
 }
 
+.html-preview-chart-table thead th:not(:first-child),
+.html-preview-chart-table tbody td {
+  width: var(--html-preview-chart-cell-width);
+  min-width: var(--html-preview-chart-cell-width);
+  max-width: var(--html-preview-chart-cell-width);
+}
+
 .html-preview-chart-table thead th:first-child,
 .html-preview-chart-table tbody th {
   position: sticky;
@@ -1874,26 +1881,35 @@ body {
 
 .html-preview-chart-matrix-corner {
   min-width: 78px;
+  height: 34px;
   padding: 0 8px;
   border-right: 1px solid color-mix(in srgb, var(--editor-border) 74%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--editor-border) 74%, transparent);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.2;
   color: var(--text-secondary);
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .html-preview-chart-header-cell {
   position: relative;
-  min-width: max(8.4em, calc(var(--html-preview-chart-cell-width) + 28px));
+  display: block;
+  width: 100%;
+  min-width: 100%;
 }
 
 .html-preview-chart-series-meta {
   position: relative;
+  display: block;
+  width: 100%;
   min-width: max(8.4em, calc(var(--html-preview-chart-cell-width) + 28px));
 }
 
 .html-preview-chart-structure-root {
   position: relative;
+  display: block;
 }
 
 .html-preview-chart-structure-trigger {
@@ -1903,15 +1919,15 @@ body {
   border-radius: 10px;
   background: color-mix(in srgb, var(--editor-bg) 99%, var(--hover-soft) 1%);
   color: var(--text-primary);
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 10px 0 12px;
+  justify-content: flex-start;
+  padding: 0 12px;
   font: inherit;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
+  text-align: left;
   cursor: pointer;
   transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
 }
@@ -1925,33 +1941,41 @@ body {
 }
 
 .html-preview-chart-structure-trigger-label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.html-preview-chart-structure-trigger-glyph {
-  flex: 0 0 auto;
-  width: 15px;
-  height: 15px;
-  color: var(--text-secondary);
+.html-preview-chart-structure-menu {
+  position: fixed;
+  z-index: 2810;
+  min-width: 0;
+  width: max-content;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  box-shadow: var(--slash-menu-shadow);
+  white-space: nowrap;
 }
 
-.html-preview-chart-structure-menu {
-  position: absolute;
-  z-index: 12;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 148px;
-  padding: 4px;
+.html-preview-chart-structure-menu.is-drop-up {
+  transform-origin: bottom left;
 }
 
 .html-preview-chart-structure-menu-item {
-  width: 100%;
+  flex: 0 0 auto;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  padding: 0;
 }
 
 .html-preview-chart-structure-menu-icon {
@@ -1964,8 +1988,8 @@ body {
 }
 
 .html-preview-chart-grid-input {
-  min-width: var(--html-preview-chart-cell-width);
-  width: var(--html-preview-chart-cell-width);
+  min-width: 100%;
+  width: 100%;
   height: 34px;
   padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--editor-border) 74%, transparent);
@@ -1981,6 +2005,7 @@ body {
 }
 
 .html-preview-chart-header-input {
+  display: block;
   width: 100%;
   min-width: 100%;
   border-radius: 10px;
@@ -2037,8 +2062,15 @@ body {
 
 .app-root.ui-classic .html-preview-chart-toolbar .app-modal-btn,
 .app-root.ui-classic .html-preview-chart-structure-trigger,
-.app-root.ui-classic .html-preview-chart-structure-menu,
 .app-root.ui-classic .html-preview-chart-header-input {
+  border-radius: 4px;
+}
+
+.app-root.ui-classic .html-preview-chart-structure-menu {
+  border-radius: 6px;
+}
+
+.app-root.ui-classic .html-preview-chart-structure-menu-item {
   border-radius: 4px;
 }
 
@@ -4588,4 +4620,3 @@ body {
     border-radius: 8px;
   }
 }
-

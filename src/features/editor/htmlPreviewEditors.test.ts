@@ -220,6 +220,13 @@ describe("html preview editors", () => {
     act(() => {
       (addLabelButton as HTMLButtonElement).click();
     });
+    const addedLabelInput = rendered.container.querySelector(
+      'input[data-chart-structure-input="label"]'
+    );
+    expect(addedLabelInput).toBeInstanceOf(HTMLInputElement);
+    dispatchInput(addedLabelInput as HTMLInputElement, "Feb");
+    dispatchKeydown(addedLabelInput as HTMLInputElement, "Enter");
+
     act(() => {
       (addSeriesButton as HTMLButtonElement).click();
     });
@@ -232,29 +239,18 @@ describe("html preview editors", () => {
     );
     expect(labelTriggers).toHaveLength(2);
     expect(seriesTriggers).toHaveLength(2);
+    clickElement(seriesTriggers[1]);
 
-    clickElement(labelTriggers[1]);
-    const editLabelButton = rendered.container.querySelector(
-      '[data-chart-structure-menu-item="label-1-edit"]'
-    );
-    expect(editLabelButton).toBeInstanceOf(HTMLButtonElement);
-    clickElement(editLabelButton as HTMLButtonElement);
-
-    const labelEditInput = rendered.container.querySelector(
-      'input[data-chart-structure-input="label"]'
-    );
-    expect(labelEditInput).toBeInstanceOf(HTMLInputElement);
-    dispatchInput(labelEditInput as HTMLInputElement, "Feb");
-    dispatchKeydown(labelEditInput as HTMLInputElement, "Enter");
-
-    const refreshedSeriesTriggers = rendered.container.querySelectorAll(
-      '[data-chart-structure-trigger^="series-"]'
-    );
-    clickElement(refreshedSeriesTriggers[1]);
     const editSeriesButton = rendered.container.querySelector(
       '[data-chart-structure-menu-item="series-1-edit"]'
     );
     expect(editSeriesButton).toBeInstanceOf(HTMLButtonElement);
+    expect((editSeriesButton as HTMLButtonElement).getAttribute("title")).toBe(
+      copy.htmlPreview.chartEditSeries
+    );
+    expect((editSeriesButton as HTMLButtonElement).getAttribute("aria-label")).toBe(
+      copy.htmlPreview.chartEditSeries
+    );
     clickElement(editSeriesButton as HTMLButtonElement);
 
     const seriesEditInput = rendered.container.querySelector(
@@ -350,20 +346,45 @@ describe("html preview editors", () => {
 
     expect(rendered.container.querySelector("[data-chart-drag-handle]")).toBeNull();
     expect(rendered.container.querySelector(".html-preview-chart-grid-delete")).toBeNull();
+    expect(rendered.container.querySelector(".html-preview-chart-structure-trigger-glyph")).toBeNull();
+    expect(rendered.container.querySelector(".html-preview-chart-matrix-corner")?.textContent).toContain(
+      copy.htmlPreview.labelsRow
+    );
 
     const labelTrigger = rendered.container.querySelector(
       '[data-chart-structure-trigger="label-0"]'
     );
     expect(labelTrigger).toBeInstanceOf(HTMLButtonElement);
+    expect((labelTrigger as HTMLButtonElement).textContent).toContain("A");
     clickElement(labelTrigger as HTMLButtonElement);
+    const moveLeftLabelButton = rendered.container.querySelector(
+      '[data-chart-structure-menu-item="label-0-left"]'
+    ) as HTMLButtonElement;
+    expect(moveLeftLabelButton.disabled).toBe(true);
+    expect(moveLeftLabelButton.textContent?.trim()).toBe("");
+    expect(moveLeftLabelButton.getAttribute("title")).toBe(copy.htmlPreview.chartMoveLabelLeft);
+    expect(moveLeftLabelButton.getAttribute("aria-label")).toBe(
+      copy.htmlPreview.chartMoveLabelLeft
+    );
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
     expect(
-      rendered.container.querySelector('[data-chart-structure-menu-item="label-0-left"]')
-    ).toHaveProperty("disabled", true);
+      rendered.container.querySelector('[data-chart-structure-menu-item="label-0-edit"]')
+    ).toBeNull();
+    clickElement(labelTrigger as HTMLButtonElement);
 
     const editLabelButton = rendered.container.querySelector(
       '[data-chart-structure-menu-item="label-0-edit"]'
     );
     expect(editLabelButton).toBeInstanceOf(HTMLButtonElement);
+    expect((editLabelButton as HTMLButtonElement).textContent?.trim()).toBe("");
+    expect((editLabelButton as HTMLButtonElement).getAttribute("title")).toBe(
+      copy.htmlPreview.chartEditLabel
+    );
+    expect((editLabelButton as HTMLButtonElement).getAttribute("aria-label")).toBe(
+      copy.htmlPreview.chartEditLabel
+    );
     clickElement(editLabelButton as HTMLButtonElement);
 
     const labelEditInput = rendered.container.querySelector(
@@ -447,6 +468,7 @@ describe("html preview editors", () => {
         '[data-chart-structure-trigger="label-0"]'
       ) as HTMLButtonElement
     );
+    expect(rendered.container.querySelector(".html-preview-chart-structure-trigger-glyph")).toBeNull();
     const moveLeftButton = rendered.container.querySelector(
       '[data-chart-structure-menu-item="label-0-left"]'
     ) as HTMLButtonElement;
@@ -455,6 +477,11 @@ describe("html preview editors", () => {
     ) as HTMLButtonElement;
     expect(moveLeftButton.disabled).toBe(true);
     expect(moveRightButton.disabled).toBe(false);
+    expect(moveRightButton.textContent?.trim()).toBe("");
+    expect(moveRightButton.getAttribute("title")).toBe(copy.htmlPreview.chartMoveLabelRight);
+    expect(moveRightButton.getAttribute("aria-label")).toBe(
+      copy.htmlPreview.chartMoveLabelRight
+    );
     clickElement(moveRightButton);
 
     clickElement(
@@ -470,6 +497,11 @@ describe("html preview editors", () => {
     ) as HTMLButtonElement;
     expect(moveUpButton.disabled).toBe(true);
     expect(moveDownButton.disabled).toBe(false);
+    expect(moveDownButton.textContent?.trim()).toBe("");
+    expect(moveDownButton.getAttribute("title")).toBe(copy.htmlPreview.chartMoveSeriesDown);
+    expect(moveDownButton.getAttribute("aria-label")).toBe(
+      copy.htmlPreview.chartMoveSeriesDown
+    );
     clickElement(moveDownButton);
 
     clickElement(

@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Ellipsis,
   PencilLine,
   Trash2
 } from "lucide-react";
@@ -14,6 +22,7 @@ import {
   normalizeChartModel,
   normalizeChartPresentation
 } from "../chartAdapters";
+import { calculateChartStructureMenuPosition } from "./chartStructureMenuPosition";
 import type {
   HtmlChartEditRequest,
   HtmlChartPatch,
@@ -59,6 +68,24 @@ function isSameStructureTarget(
 
 function getStructureTargetId(target: StructureTarget): string {
   return `${target.kind}-${target.index}`;
+}
+
+function getStructureTriggerId(target: StructureTarget): string {
+  return `${target.kind}-${target.index}`;
+}
+
+function resolveStructureMenuPortalTarget(source: HTMLElement | null): HTMLElement | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return (
+    (source?.closest(".app-modal-backdrop") as HTMLElement | null) ??
+    (source?.closest(".app-root") as HTMLElement | null) ??
+    (document.querySelector(".app-modal-backdrop") as HTMLElement | null) ??
+    (document.querySelector(".app-root") as HTMLElement | null) ??
+    document.body
+  );
 }
 
 function buildEditableSeries(series: MdpadChartSeries[]): EditableSeries[] {
@@ -497,30 +524,32 @@ function ChartPreviewSurface({
 }
 
 function StructureMenuItem({
-  children,
   disabled = false,
   icon,
+  label,
   onClick,
   testId
 }: {
-  children: string;
   disabled?: boolean;
-  icon: React.ReactNode;
+  icon: ReactNode;
+  label: string;
   onClick: () => void;
   testId: string;
 }) {
   return (
     <button
+      aria-label={label}
       className="editor-context-menu-item html-preview-chart-structure-menu-item"
       data-chart-structure-menu-item={testId}
       disabled={disabled}
       onClick={onClick}
+      role="menuitem"
+      title={label}
       type="button"
     >
       <span aria-hidden="true" className="html-preview-chart-structure-menu-icon">
         {icon}
       </span>
-      <span>{children}</span>
     </button>
   );
 }
@@ -544,10 +573,14 @@ export default function ChartDataEditor({
     buildEditableSeries(normalizedRequestModel.series)
   );
   const [activeMenu, setActiveMenu] = useState<StructureTarget | null>(null);
+  const [menuPlacement, setMenuPlacement] = useState<"up" | "down">("down");
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const [activeEdit, setActiveEdit] = useState<StructureTarget | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const modalCardRef = useRef<HTMLElement | null>(null);
   const activeEditInputRef = useRef<HTMLInputElement | null>(null);
+  const structureMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const nextModel = normalizeChartModel(request.model);
@@ -555,6 +588,8 @@ export default function ChartDataEditor({
     setLabels(nextModel.labels);
     setSeries(buildEditableSeries(nextModel.series));
     setActiveMenu(null);
+    setMenuPlacement("down");
+    setMenuPosition(null);
     setActiveEdit(null);
     setEditDraft("");
     setError(null);
@@ -567,8 +602,16 @@ export default function ChartDataEditor({
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+
+      if (structureMenuRef.current?.contains(target)) {
+        return;
+      }
+
       if (
-        target?.closest(
+        target.closest(
           `[data-chart-structure-root="${getStructureTargetId(activeMenu)}"]`
         )
       ) {
@@ -592,6 +635,61 @@ export default function ChartDataEditor({
     activeEditInputRef.current?.focus();
     activeEditInputRef.current?.select();
   }, [activeEdit]);
+
+  useLayoutEffect(() => {
+    if (!activeMenu || typeof window === "undefined") {
+      setMenuPosition(null);
+      return;
+    }
+
+    const updateMenuPosition = () => {
+      const menuElement = structureMenuRef.current;
+      const triggerId = getStructureTriggerId(activeMenu);
+      const triggerElement =
+        (modalCardRef.current?.querySelector(
+          `[data-chart-structure-trigger="${triggerId}"]`
+        ) as HTMLButtonElement | null) ??
+        (document.querySelector(
+          `[data-chart-structure-trigger="${triggerId}"]`
+        ) as HTMLButtonElement | null);
+
+      if (!menuElement || !triggerElement || !triggerElement.isConnected) {
+        setActiveMenu(null);
+        return;
+      }
+
+      const nextPosition = calculateChartStructureMenuPosition({
+        anchorRect: triggerElement.getBoundingClientRect(),
+        menuSize: {
+          width: menuElement.offsetWidth,
+          height: menuElement.offsetHeight
+        },
+        viewportRect: {
+          left: 0,
+          top: 0,
+          width: window.innerWidth,
+          height: window.innerHeight,
+          right: window.innerWidth,
+          bottom: window.innerHeight
+        }
+      });
+
+      setMenuPlacement(nextPosition.placement);
+      setMenuPosition({
+        left: nextPosition.left,
+        top: nextPosition.top
+      });
+    };
+
+    const frameId = window.requestAnimationFrame(updateMenuPosition);
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [activeMenu]);
 
   useEffect(() => {
     if (!activeEdit && !activeMenu) {
@@ -631,6 +729,7 @@ export default function ChartDataEditor({
   const startEditing = useCallback(
     (target: StructureTarget) => {
       setActiveMenu(null);
+      setMenuPosition(null);
       setActiveEdit(target);
       setEditDraft(
         target.kind === "label" ? labels[target.index] ?? "" : series[target.index]?.name ?? ""
@@ -686,6 +785,7 @@ export default function ChartDataEditor({
     );
     if (nextIndex >= 0) {
       setActiveMenu(null);
+      setMenuPosition(null);
       setActiveEdit({ kind: "label", index: nextIndex });
       setEditDraft(nextLabel);
     }
@@ -699,6 +799,8 @@ export default function ChartDataEditor({
         data: entry.data.filter((_, index) => index !== columnIndex)
       }))
     );
+    setActiveMenu(null);
+    setMenuPosition(null);
   };
 
   const moveLabel = (fromIndex: number, toIndex: number) => {
@@ -710,6 +812,7 @@ export default function ChartDataEditor({
       }))
     );
     setActiveMenu(null);
+    setMenuPosition(null);
   };
 
   const addSeries = () => {
@@ -733,6 +836,7 @@ export default function ChartDataEditor({
     ]);
     if (nextIndex >= 0) {
       setActiveMenu(null);
+      setMenuPosition(null);
       setActiveEdit({ kind: "series", index: nextIndex });
       setEditDraft(nextName);
     }
@@ -742,18 +846,21 @@ export default function ChartDataEditor({
     setSeries((current) => current.filter((_, index) => index !== rowIndex));
     setSeriesColors((current) => current.filter((_, index) => index !== rowIndex));
     setActiveMenu(null);
+    setMenuPosition(null);
   };
 
   const moveSeries = (fromIndex: number, toIndex: number) => {
     setSeries((current) => moveItem(current, fromIndex, toIndex));
     setSeriesColors((current) => moveItem(current, fromIndex, toIndex));
     setActiveMenu(null);
+    setMenuPosition(null);
   };
 
   const toggleMenu = useCallback((target: StructureTarget) => {
     setActiveEdit(null);
     setEditDraft("");
     setActiveMenu((current) => (isSameStructureTarget(current, target) ? null : target));
+    setMenuPosition(null);
   }, []);
 
   const handleEditInputKeyDown = useCallback(
@@ -830,6 +937,92 @@ export default function ChartDataEditor({
     });
   };
 
+  const structureMenuPortalTarget = resolveStructureMenuPortalTarget(modalCardRef.current);
+  const activeStructureMenu =
+    activeMenu && structureMenuPortalTarget
+      ? createPortal(
+          <div
+            className={[
+              "editor-context-menu",
+              "html-preview-chart-structure-menu",
+              menuPlacement === "up" ? "is-drop-up" : ""
+            ].join(" ")}
+            data-chart-structure-menu={activeMenu.kind}
+            onMouseDown={(event) => event.stopPropagation()}
+            ref={structureMenuRef}
+            role="menu"
+            style={{
+              left: `${menuPosition?.left ?? 0}px`,
+              top: `${menuPosition?.top ?? 0}px`,
+              visibility: menuPosition ? "visible" : "hidden"
+            }}
+          >
+            {activeMenu.kind === "label" ? (
+              <>
+                <StructureMenuItem
+                  icon={<PencilLine size={14} />}
+                  label={copy.htmlPreview.chartEditLabel}
+                  onClick={() => startEditing(activeMenu)}
+                  testId={`label-${activeMenu.index}-edit`}
+                />
+                <StructureMenuItem
+                  disabled={activeMenu.index === 0}
+                  icon={<ArrowLeft size={14} />}
+                  label={copy.htmlPreview.chartMoveLabelLeft}
+                  onClick={() => moveLabel(activeMenu.index, activeMenu.index - 1)}
+                  testId={`label-${activeMenu.index}-left`}
+                />
+                <StructureMenuItem
+                  disabled={activeMenu.index === labels.length - 1}
+                  icon={<ArrowRight size={14} />}
+                  label={copy.htmlPreview.chartMoveLabelRight}
+                  onClick={() => moveLabel(activeMenu.index, activeMenu.index + 1)}
+                  testId={`label-${activeMenu.index}-right`}
+                />
+                <StructureMenuItem
+                  disabled={labels.length <= 1}
+                  icon={<Trash2 size={14} />}
+                  label={copy.htmlPreview.chartRemoveLabel}
+                  onClick={() => removeLabel(activeMenu.index)}
+                  testId={`label-${activeMenu.index}-remove`}
+                />
+              </>
+            ) : (
+              <>
+                <StructureMenuItem
+                  icon={<PencilLine size={14} />}
+                  label={copy.htmlPreview.chartEditSeries}
+                  onClick={() => startEditing(activeMenu)}
+                  testId={`series-${activeMenu.index}-edit`}
+                />
+                <StructureMenuItem
+                  disabled={activeMenu.index === 0}
+                  icon={<ArrowUp size={14} />}
+                  label={copy.htmlPreview.chartMoveSeriesUp}
+                  onClick={() => moveSeries(activeMenu.index, activeMenu.index - 1)}
+                  testId={`series-${activeMenu.index}-up`}
+                />
+                <StructureMenuItem
+                  disabled={activeMenu.index === series.length - 1}
+                  icon={<ArrowDown size={14} />}
+                  label={copy.htmlPreview.chartMoveSeriesDown}
+                  onClick={() => moveSeries(activeMenu.index, activeMenu.index + 1)}
+                  testId={`series-${activeMenu.index}-down`}
+                />
+                <StructureMenuItem
+                  disabled={series.length <= 1}
+                  icon={<Trash2 size={14} />}
+                  label={copy.htmlPreview.chartRemoveSeries}
+                  onClick={() => removeSeries(activeMenu.index)}
+                  testId={`series-${activeMenu.index}-remove`}
+                />
+              </>
+            )}
+          </div>,
+          structureMenuPortalTarget
+        )
+      : null;
+
   return (
     <div className="app-modal-backdrop" onMouseDown={onCancel} role="presentation">
       <section
@@ -837,6 +1030,7 @@ export default function ChartDataEditor({
         aria-modal="true"
         className="app-modal-card html-preview-modal html-preview-modal-wide html-preview-chart-asset-modal"
         onMouseDown={(event) => event.stopPropagation()}
+        ref={modalCardRef}
         role="dialog"
       >
         <header className="app-modal-header">
@@ -920,49 +1114,8 @@ export default function ChartDataEditor({
                                   <span className="html-preview-chart-structure-trigger-label">
                                     {label.trim() || `${copy.htmlPreview.chartLabelFallback} ${columnIndex + 1}`}
                                   </span>
-                                  <Ellipsis aria-hidden="true" className="html-preview-chart-structure-trigger-glyph" />
                                 </button>
                               )}
-
-                              {isMenuOpen ? (
-                                <div
-                                  className="editor-context-menu html-preview-chart-structure-menu"
-                                  data-chart-structure-menu="label"
-                                  role="menu"
-                                >
-                                  <StructureMenuItem
-                                    icon={<PencilLine size={14} />}
-                                    onClick={() => startEditing(target)}
-                                    testId={`label-${columnIndex}-edit`}
-                                  >
-                                    {copy.htmlPreview.chartEditLabel}
-                                  </StructureMenuItem>
-                                  <StructureMenuItem
-                                    disabled={columnIndex === 0}
-                                    icon={<ArrowLeft size={14} />}
-                                    onClick={() => moveLabel(columnIndex, columnIndex - 1)}
-                                    testId={`label-${columnIndex}-left`}
-                                  >
-                                    {copy.htmlPreview.chartMoveLabelLeft}
-                                  </StructureMenuItem>
-                                  <StructureMenuItem
-                                    disabled={columnIndex === labels.length - 1}
-                                    icon={<ArrowRight size={14} />}
-                                    onClick={() => moveLabel(columnIndex, columnIndex + 1)}
-                                    testId={`label-${columnIndex}-right`}
-                                  >
-                                    {copy.htmlPreview.chartMoveLabelRight}
-                                  </StructureMenuItem>
-                                  <StructureMenuItem
-                                    disabled={labels.length <= 1}
-                                    icon={<Trash2 size={14} />}
-                                    onClick={() => removeLabel(columnIndex)}
-                                    testId={`label-${columnIndex}-remove`}
-                                  >
-                                    {copy.htmlPreview.chartRemoveLabel}
-                                  </StructureMenuItem>
-                                </div>
-                              ) : null}
                             </div>
                           </th>
                         );
@@ -1007,49 +1160,8 @@ export default function ChartDataEditor({
                                   <span className="html-preview-chart-structure-trigger-label">
                                     {entry.name.trim() || `${copy.htmlPreview.chartSeriesFallback} ${rowIndex + 1}`}
                                   </span>
-                                  <Ellipsis aria-hidden="true" className="html-preview-chart-structure-trigger-glyph" />
                                 </button>
                               )}
-
-                              {isMenuOpen ? (
-                                <div
-                                  className="editor-context-menu html-preview-chart-structure-menu"
-                                  data-chart-structure-menu="series"
-                                  role="menu"
-                                >
-                                  <StructureMenuItem
-                                    icon={<PencilLine size={14} />}
-                                    onClick={() => startEditing(target)}
-                                    testId={`series-${rowIndex}-edit`}
-                                  >
-                                    {copy.htmlPreview.chartEditSeries}
-                                  </StructureMenuItem>
-                                  <StructureMenuItem
-                                    disabled={rowIndex === 0}
-                                    icon={<ArrowUp size={14} />}
-                                    onClick={() => moveSeries(rowIndex, rowIndex - 1)}
-                                    testId={`series-${rowIndex}-up`}
-                                  >
-                                    {copy.htmlPreview.chartMoveSeriesUp}
-                                  </StructureMenuItem>
-                                  <StructureMenuItem
-                                    disabled={rowIndex === series.length - 1}
-                                    icon={<ArrowDown size={14} />}
-                                    onClick={() => moveSeries(rowIndex, rowIndex + 1)}
-                                    testId={`series-${rowIndex}-down`}
-                                  >
-                                    {copy.htmlPreview.chartMoveSeriesDown}
-                                  </StructureMenuItem>
-                                  <StructureMenuItem
-                                    disabled={series.length <= 1}
-                                    icon={<Trash2 size={14} />}
-                                    onClick={() => removeSeries(rowIndex)}
-                                    testId={`series-${rowIndex}-remove`}
-                                  >
-                                    {copy.htmlPreview.chartRemoveSeries}
-                                  </StructureMenuItem>
-                                </div>
-                              ) : null}
                             </div>
                           </th>
                           {entry.data.map((value, columnIndex) => (
@@ -1100,6 +1212,7 @@ export default function ChartDataEditor({
           </button>
         </footer>
       </section>
+      {activeStructureMenu}
     </div>
   );
 }
