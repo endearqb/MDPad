@@ -4,8 +4,8 @@
 - [x] 盘点当前版本、工作区改动、现有 release 和本地安装包产物
 - [x] 编写 `docs/release-notes-v0.2.8.md` 与 `update/updatenote_2026042512.md`
 - [x] 运行必要验证并构建/确认 `MDPad_0.2.8_x64-setup.exe` 发布资产
-- [ ] 提交当前工作区改动并推送 `main` 到 GitHub
-- [ ] 创建 GitHub Release `v0.2.8`，上传安装包并核对发布结果
+- [x] 提交当前工作区改动并推送 `main` 到 GitHub
+- [x] 创建 GitHub Release `v0.2.8`，上传安装包并核对发布结果
 
 ## Progress Notes
 - 已确认当前分支为 `main`，远端为 `https://github.com/endearqb/MDPad.git`，当前版本号为 `0.2.8`。
@@ -13,6 +13,14 @@
 - 已新增 [docs/release-notes-v0.2.8.md](/D:/MyProject/MDPad/docs/release-notes-v0.2.8.md) 与 [update/updatenote_2026042512.md](/D:/MyProject/MDPad/update/updatenote_2026042512.md)。
 - 已执行 `pnpm tauri:build:no-bump`，重新生成 `MDPad_0.2.8_x64-setup.exe`。
 - 已确认安装包 SHA256：`491C163016CB329CB1C440BC61B89D209459924618F04F5AD1B3AC0EBAEC354F`。
+- 已提交 `release: prepare v0.2.8` 并推送 `main` 到 GitHub，提交为 `0d6187641b43cf7f293418664c21342423571370`。
+- 已创建 GitHub Release `v0.2.8`：https://github.com/endearqb/MDPad/releases/tag/v0.2.8
+- Release 资产 `MDPad_0.2.8_x64-setup.exe` 已上传，GitHub digest 为 `sha256:491c163016cb329cb1c440bc61b89d209459924618f04f5ad1b3ac0ebaec354f`。
+
+## Review
+- 结果：`main` 已推送到 GitHub，`v0.2.8` release 已创建并指向发布提交。
+- 结果：发布说明和更新说明已入库，安装包文件名、大小和 SHA256 已核对。
+- 说明：本轮 release 使用 `pnpm tauri:build:no-bump` 构建，未额外递增版本号；Tauri `.app` identifier warning 仍是既有提醒。
 
 # 调整 SVG 选择视觉与编辑弹窗宽度（2026-04-25 10:xx）
 
