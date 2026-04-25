@@ -21,12 +21,111 @@ export interface HtmlInlineTextPatch {
   currentText?: string;
 }
 
-export type HtmlPreviewSurfaceMode =
-  | "preview"
-  | "slide-reading"
-  | "slide-present";
+export interface SvgViewBox {
+  minX: number;
+  minY: number;
+  width: number;
+  height: number;
+}
 
-export type HtmlSlideTreatment = "auto" | "slides" | "document";
+export interface SvgBoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type SvgEditableTagName =
+  | "rect"
+  | "circle"
+  | "ellipse"
+  | "line"
+  | "polygon"
+  | "polyline"
+  | "path"
+  | "text"
+  | "tspan";
+
+export interface SvgEditableGeometry {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rx?: number | null;
+  ry?: number | null;
+  cx?: number;
+  cy?: number;
+  r?: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  points?: string | null;
+  pathData?: string | null;
+}
+
+export interface SvgEditableStyle {
+  fill: string | null;
+  stroke: string | null;
+  strokeWidth: number | null;
+  opacity: number | null;
+  fontSize: number | null;
+  textAnchor?: string | null;
+  fontFamily?: string | null;
+  markerStart?: string | null;
+  markerEnd?: string | null;
+  strokeDasharray?: string | null;
+  strokeLinecap?: string | null;
+  strokeLinejoin?: string | null;
+}
+
+export interface SvgTransformTranslation {
+  translateX: number;
+  translateY: number;
+}
+
+export interface SvgEditableItem {
+  locator: HtmlNodeLocator;
+  tagName: SvgEditableTagName;
+  bbox: SvgBoundingBox;
+  text?: string;
+  kind?: "shape" | "connector" | "text";
+  routeCandidate?: boolean;
+  geometry: SvgEditableGeometry;
+  style: SvgEditableStyle;
+  transform: SvgTransformTranslation | null;
+  canEditText: boolean;
+  capabilities?: Record<string, boolean>;
+  sourceSnapshot?: unknown;
+}
+
+export interface HtmlSvgEditRequest {
+  kind: "svg-elements";
+  svgLocator: HtmlNodeLocator;
+  svgMarkup: string;
+  viewBox: SvgViewBox;
+  items: SvgEditableItem[];
+  initialSelectedLocatorPath?: number[] | null;
+}
+
+export interface HtmlSvgSelectionRequest extends HtmlSvgEditRequest {
+  selectedLocator: HtmlNodeLocator;
+}
+
+export interface HtmlSvgPatchItem {
+  locator: HtmlNodeLocator;
+  tagName: SvgEditableTagName;
+  text?: string;
+  geometry?: SvgEditableGeometry;
+  style?: Partial<SvgEditableStyle>;
+  transform?: SvgTransformTranslation | null;
+  sourceSnapshot?: unknown;
+}
+
+export interface HtmlSvgPatch {
+  kind: "svg-elements";
+  items: HtmlSvgPatchItem[];
+}
 
 export interface HtmlElementLayoutPatch {
   position?: "static" | "relative" | "absolute" | "fixed" | "sticky" | null;
@@ -470,6 +569,79 @@ function removeAttributeEdit(
   };
 }
 
+function formatNumericValue(value: number): string {
+  if (!Number.isFinite(value)) {
+    throw new Error("SVG patch contains a non-finite numeric value.");
+  }
+
+  const rounded = Math.round(value * 1000) / 1000;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function isEmptyAttributeValue(value: string): boolean {
+  return value.trim().length === 0;
+}
+
+function formatTranslateTransform(transform: SvgTransformTranslation): string {
+  return `translate(${formatNumericValue(transform.translateX)} ${formatNumericValue(
+    transform.translateY
+  )})`;
+}
+
+function mergeTranslateTransformValue(
+  currentValue: string | null,
+  nextTranslate: SvgTransformTranslation | null
+): string | null {
+  const existing = currentValue?.trim() ?? "";
+  const nextChunk =
+    nextTranslate &&
+    (Math.abs(nextTranslate.translateX) > 0.0001 ||
+      Math.abs(nextTranslate.translateY) > 0.0001)
+      ? formatTranslateTransform(nextTranslate)
+      : "";
+
+  const withoutTranslate = existing
+    .replace(/translate\(\s*[^)]+\)\s*/iu, "")
+    .replace(/\s{2,}/gu, " ")
+    .trim();
+
+  const segments = [];
+  if (nextChunk) {
+    segments.push(nextChunk);
+  }
+  if (withoutTranslate) {
+    segments.push(withoutTranslate);
+  }
+
+  return segments.length === 0 ? null : segments.join(" ").trim();
+}
+
+function setOptionalStringAttributeEdit(
+  element: ElementNode,
+  attributeName: string,
+  value: string | null,
+  source: string
+): SourceEdit | null {
+  if (value === null || isEmptyAttributeValue(value)) {
+    return removeAttributeEdit(element, attributeName);
+  }
+
+  return setAttributeEdit(element, attributeName, value, source);
+}
+
+function setOptionalNumericAttributeEdit(
+  element: ElementNode,
+  attributeName: string,
+  value: number | null,
+  source: string
+): SourceEdit | null {
+  if (value === null) {
+    return removeAttributeEdit(element, attributeName);
+  }
+
+  return setAttributeEdit(element, attributeName, formatNumericValue(value), source);
+}
+
 function setInlineStylePatchEdit(
   element: ElementNode,
   patch: Record<string, string | null>,
@@ -907,6 +1079,213 @@ function pushIfPresent(edits: SourceEdit[], edit: SourceEdit | null) {
   }
 }
 
+function applySvgGeometryPatch(
+  edits: SourceEdit[],
+  node: ElementNode,
+  tagName: SvgEditableTagName,
+  geometry: SvgEditableGeometry | undefined,
+  source: string
+) {
+  if (!geometry) {
+    return;
+  }
+
+  if (tagName === "text" || tagName === "tspan") {
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "x", geometry.x ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "y", geometry.y ?? null, source));
+    return;
+  }
+
+  if (tagName === "rect") {
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "x", geometry.x ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "y", geometry.y ?? null, source));
+    pushIfPresent(
+      edits,
+      setOptionalNumericAttributeEdit(node, "width", geometry.width ?? null, source)
+    );
+    pushIfPresent(
+      edits,
+      setOptionalNumericAttributeEdit(node, "height", geometry.height ?? null, source)
+    );
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "rx", geometry.rx ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "ry", geometry.ry ?? null, source));
+    return;
+  }
+
+  if (tagName === "circle") {
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "cx", geometry.cx ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "cy", geometry.cy ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "r", geometry.r ?? null, source));
+    return;
+  }
+
+  if (tagName === "ellipse") {
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "cx", geometry.cx ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "cy", geometry.cy ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "rx", geometry.rx ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "ry", geometry.ry ?? null, source));
+    return;
+  }
+
+  if (tagName === "line") {
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "x1", geometry.x1 ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "y1", geometry.y1 ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "x2", geometry.x2 ?? null, source));
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "y2", geometry.y2 ?? null, source));
+    return;
+  }
+
+  if (tagName === "polygon" || tagName === "polyline") {
+    if ("points" in geometry) {
+      pushIfPresent(edits, setOptionalStringAttributeEdit(node, "points", geometry.points ?? null, source));
+    }
+    return;
+  }
+
+  if (tagName === "path" && "pathData" in geometry) {
+    pushIfPresent(edits, setOptionalStringAttributeEdit(node, "d", geometry.pathData ?? null, source));
+  }
+}
+
+function applySvgStylePatch(
+  edits: SourceEdit[],
+  node: ElementNode,
+  style: Partial<SvgEditableStyle> | undefined,
+  source: string
+) {
+  if (!style) {
+    return;
+  }
+
+  if ("fill" in style) {
+    pushIfPresent(edits, setOptionalStringAttributeEdit(node, "fill", style.fill ?? null, source));
+  }
+  if ("stroke" in style) {
+    pushIfPresent(edits, setOptionalStringAttributeEdit(node, "stroke", style.stroke ?? null, source));
+  }
+  if ("strokeWidth" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalNumericAttributeEdit(node, "stroke-width", style.strokeWidth ?? null, source)
+    );
+  }
+  if ("opacity" in style) {
+    pushIfPresent(edits, setOptionalNumericAttributeEdit(node, "opacity", style.opacity ?? null, source));
+  }
+  if ("fontSize" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalNumericAttributeEdit(node, "font-size", style.fontSize ?? null, source)
+    );
+  }
+  if ("textAnchor" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalStringAttributeEdit(node, "text-anchor", style.textAnchor ?? null, source)
+    );
+  }
+  if ("fontFamily" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalStringAttributeEdit(node, "font-family", style.fontFamily ?? null, source)
+    );
+  }
+  if ("markerStart" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalStringAttributeEdit(node, "marker-start", style.markerStart ?? null, source)
+    );
+  }
+  if ("markerEnd" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalStringAttributeEdit(node, "marker-end", style.markerEnd ?? null, source)
+    );
+  }
+  if ("strokeDasharray" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalStringAttributeEdit(
+        node,
+        "stroke-dasharray",
+        style.strokeDasharray ?? null,
+        source
+      )
+    );
+  }
+  if ("strokeLinecap" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalStringAttributeEdit(node, "stroke-linecap", style.strokeLinecap ?? null, source)
+    );
+  }
+  if ("strokeLinejoin" in style) {
+    pushIfPresent(
+      edits,
+      setOptionalStringAttributeEdit(node, "stroke-linejoin", style.strokeLinejoin ?? null, source)
+    );
+  }
+}
+
+export function applySvgPatch(html: string, patch: HtmlSvgPatch): PatchResult {
+  try {
+    const { root } = parseHtmlRoot(html);
+    const edits: SourceEdit[] = [];
+
+    for (const item of patch.items) {
+      const node = findNodeByPath(root, item.locator.path);
+      if (!isElementNode(node)) {
+        return buildPatchFailure(
+          "LOCATOR_NOT_FOUND",
+          "Selected SVG element could not be located.",
+          item.locator
+        );
+      }
+
+      if (node.tagName !== item.tagName) {
+        return buildPatchFailure(
+          "TAG_MISMATCH",
+          `Selected SVG element type changed from <${item.tagName}> to <${node.tagName}>.`,
+          item.locator
+        );
+      }
+
+      if (typeof item.text === "string") {
+        if (node.tagName !== "text" && node.tagName !== "tspan") {
+          return buildPatchFailure(
+            "UNSUPPORTED_ELEMENT",
+            `Unsupported SVG text patch target <${node.tagName}>.`,
+            item.locator
+          );
+        }
+        edits.push(patchElementTextContent(node, item.text));
+      }
+
+      applySvgGeometryPatch(edits, node, item.tagName, item.geometry, html);
+      applySvgStylePatch(edits, node, item.style, html);
+
+      if ("transform" in item) {
+        const currentTransform = readAttributeValue(node, "transform");
+        const nextTransformValue = mergeTranslateTransformValue(
+          currentTransform,
+          item.transform ?? null
+        );
+        pushIfPresent(
+          edits,
+          setOptionalStringAttributeEdit(node, "transform", nextTransformValue, html)
+        );
+      }
+    }
+
+    return buildPatchSuccess(applyEdits(html, edits));
+  } catch (error) {
+    return buildPatchFailure(
+      "PARSE_ERROR",
+      error instanceof Error ? error.message : "Failed to apply SVG patch."
+    );
+  }
+}
+
 export function applyChartPatch(
   html: string,
   patch: HtmlChartPatch
@@ -982,4 +1361,8 @@ export function applyChartPatch(
       patch.chartLocator
     );
   }
+}
+
+export function svgMarkupToDataUri(svgMarkup: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`;
 }

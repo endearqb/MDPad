@@ -5,21 +5,20 @@ import {
   useRef,
   useState
 } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { EditorCopy } from "../../shared/i18n/appI18n";
 import type {
   DocumentExportRequest,
   ThemeMode,
   UiTheme
 } from "../../shared/types/doc";
-import { readHtmlSlideTreatmentPreference, writeHtmlSlideTreatmentPreference } from "../../shared/utils/htmlSlidePreferences";
 import { openExternalUrl } from "../file/fileService";
 import ChartAssetEditorModal from "./components/ChartAssetEditorModal";
+import SvgTextCanvasEditor from "./components/SvgTextCanvasEditor";
 import {
   applyChartPatch,
   applyHtmlTextPatch,
-  type HtmlPreviewSurfaceMode,
-  type HtmlSlideTreatment,
+  applySvgPatch,
+  type HtmlSvgEditRequest,
   type HtmlChartEditRequest
 } from "./htmlPreviewEdit";
 import {
@@ -34,19 +33,14 @@ import {
   extractExternalOpenUrlFromPreviewMessage,
   extractInlineTextCommitFromPreviewMessage,
   extractReadOnlyBlockedFromPreviewMessage,
-  extractSurfaceModeFromPreviewMessage,
-  extractSlideStateFromPreviewMessage
+  extractSvgCommitPatchFromPreviewMessage,
+  extractSvgEditorRequestFromPreviewMessage,
 } from "./html-preview/previewBridgeHost";
 import {
   type HtmlPreviewContextMenuRequest,
   HTML_PREVIEW_MESSAGE_SOURCE
 } from "./html-preview/previewBridgeTypes";
-import {
-  HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-  type HtmlSlideState
-} from "./html-visual/htmlVisualBridge";
 import { HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE } from "./htmlPreviewDocument";
-import { resolveSlideCapability } from "./slides/slideDetection";
 
 interface HtmlPreviewProps {
   html: string;
@@ -55,13 +49,9 @@ interface HtmlPreviewProps {
   isEditable?: boolean;
   themeMode?: ThemeMode;
   uiTheme?: UiTheme;
-  initialSurfaceMode?: HtmlPreviewSurfaceMode;
-  slideTreatment?: HtmlSlideTreatment;
   onHtmlChange?: (nextHtml: string) => void;
   onReadOnlyInteraction?: () => void;
   onRequestExport?: (request: DocumentExportRequest) => void;
-  onSlideTreatmentChange?: (nextTreatment: HtmlSlideTreatment) => void;
-  onSurfaceModeChange?: (nextMode: HtmlPreviewSurfaceMode) => void;
 }
 
 const DEFAULT_SCROLLBAR_THEME: HtmlPreviewScrollbarTheme = {
@@ -101,13 +91,9 @@ export default function HtmlPreview({
   isEditable = false,
   themeMode = "light",
   uiTheme = "modern",
-  initialSurfaceMode = "preview",
-  slideTreatment: controlledSlideTreatment,
   onHtmlChange,
   onReadOnlyInteraction,
-  onRequestExport,
-  onSlideTreatmentChange,
-  onSurfaceModeChange
+  onRequestExport
 }: HtmlPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -117,26 +103,16 @@ export default function HtmlPreview({
   const isEditableRef = useRef(isEditable);
   const onHtmlChangeRef = useRef(onHtmlChange);
   const onReadOnlyInteractionRef = useRef(onReadOnlyInteraction);
-  const onSurfaceModeChangeRef = useRef(onSurfaceModeChange);
-  const onSlideTreatmentChangeRef = useRef(onSlideTreatmentChange);
   const [contextMenuPosition, setContextMenuPosition] =
     useState<HtmlPreviewContextMenuRequest | null>(null);
   const [chartEditorRequest, setChartEditorRequest] =
     useState<HtmlChartEditRequest | null>(null);
+  const [svgEditorRequest, setSvgEditorRequest] =
+    useState<HtmlSvgEditRequest | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
   const [renderedHtml, setRenderedHtml] = useState(html);
-  const [surfaceMode, setSurfaceMode] =
-    useState<HtmlPreviewSurfaceMode>(initialSurfaceMode);
-  const [uncontrolledSlideTreatment, setUncontrolledSlideTreatment] =
-    useState<HtmlSlideTreatment>(() =>
-      controlledSlideTreatment ??
-      readHtmlSlideTreatmentPreference(documentPath, "auto")
-    );
-  const [slideState, setSlideState] = useState<HtmlSlideState | null>(null);
   const [scrollbarTheme, setScrollbarTheme] =
     useState<HtmlPreviewScrollbarTheme>(DEFAULT_SCROLLBAR_THEME);
-
-  const slideTreatment = controlledSlideTreatment ?? uncontrolledSlideTreatment;
 
   useEffect(() => {
     htmlRef.current = html;
@@ -160,28 +136,6 @@ export default function HtmlPreview({
   }, [onReadOnlyInteraction]);
 
   useEffect(() => {
-    onSurfaceModeChangeRef.current = onSurfaceModeChange;
-  }, [onSurfaceModeChange]);
-
-  useEffect(() => {
-    onSlideTreatmentChangeRef.current = onSlideTreatmentChange;
-  }, [onSlideTreatmentChange]);
-
-  useEffect(() => {
-    if (controlledSlideTreatment) {
-      return;
-    }
-    setUncontrolledSlideTreatment(readHtmlSlideTreatmentPreference(documentPath, "auto"));
-  }, [controlledSlideTreatment, documentPath]);
-
-  useEffect(() => {
-    if (controlledSlideTreatment) {
-      return;
-    }
-    writeHtmlSlideTreatmentPreference(documentPath, uncontrolledSlideTreatment);
-  }, [controlledSlideTreatment, documentPath, uncontrolledSlideTreatment]);
-
-  useEffect(() => {
     const shell = shellRef.current;
     if (!shell) {
       return;
@@ -193,23 +147,17 @@ export default function HtmlPreview({
     );
   }, [themeMode, uiTheme]);
 
-  const commitVisualHtmlChange = useCallback((nextHtml: string) => {
+  const commitVisualHtmlChange = useCallback((
+    nextHtml: string,
+    options?: { reloadPreview?: boolean }
+  ) => {
     htmlRef.current = nextHtml;
     skipNextIframeReloadForHtmlRef.current = nextHtml;
+    if (options?.reloadPreview) {
+      setRenderedHtml(nextHtml);
+    }
     onHtmlChangeRef.current?.(nextHtml);
   }, []);
-
-  const setSurfaceModeState = useCallback((nextMode: HtmlPreviewSurfaceMode) => {
-    setSurfaceMode(nextMode);
-    onSurfaceModeChangeRef.current?.(nextMode);
-  }, []);
-
-  const setSlideTreatmentState = useCallback((nextTreatment: HtmlSlideTreatment) => {
-    if (!controlledSlideTreatment) {
-      setUncontrolledSlideTreatment(nextTreatment);
-    }
-    onSlideTreatmentChangeRef.current?.(nextTreatment);
-  }, [controlledSlideTreatment]);
 
   const srcDoc = useMemo(() => {
     return buildControlledHtmlPreviewDocument({
@@ -220,24 +168,6 @@ export default function HtmlPreview({
       scrollbarTheme
     });
   }, [documentPath, renderedHtml, isEditable, scrollbarTheme]);
-
-  useEffect(() => {
-    const frameWindow = iframeRef.current?.contentWindow ?? null;
-    if (!frameWindow) {
-      return;
-    }
-
-    frameWindow.postMessage(
-      {
-        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-        source: HTML_PREVIEW_MESSAGE_SOURCE,
-        token: instanceTokenRef.current,
-        mode: surfaceMode,
-        slideTreatment
-      },
-      "*"
-    );
-  }, [slideTreatment, srcDoc, surfaceMode]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -251,6 +181,7 @@ export default function HtmlPreview({
       if (url) {
         setPatchError(null);
         setChartEditorRequest(null);
+        setSvgEditorRequest(null);
         void openExternalUrl(url).catch((error) => {
           console.error("Failed to open HTML preview external URL.", error);
         });
@@ -281,28 +212,6 @@ export default function HtmlPreview({
         return;
       }
 
-      const nextSlideState = extractSlideStateFromPreviewMessage(
-        event.data,
-        instanceTokenRef.current,
-        event.source,
-        frameWindow
-      );
-      if (nextSlideState) {
-        setSlideState(nextSlideState);
-        return;
-      }
-
-      const nextSurfaceMode = extractSurfaceModeFromPreviewMessage(
-        event.data,
-        instanceTokenRef.current,
-        event.source,
-        frameWindow
-      );
-      if (nextSurfaceMode) {
-        setSurfaceModeState(nextSurfaceMode.mode);
-        return;
-      }
-
       const inlineTextPatch = extractInlineTextCommitFromPreviewMessage(
         event.data,
         instanceTokenRef.current,
@@ -312,6 +221,7 @@ export default function HtmlPreview({
       if (inlineTextPatch) {
         setPatchError(null);
         setChartEditorRequest(null);
+        setSvgEditorRequest(null);
         if (!isEditableRef.current) {
           onReadOnlyInteractionRef.current?.();
           return;
@@ -324,6 +234,49 @@ export default function HtmlPreview({
           setPatchError(result.message);
           console.error("Failed to apply inline HTML text edit.", result);
         }
+        return;
+      }
+
+      const svgCommitPatch = extractSvgCommitPatchFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (svgCommitPatch) {
+        setPatchError(null);
+        setChartEditorRequest(null);
+        if (!isEditableRef.current) {
+          onReadOnlyInteractionRef.current?.();
+          return;
+        }
+
+        const result = applySvgPatch(htmlRef.current, svgCommitPatch);
+        if (result.ok) {
+          commitVisualHtmlChange(result.html, { reloadPreview: true });
+        } else {
+          setPatchError(result.message);
+          console.error("Failed to apply SVG visual edit.", result);
+        }
+        return;
+      }
+
+      const svgEditorRequest = extractSvgEditorRequestFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (svgEditorRequest) {
+        if (!isEditableRef.current) {
+          onReadOnlyInteractionRef.current?.();
+          return;
+        }
+
+        setPatchError(null);
+        setContextMenuPosition(null);
+        setChartEditorRequest(null);
+        setSvgEditorRequest(svgEditorRequest);
         return;
       }
 
@@ -341,6 +294,7 @@ export default function HtmlPreview({
 
         setPatchError(null);
         setContextMenuPosition(null);
+        setSvgEditorRequest(null);
         setChartEditorRequest(chartEditorRequest);
         return;
       }
@@ -359,6 +313,7 @@ export default function HtmlPreview({
 
         setPatchError(null);
         setContextMenuPosition(null);
+        setSvgEditorRequest(null);
         setChartEditorRequest(chartAction.request);
       }
     };
@@ -376,7 +331,15 @@ export default function HtmlPreview({
   const openChartEditor = useCallback((request: HtmlChartEditRequest) => {
     setPatchError(null);
     setContextMenuPosition(null);
+    setSvgEditorRequest(null);
     setChartEditorRequest(request);
+  }, []);
+
+  const openSvgEditor = useCallback((request: HtmlSvgEditRequest) => {
+    setPatchError(null);
+    setContextMenuPosition(null);
+    setChartEditorRequest(null);
+    setSvgEditorRequest(request);
   }, []);
 
   const postChartModelToFrame = useCallback(
@@ -428,156 +391,20 @@ export default function HtmlPreview({
     };
   }, [closeContextMenu, contextMenuPosition]);
 
-  const slideCapability = useMemo(
-    () => resolveSlideCapability(slideTreatment, slideState),
-    [slideState, slideTreatment]
-  );
-
-  useEffect(() => {
-    if (
-      !slideCapability.isSlideDocument &&
-      (surfaceMode === "slide-reading" || surfaceMode === "slide-present")
-    ) {
-      setSurfaceModeState("preview");
-    }
-  }, [setSurfaceModeState, slideCapability.isSlideDocument, surfaceMode]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const syncFullscreen = async () => {
-      try {
-        const appWindow = getCurrentWindow();
-        if (surfaceMode === "slide-present") {
-          await appWindow.setFullscreen(true);
-          return;
-        }
-
-        const isFullscreen = await appWindow.isFullscreen();
-        if (!cancelled && isFullscreen) {
-          await appWindow.setFullscreen(false);
-        }
-      } catch (error) {
-        console.error("Failed to sync HTML preview fullscreen state.", error);
-      }
-    };
-
-    void syncFullscreen();
-    return () => {
-      cancelled = true;
-    };
-  }, [surfaceMode]);
   const contextMenuChartRequest =
     contextMenuPosition?.context.kind === "chart"
       ? contextMenuPosition.context.request
       : null;
-  const htmlPreviewCopy = copy?.htmlPreview;
-  const slideProgressText =
-    slideCapability.isSlideDocument && slideState && slideState.totalSlides > 0
-      ? `${slideState.currentSlideIndex + 1} / ${slideState.totalSlides}`
+  const contextMenuSvgRequest =
+    contextMenuPosition?.context.kind === "svg"
+      ? contextMenuPosition.context.request
       : null;
-  const showSurfaceToolbar = Boolean(htmlPreviewCopy) && (isEditable || slideCapability.isSlideDocument);
-  const treatSlidesButtonActive = slideTreatment === "slides";
-  const treatDocumentButtonActive = slideTreatment === "document";
 
   return (
     <div
       ref={shellRef}
-      className={[
-        "html-preview-shell",
-        showSurfaceToolbar ? "has-surface-toolbar" : "",
-        surfaceMode === "slide-reading" ? "is-slide-reading" : "",
-        surfaceMode === "slide-present" ? "is-slide-present" : ""
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      className="html-preview-shell"
     >
-      {showSurfaceToolbar ? (
-        <div className="html-preview-toolbar-hover-shell">
-          <div
-            aria-hidden="true"
-            className="html-preview-toolbar-hotzone"
-          />
-          <div
-            className="html-preview-toolbar"
-            role="toolbar"
-          >
-            <div className="html-preview-toolbar-group">
-              {slideCapability.showReadMode ? (
-                <button
-                  className={`html-preview-toolbar-button${
-                    surfaceMode === "slide-reading" ? " is-active" : ""
-                  }`}
-                  onClick={() => {
-                    setSurfaceModeState(
-                      surfaceMode === "slide-reading" ? "preview" : "slide-reading"
-                    );
-                  }}
-                  type="button"
-                >
-                  {htmlPreviewCopy?.surfaceModeRead ?? "Read"}
-                </button>
-              ) : null}
-              {slideCapability.showPresentMode ? (
-                <button
-                  className={`html-preview-toolbar-button${
-                    surfaceMode === "slide-present" ? " is-active" : ""
-                  }`}
-                  onClick={() => {
-                    setSurfaceModeState(
-                      surfaceMode === "slide-present" ? "preview" : "slide-present"
-                    );
-                  }}
-                  type="button"
-                >
-                  {htmlPreviewCopy?.surfaceModePresent ?? "Present"}
-                </button>
-              ) : null}
-            </div>
-
-            <div className="html-preview-toolbar-group">
-              <button
-                className={`html-preview-toolbar-button${
-                  slideTreatment === "auto" ? " is-active" : ""
-                }`}
-                onClick={() => {
-                  setSlideTreatmentState("auto");
-                }}
-                type="button"
-              >
-                {htmlPreviewCopy?.slideTreatmentAuto ?? "Auto"}
-              </button>
-              <button
-                aria-pressed={treatSlidesButtonActive}
-                className={`html-preview-toolbar-button${
-                  treatSlidesButtonActive ? " is-active" : ""
-                }`}
-                onClick={() => {
-                  setSlideTreatmentState(treatSlidesButtonActive ? "auto" : "slides");
-                }}
-                type="button"
-              >
-                {htmlPreviewCopy?.treatAsSlides ?? "Slides"}
-              </button>
-              <button
-                aria-pressed={treatDocumentButtonActive}
-                className={`html-preview-toolbar-button${
-                  treatDocumentButtonActive ? " is-active" : ""
-                }`}
-                onClick={() => {
-                  setSlideTreatmentState(treatDocumentButtonActive ? "auto" : "document");
-                }}
-                type="button"
-              >
-                {htmlPreviewCopy?.slideTreatmentDocument ?? "Document"}
-              </button>
-              {slideProgressText ? (
-                <span className="html-preview-slide-progress">{slideProgressText}</span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <iframe
         ref={iframeRef}
         className="html-preview-frame"
@@ -636,6 +463,18 @@ export default function HtmlPreview({
               {copy.htmlPreview.chartEditAction}
             </button>
           ) : null}
+          {contextMenuSvgRequest ? (
+            <button
+              className="editor-context-menu-item"
+              onClick={() => {
+                openSvgEditor(contextMenuSvgRequest);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {copy.htmlPreview.svgEditAction}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -659,6 +498,29 @@ export default function HtmlPreview({
             setChartEditorRequest(null);
           }}
           request={chartEditorRequest}
+        />
+      ) : null}
+
+      {copy && svgEditorRequest ? (
+        <SvgTextCanvasEditor
+          copy={copy}
+          onApply={(patch) => {
+            const result = applySvgPatch(htmlRef.current, patch);
+            if (result.ok) {
+              setPatchError(null);
+              commitVisualHtmlChange(result.html, { reloadPreview: true });
+              setSvgEditorRequest(null);
+            } else {
+              setPatchError(result.message);
+              console.error("Failed to apply SVG edit.", result);
+            }
+          }}
+          onCancel={() => {
+            setPatchError(null);
+            setSvgEditorRequest(null);
+          }}
+          request={svgEditorRequest}
+          selectedLocatorPath={svgEditorRequest.initialSelectedLocatorPath}
         />
       ) : null}
     </div>

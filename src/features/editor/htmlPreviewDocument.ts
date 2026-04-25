@@ -5,8 +5,9 @@ import type {
   HtmlElementVisualPatch,
   HtmlInlineTextPatch,
   HtmlNodeLocator,
-  HtmlPreviewSurfaceMode,
-  HtmlSlideTreatment,
+  HtmlSvgEditRequest,
+  HtmlSvgPatch,
+  HtmlSvgSelectionRequest,
   MdpadChartModel,
   SupportedChartLibrary
 } from "./htmlPreviewEdit";
@@ -16,10 +17,7 @@ import {
   HTML_PREVIEW_ELEMENT_FRAME_MESSAGE_TYPE,
   HTML_PREVIEW_ELEMENT_PATCH_FAILED_MESSAGE_TYPE,
   HTML_PREVIEW_SELECT_ELEMENT_MESSAGE_TYPE,
-  HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-  HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
-  type HtmlElementFrameRequest,
-  type HtmlSlideState
+  type HtmlElementFrameRequest
 } from "./html-visual/htmlVisualBridge";
 
 export const HTML_PREVIEW_MESSAGE_SOURCE = "mdpad-html-preview";
@@ -29,6 +27,20 @@ export const HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE =
   "mdpad:html-preview:open-context-menu";
 export const HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE =
   "mdpad:html-preview:inline-text-commit";
+export const HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE =
+  "mdpad:html-preview:open-svg-editor";
+export const HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE =
+  "mdpad:html-preview:svg-selection";
+export const HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE =
+  "mdpad:html-preview:svg-selection-frame";
+export const HTML_PREVIEW_SVG_PREVIEW_PATCH_MESSAGE_TYPE =
+  "mdpad:html-preview:svg-preview-patch";
+export const HTML_PREVIEW_COMMIT_SVG_PATCH_MESSAGE_TYPE =
+  "mdpad:html-preview:commit-svg-patch";
+export const HTML_PREVIEW_DISMISS_SVG_SELECTION_MESSAGE_TYPE =
+  "mdpad:html-preview:dismiss-svg-selection";
+export const HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE =
+  "mdpad:html-preview:sync-svg-session";
 export const HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE =
   "mdpad:html-preview:open-chart-editor";
 export const HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE =
@@ -84,6 +96,7 @@ export interface HtmlPreviewClientRect {
 
 export type HtmlPreviewContextMenuContext =
   | { kind: "none" }
+  | { kind: "svg"; request: HtmlSvgEditRequest }
   | { kind: "chart"; request: HtmlChartEditRequest };
 
 export interface HtmlPreviewContextMenuRequest {
@@ -368,8 +381,13 @@ function buildPreviewHostScript(
         applyElementPatch: HTML_PREVIEW_APPLY_ELEMENT_PATCH_MESSAGE_TYPE,
         commitElementPatch: HTML_PREVIEW_COMMIT_ELEMENT_PATCH_MESSAGE_TYPE,
         elementPatchFailed: HTML_PREVIEW_ELEMENT_PATCH_FAILED_MESSAGE_TYPE,
-        setSurfaceMode: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-        slideStateChange: HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
+        openSvgEditor: HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
+        svgSelection: HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE,
+        svgSelectionFrame: HTML_PREVIEW_SVG_SELECTION_FRAME_MESSAGE_TYPE,
+        svgPreviewPatch: HTML_PREVIEW_SVG_PREVIEW_PATCH_MESSAGE_TYPE,
+        svgCommitPatch: HTML_PREVIEW_COMMIT_SVG_PATCH_MESSAGE_TYPE,
+        dismissSvgSelection: HTML_PREVIEW_DISMISS_SVG_SELECTION_MESSAGE_TYPE,
+        syncSvgSession: HTML_PREVIEW_SYNC_SVG_SESSION_MESSAGE_TYPE,
         openChartEditor: HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
         applyChartModel: HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE,
         showChartAction: HTML_PREVIEW_SHOW_CHART_ACTION_MESSAGE_TYPE,
@@ -398,20 +416,13 @@ function buildPreviewHostScript(
     "tspan"
   ]);
   const ANCHOR_SCROLL_OFFSET = 16;
-  const SVG_CONNECTOR_HIT_TOLERANCE = 10;
+  const SVG_CONNECTOR_HIT_TOLERANCE = 18;
   const HTML_SOURCE_PATH_ATTRIBUTE = "data-mdpad-source-path";
   let activeInlineEditor = null;
   let activeElementSelection = null;
   let activeElementPreviewRect = null;
   let activeElementDrag = null;
   let currentSurfaceMode = "preview";
-  let currentSlideTreatment = "auto";
-  let currentSlideState = {
-    isSlideDocument: false,
-    kind: "none",
-    totalSlides: 0,
-    currentSlideIndex: 0
-  };
   let activeSvgSelection = null;
   let activeSvgDrag = null;
   let chartActionVisible = false;
@@ -1898,8 +1909,7 @@ function buildPreviewHostScript(
     const selection = activeElementSelection.selection;
     if (
       selection.runtimeGenerated ||
-      currentSurfaceMode !== "visual-edit" ||
-      !detectSlideDocument().isSlideDocument
+      currentSurfaceMode !== "visual-edit"
     ) {
       return false;
     }
@@ -2055,8 +2065,7 @@ function buildPreviewHostScript(
     const selection = activeElementSelection.selection;
     if (
       !selection ||
-      selection.runtimeGenerated ||
-      !detectSlideDocument().isSlideDocument
+      selection.runtimeGenerated
     ) {
       return false;
     }
@@ -2163,169 +2172,6 @@ function buildPreviewHostScript(
     }
   }
 
-  function detectSlideDocument() {
-    const revealSections = Array.from(document.querySelectorAll(".reveal .slides section"));
-    if (revealSections.length > 0) {
-      return {
-        isSlideDocument: true,
-        kind: "reveal",
-        roots: revealSections
-      };
-    }
-
-    const genericSlides = Array.from(
-      document.querySelectorAll("[data-slide], [data-mdpad-slide]")
-    );
-    if (genericSlides.length > 0) {
-      return {
-        isSlideDocument: true,
-        kind: "generic",
-        roots: genericSlides
-      };
-    }
-
-    const sections = Array.from(document.querySelectorAll("section"));
-    if (sections.length >= 2) {
-      return {
-        isSlideDocument: true,
-        kind: "generic",
-        roots: sections
-      };
-    }
-
-    if (currentSlideTreatment === "slides") {
-      const fallbackRoots = Array.from(document.body.children || []);
-      if (fallbackRoots.length > 0) {
-        return {
-          isSlideDocument: true,
-          kind: "generic",
-          roots: fallbackRoots
-        };
-      }
-    }
-
-    return {
-      isSlideDocument: false,
-      kind: "none",
-      roots: []
-    };
-  }
-
-  function getRevealSlideIndex(slides) {
-    for (let index = 0; index < slides.length; index += 1) {
-      if (slides[index].classList.contains("present")) {
-        return index;
-      }
-    }
-    return 0;
-  }
-
-  function applyGenericSlideVisibility(slides, activeIndex) {
-    slides.forEach(function (slide, index) {
-      if (!(slide instanceof HTMLElement)) {
-        return;
-      }
-
-      if (
-        currentSurfaceMode === "slide-reading" ||
-        currentSurfaceMode === "slide-present"
-      ) {
-        slide.style.display = index === activeIndex ? "" : "none";
-      } else {
-        slide.style.display = "";
-      }
-    });
-  }
-
-  function updateSlideState(announce) {
-    const detected = detectSlideDocument();
-    if (!detected.isSlideDocument) {
-      currentSlideState = {
-        isSlideDocument: false,
-        kind: "none",
-        totalSlides: 0,
-        currentSlideIndex: 0
-      };
-    } else if (detected.kind === "reveal") {
-      currentSlideState = {
-        isSlideDocument: true,
-        kind: "reveal",
-        totalSlides: detected.roots.length,
-        currentSlideIndex: getRevealSlideIndex(detected.roots)
-      };
-    } else {
-      const boundedIndex = Math.max(
-        0,
-        Math.min(
-          currentSlideState.currentSlideIndex || 0,
-          Math.max(detected.roots.length - 1, 0)
-        )
-      );
-      applyGenericSlideVisibility(detected.roots, boundedIndex);
-      currentSlideState = {
-        isSlideDocument: true,
-        kind: "generic",
-        totalSlides: detected.roots.length,
-        currentSlideIndex: boundedIndex
-      };
-    }
-
-    if (announce) {
-      postMessage(CONFIG.messageTypes.slideStateChange, {
-        state: currentSlideState
-      });
-    }
-  }
-
-  function stepSlides(direction) {
-    const detected = detectSlideDocument();
-    if (!detected.isSlideDocument) {
-      return false;
-    }
-
-    if (detected.kind === "reveal") {
-      if (
-        window.Reveal &&
-        typeof window.Reveal[direction > 0 ? "next" : "prev"] === "function"
-      ) {
-        window.Reveal[direction > 0 ? "next" : "prev"]();
-        updateSlideState(true);
-        return true;
-      }
-      return false;
-    }
-
-    const nextIndex = Math.max(
-      0,
-      Math.min(
-        currentSlideState.currentSlideIndex + direction,
-        Math.max(detected.roots.length - 1, 0)
-      )
-    );
-    if (nextIndex === currentSlideState.currentSlideIndex) {
-      return false;
-    }
-    currentSlideState.currentSlideIndex = nextIndex;
-    applyGenericSlideVisibility(detected.roots, nextIndex);
-    updateSlideState(true);
-    return true;
-  }
-
-  function applySurfaceMode(mode, slideTreatment) {
-    currentSurfaceMode = mode || "preview";
-    currentSlideTreatment = slideTreatment || "auto";
-
-    if (activeElementDrag) {
-      cancelHtmlElementDrag();
-    }
-
-    if (currentSurfaceMode !== "visual-edit") {
-      dismissElementSelection(true);
-    }
-
-    updateSlideState(true);
-  }
-
   function findSvgEditableElement(target) {
     let element = getElementTarget(target);
     while (element && isSvgElementNode(element)) {
@@ -2371,6 +2217,259 @@ function buildPreviewHostScript(
     return Boolean(item && item.kind === "connector");
   }
 
+  function parseSvgPointPairs(value) {
+    if (typeof value !== "string") {
+      return [];
+    }
+
+    const numbers = value.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/giu);
+    if (!numbers || numbers.length < 4) {
+      return [];
+    }
+
+    const points = [];
+    for (let index = 0; index + 1 < numbers.length; index += 2) {
+      const x = Number(numbers[index]);
+      const y = Number(numbers[index + 1]);
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        points.push({ x: x, y: y });
+      }
+    }
+    return points;
+  }
+
+  function parseSimpleSvgPathPoints(value) {
+    if (typeof value !== "string") {
+      return [];
+    }
+
+    const tokens =
+      value.match(/[MLHVZmlhvz]|-?\d*\.?\d+(?:e[-+]?\d+)?/gu) || [];
+    const points = [];
+    let command = "";
+    let index = 0;
+    let current = { x: 0, y: 0 };
+    let start = null;
+
+    function readNumber() {
+      if (index >= tokens.length || /^[A-Za-z]$/u.test(tokens[index])) {
+        return null;
+      }
+      const value = Number(tokens[index]);
+      index += 1;
+      return Number.isFinite(value) ? value : null;
+    }
+
+    while (index < tokens.length) {
+      if (/^[A-Za-z]$/u.test(tokens[index])) {
+        command = tokens[index];
+        index += 1;
+      }
+
+      if (command === "M" || command === "L" || command === "m" || command === "l") {
+        const x = readNumber();
+        const y = readNumber();
+        if (x == null || y == null) {
+          break;
+        }
+        current =
+          command === "m" || command === "l"
+            ? { x: current.x + x, y: current.y + y }
+            : { x: x, y: y };
+        points.push(current);
+        if (!start || command === "M" || command === "m") {
+          start = current;
+        }
+        if (command === "M") {
+          command = "L";
+        } else if (command === "m") {
+          command = "l";
+        }
+        continue;
+      }
+
+      if (command === "H" || command === "h") {
+        const x = readNumber();
+        if (x == null) {
+          break;
+        }
+        current = {
+          x: command === "h" ? current.x + x : x,
+          y: current.y
+        };
+        points.push(current);
+        continue;
+      }
+
+      if (command === "V" || command === "v") {
+        const y = readNumber();
+        if (y == null) {
+          break;
+        }
+        current = {
+          x: current.x,
+          y: command === "v" ? current.y + y : y
+        };
+        points.push(current);
+        continue;
+      }
+
+      if ((command === "Z" || command === "z") && start) {
+        points.push(start);
+        command = "";
+        continue;
+      }
+
+      break;
+    }
+
+    return points;
+  }
+
+  function svgPointToClient(svg, point) {
+    if (!svg || !point) {
+      return null;
+    }
+
+    try {
+      if (
+        typeof svg.createSVGPoint === "function" &&
+        typeof svg.getScreenCTM === "function"
+      ) {
+        const svgPoint = svg.createSVGPoint();
+        svgPoint.x = point.x;
+        svgPoint.y = point.y;
+        const matrix = svg.getScreenCTM();
+        if (matrix) {
+          const clientPoint = svgPoint.matrixTransform(matrix);
+          return { x: clientPoint.x, y: clientPoint.y };
+        }
+      }
+    } catch {
+      // Fall back to viewBox mapping when browser geometry APIs are unavailable.
+    }
+
+    if (typeof svg.getBoundingClientRect !== "function") {
+      return null;
+    }
+
+    const rect = svg.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    const viewBox = svg.viewBox && svg.viewBox.baseVal;
+    if (!viewBox || viewBox.width <= 0 || viewBox.height <= 0) {
+      return { x: rect.left + point.x, y: rect.top + point.y };
+    }
+
+    return {
+      x: rect.left + ((point.x - viewBox.x) / viewBox.width) * rect.width,
+      y: rect.top + ((point.y - viewBox.y) / viewBox.height) * rect.height
+    };
+  }
+
+  function pointToSegmentDistance(point, start, end) {
+    const segmentX = end.x - start.x;
+    const segmentY = end.y - start.y;
+    const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+    if (segmentLengthSquared === 0) {
+      return Math.hypot(point.x - start.x, point.y - start.y);
+    }
+
+    const t = Math.max(
+      0,
+      Math.min(
+        1,
+        ((point.x - start.x) * segmentX + (point.y - start.y) * segmentY) /
+          segmentLengthSquared
+      )
+    );
+    return Math.hypot(
+      point.x - (start.x + t * segmentX),
+      point.y - (start.y + t * segmentY)
+    );
+  }
+
+  function collectSvgElementClientSegments(element) {
+    const tagName = (element.tagName || "").toLowerCase();
+    const ownerSvg = element.ownerSVGElement || (tagName === "svg" ? element : null);
+    if (!ownerSvg) {
+      return null;
+    }
+
+    let points = [];
+    if (tagName === "line") {
+      points = [
+        {
+          x: Number(element.getAttribute("x1") || 0),
+          y: Number(element.getAttribute("y1") || 0)
+        },
+        {
+          x: Number(element.getAttribute("x2") || 0),
+          y: Number(element.getAttribute("y2") || 0)
+        }
+      ];
+    } else if (tagName === "polyline") {
+      points = parseSvgPointPairs(element.getAttribute("points") || "");
+    } else if (tagName === "path") {
+      if (
+        typeof element.getTotalLength === "function" &&
+        typeof element.getPointAtLength === "function"
+      ) {
+        try {
+          const totalLength = element.getTotalLength();
+          if (Number.isFinite(totalLength) && totalLength > 0) {
+            const steps = Math.max(2, Math.min(96, Math.ceil(totalLength / 8)));
+            for (let index = 0; index <= steps; index += 1) {
+              const rawPoint = element.getPointAtLength((totalLength * index) / steps);
+              points.push({ x: rawPoint.x, y: rawPoint.y });
+            }
+          }
+        } catch {
+          points = [];
+        }
+      }
+      if (points.length < 2) {
+        points = parseSimpleSvgPathPoints(element.getAttribute("d") || "");
+      }
+    }
+
+    if (points.length < 2) {
+      return null;
+    }
+
+    const clientPoints = points
+      .map(function (point) {
+        return svgPointToClient(ownerSvg, point);
+      })
+      .filter(Boolean);
+    if (clientPoints.length < 2) {
+      return null;
+    }
+
+    const segments = [];
+    for (let index = 0; index + 1 < clientPoints.length; index += 1) {
+      segments.push({
+        start: clientPoints[index],
+        end: clientPoints[index + 1]
+      });
+    }
+    return segments;
+  }
+
+  function pointToSvgConnectorDistance(element, clientX, clientY) {
+    const segments = collectSvgElementClientSegments(element);
+    if (!segments || segments.length === 0) {
+      return null;
+    }
+
+    const point = { x: clientX, y: clientY };
+    return segments.reduce(function (closest, segment) {
+      return Math.min(closest, pointToSegmentDistance(point, segment.start, segment.end));
+    }, Infinity);
+  }
+
   function findSvgConnectorElementAtPoint(svg, clientX, clientY) {
     if (!svg || typeof svg.querySelectorAll !== "function") {
       return null;
@@ -2404,7 +2503,11 @@ function buildPreviewHostScript(
         return;
       }
 
-      const distance = pointToClientRectDistance(clientX, clientY, rect);
+      const segmentDistance = pointToSvgConnectorDistance(candidate, clientX, clientY);
+      const distance =
+        segmentDistance == null
+          ? pointToClientRectDistance(clientX, clientY, rect)
+          : segmentDistance;
       if (distance > SVG_CONNECTOR_HIT_TOLERANCE || distance >= closestDistance) {
         return;
       }
@@ -2634,19 +2737,14 @@ function buildPreviewHostScript(
       return false;
     }
 
-    if (activeSvgSelection && activeSvgSelection.element && activeSvgSelection.element !== element) {
-      activeSvgSelection.element.removeAttribute("data-mdpad-svg-selected");
-    }
-
     activeSvgSelection = {
       svg: svg,
       element: element,
       item: item,
-      overlayRoot: activeSvgSelection ? activeSvgSelection.overlayRoot : null,
-      selectionBox: activeSvgSelection ? activeSvgSelection.selectionBox : null,
-      handleMap: activeSvgSelection ? activeSvgSelection.handleMap : null
+      overlayRoot: null,
+      selectionBox: null,
+      handleMap: null
     };
-    element.setAttribute("data-mdpad-svg-selected", "true");
 
     if (shouldPostRequest !== false) {
       const request = buildSvgSelectionRequest(svg, item);
@@ -2657,8 +2755,7 @@ function buildPreviewHostScript(
       }
     }
 
-    ensureSvgSelectionOverlay();
-    repaintSvgSelectionOverlay();
+    postSvgSelectionFrame(svg, item, element.getBoundingClientRect());
 
     return true;
   }
@@ -3890,9 +3987,11 @@ function buildPreviewHostScript(
       return;
     }
 
-    if (data.type === CONFIG.messageTypes.setSurfaceMode) {
-      applySurfaceMode(data.mode, data.slideTreatment);
+    if (data.type === CONFIG.messageTypes.syncSvgSession) {
+      applyIncomingSvgSession(data.session);
+      return;
     }
+
   });
 
   document.addEventListener(
@@ -3911,6 +4010,16 @@ function buildPreviewHostScript(
         if (chartAction) {
           defaultPreventedContext.kind = "chart";
           defaultPreventedContext.request = chartAction.request;
+        }
+        if (defaultPreventedContext.kind === "none") {
+          const inlineSvg = findInlineSvgRoot(event.target);
+          const svgRequest = inlineSvg
+            ? buildSvgEditorRequest(inlineSvg, event.target)
+            : null;
+          if (svgRequest) {
+            defaultPreventedContext.kind = "svg";
+            defaultPreventedContext.request = svgRequest;
+          }
         }
         if (defaultPreventedContext.kind === "none") {
           return;
@@ -3934,6 +4043,17 @@ function buildPreviewHostScript(
             kind: "chart",
             request: chartAction.request
           };
+        } else {
+          const inlineSvg = findInlineSvgRoot(event.target);
+          const svgRequest = inlineSvg
+            ? buildSvgEditorRequest(inlineSvg, event.target)
+            : null;
+          if (svgRequest) {
+            context = {
+              kind: "svg",
+              request: svgRequest
+            };
+          }
         }
       }
 
@@ -3960,6 +4080,20 @@ function buildPreviewHostScript(
 
       if (event.button !== 0) {
         return;
+      }
+
+      if (CONFIG.isEditable) {
+        const inlineSvg = findInlineSvgRoot(event.target);
+        if (inlineSvg) {
+          const svgTarget =
+            findSvgEditableElement(event.target) ||
+            findSvgEditableElementAtPoint(inlineSvg, event.clientX, event.clientY);
+          if (svgTarget && selectSvgElement(svgTarget, true)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+        }
       }
 
       if (currentSurfaceMode === "visual-edit") {
@@ -4038,40 +4172,6 @@ function buildPreviewHostScript(
       }
 
       if (
-        currentSurfaceMode === "slide-reading" ||
-        currentSurfaceMode === "slide-present"
-      ) {
-        if (event.key === "ArrowRight" || event.key === " " || event.key === "PageDown") {
-          if (stepSlides(1)) {
-            event.preventDefault();
-            event.stopPropagation();
-            return;
-          }
-        }
-
-        if (event.key === "ArrowLeft" || event.key === "PageUp") {
-          if (stepSlides(-1)) {
-            event.preventDefault();
-            event.stopPropagation();
-            return;
-          }
-        }
-
-        if (event.key === "Escape") {
-          postMessage(CONFIG.messageTypes.setSurfaceMode, {
-            mode:
-              currentSurfaceMode === "slide-present"
-                ? "slide-reading"
-                : "preview",
-            slideTreatment: currentSlideTreatment
-          });
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-      }
-
-      if (
         currentSurfaceMode === "visual-edit" &&
         activeElementSelection &&
         (event.key === "ArrowRight" ||
@@ -4079,19 +4179,6 @@ function buildPreviewHostScript(
           event.key === "ArrowUp" ||
           event.key === "ArrowDown")
       ) {
-        if ((event.metaKey || event.ctrlKey) && detectSlideDocument().isSlideDocument) {
-          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-            if (stepSlides(1)) {
-              event.preventDefault();
-              event.stopPropagation();
-            }
-          } else if (stepSlides(-1)) {
-            event.preventDefault();
-            event.stopPropagation();
-          }
-          return;
-        }
-
         const stepSize = event.shiftKey ? 10 : 1;
         const deltaX =
           event.key === "ArrowRight" ? stepSize : event.key === "ArrowLeft" ? -stepSize : 0;
@@ -4207,6 +4294,19 @@ function buildPreviewHostScript(
         return;
       }
 
+      const inlineSvg = findInlineSvgRoot(event.target);
+      if (inlineSvg && CONFIG.isEditable) {
+        const svgTarget =
+          findSvgEditableElement(event.target) ||
+          findSvgEditableElementAtPoint(inlineSvg, event.clientX, event.clientY) ||
+          event.target;
+        if (openSvgEditor(inlineSvg, svgTarget)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
+
       const textNode = getTextNodeFromPoint(
         event.clientX,
         event.clientY,
@@ -4252,24 +4352,12 @@ function buildPreviewHostScript(
     markSourceBackedElements();
   }
 
-  updateSlideState(false);
-
   if (document.readyState === "complete") {
     scheduleChartRehydrate();
-    updateSlideState(true);
   } else {
     window.addEventListener("load", scheduleChartRehydrate, {
       once: true
     });
-    window.addEventListener(
-      "load",
-      function () {
-        updateSlideState(true);
-      },
-      {
-        once: true
-      }
-    );
   }
 })();
 </script>`;
@@ -4379,18 +4467,6 @@ function isHtmlPreviewClientRect(value: unknown): value is HtmlPreviewClientRect
     isFiniteNumber(value.width) &&
     isFiniteNumber(value.height)
   );
-}
-
-function isHtmlPreviewSurfaceMode(value: unknown): value is HtmlPreviewSurfaceMode {
-  return (
-    value === "preview" ||
-    value === "slide-reading" ||
-    value === "slide-present"
-  );
-}
-
-function isHtmlSlideTreatmentValue(value: unknown): value is HtmlSlideTreatment {
-  return value === "auto" || value === "slides" || value === "document";
 }
 
 function isStringRecord(
@@ -4515,18 +4591,6 @@ function isHtmlElementFrameRequestValue(
   );
 }
 
-function isHtmlSlideState(
-  value: unknown
-): value is HtmlSlideState {
-  return (
-    isRecord(value) &&
-    typeof value.isSlideDocument === "boolean" &&
-    (value.kind === "none" || value.kind === "reveal" || value.kind === "generic") &&
-    isFiniteNumber(value.totalSlides) &&
-    isFiniteNumber(value.currentSlideIndex)
-  );
-}
-
 function isSupportedChartLibrary(value: unknown): value is SupportedChartLibrary {
   return (
     typeof value === "string" &&
@@ -4642,6 +4706,109 @@ function isHtmlChartEditRequest(value: unknown): value is HtmlChartEditRequest {
   );
 }
 
+const SVG_EDITABLE_TAG_NAMES = new Set([
+  "rect",
+  "circle",
+  "ellipse",
+  "line",
+  "polygon",
+  "polyline",
+  "path",
+  "text",
+  "tspan"
+]);
+
+function isSvgEditableTagName(value: unknown): boolean {
+  return typeof value === "string" && SVG_EDITABLE_TAG_NAMES.has(value);
+}
+
+function isSvgViewBox(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.minX) &&
+    isFiniteNumber(value.minY) &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height)
+  );
+}
+
+function isSvgBoundingBox(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height)
+  );
+}
+
+function isSvgEditableItem(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isHtmlNodeLocator(value.locator) &&
+    isSvgEditableTagName(value.tagName) &&
+    isSvgBoundingBox(value.bbox) &&
+    isRecord(value.geometry) &&
+    isRecord(value.style) &&
+    (!("transform" in value) || value.transform === null || isRecord(value.transform)) &&
+    typeof value.canEditText === "boolean" &&
+    (!("text" in value) || typeof value.text === "string" || typeof value.text === "undefined")
+  );
+}
+
+function isHtmlSvgEditRequest(value: unknown): value is HtmlSvgEditRequest {
+  return (
+    isRecord(value) &&
+    value.kind === "svg-elements" &&
+    isHtmlNodeLocator(value.svgLocator) &&
+    typeof value.svgMarkup === "string" &&
+    isSvgViewBox(value.viewBox) &&
+    Array.isArray(value.items) &&
+    value.items.every(isSvgEditableItem) &&
+    (!("initialSelectedLocatorPath" in value) ||
+      value.initialSelectedLocatorPath === null ||
+      (Array.isArray(value.initialSelectedLocatorPath) &&
+        value.initialSelectedLocatorPath.every((item) => Number.isInteger(item))))
+  );
+}
+
+function isHtmlSvgSelectionRequest(value: unknown): value is HtmlSvgSelectionRequest {
+  return (
+    isRecord(value) &&
+    value.kind === "svg-elements" &&
+    isHtmlNodeLocator(value.svgLocator) &&
+    isHtmlNodeLocator(value.selectedLocator) &&
+    Array.isArray(value.items) &&
+    value.items.every(isSvgEditableItem)
+  );
+}
+
+function isHtmlSvgPatch(value: unknown): value is HtmlSvgPatch {
+  return (
+    isRecord(value) &&
+    value.kind === "svg-elements" &&
+    (!("svgLocator" in value) ||
+      typeof value.svgLocator === "undefined" ||
+      isHtmlNodeLocator(value.svgLocator)) &&
+    Array.isArray(value.items) &&
+    value.items.every(
+      (item) =>
+        isRecord(item) &&
+        isHtmlNodeLocator(item.locator) &&
+        isSvgEditableTagName(item.tagName) &&
+        (!("text" in item) ||
+          typeof item.text === "string" ||
+          typeof item.text === "undefined") &&
+        (!("geometry" in item) || typeof item.geometry === "undefined" || isRecord(item.geometry)) &&
+        (!("style" in item) || typeof item.style === "undefined" || isRecord(item.style)) &&
+        (!("transform" in item) ||
+          typeof item.transform === "undefined" ||
+          item.transform === null ||
+          isRecord(item.transform))
+    )
+  );
+}
+
 function isHtmlPreviewContextMenuContext(
   value: unknown
 ): value is HtmlPreviewContextMenuContext {
@@ -4655,6 +4822,10 @@ function isHtmlPreviewContextMenuContext(
 
   if (value.kind === "chart") {
     return isHtmlChartEditRequest(value.request);
+  }
+
+  if (value.kind === "svg") {
+    return isHtmlSvgEditRequest(value.request);
   }
 
   return false;
@@ -4748,6 +4919,66 @@ export function extractInlineTextCommitFromPreviewMessage(
   };
 }
 
+export function extractSvgEditorRequestFromPreviewMessage(
+  data: unknown,
+  expectedToken: string,
+  source: unknown,
+  frameWindow: WindowProxy | null
+): HtmlSvgEditRequest | null {
+  const payload = extractPreviewMessagePayload(
+    data,
+    HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
+    expectedToken,
+    source,
+    frameWindow
+  );
+  if (!payload || !isHtmlSvgEditRequest(payload.request)) {
+    return null;
+  }
+
+  return payload.request;
+}
+
+export function extractSvgSelectionFromPreviewMessage(
+  data: unknown,
+  expectedToken: string,
+  source: unknown,
+  frameWindow: WindowProxy | null
+): HtmlSvgSelectionRequest | null {
+  const payload = extractPreviewMessagePayload(
+    data,
+    HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE,
+    expectedToken,
+    source,
+    frameWindow
+  );
+  if (!payload || !isHtmlSvgSelectionRequest(payload.request)) {
+    return null;
+  }
+
+  return payload.request;
+}
+
+export function extractSvgCommitPatchFromPreviewMessage(
+  data: unknown,
+  expectedToken: string,
+  source: unknown,
+  frameWindow: WindowProxy | null
+): HtmlSvgPatch | null {
+  const payload = extractPreviewMessagePayload(
+    data,
+    HTML_PREVIEW_COMMIT_SVG_PATCH_MESSAGE_TYPE,
+    expectedToken,
+    source,
+    frameWindow
+  );
+  if (!payload || !isHtmlSvgPatch(payload.patch)) {
+    return null;
+  }
+
+  return payload.patch;
+}
+
 export function extractElementSelectionFromPreviewMessage(
   data: unknown,
   expectedToken: string,
@@ -4829,56 +5060,6 @@ export function extractElementPatchFailedFromPreviewMessage(
     reason: payload.reason,
     ...(isHtmlNodeLocator(payload.locator) ? { locator: payload.locator } : {})
   };
-}
-
-export function extractSurfaceModeFromPreviewMessage(
-  data: unknown,
-  expectedToken: string,
-  source: unknown,
-  frameWindow: WindowProxy | null
-): {
-  mode: HtmlPreviewSurfaceMode;
-  slideTreatment: HtmlSlideTreatment;
-} | null {
-  const payload = extractPreviewMessagePayload(
-    data,
-    HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-    expectedToken,
-    source,
-    frameWindow
-  );
-  if (
-    !payload ||
-    !isHtmlPreviewSurfaceMode(payload.mode) ||
-    !isHtmlSlideTreatmentValue(payload.slideTreatment)
-  ) {
-    return null;
-  }
-
-  return {
-    mode: payload.mode,
-    slideTreatment: payload.slideTreatment
-  };
-}
-
-export function extractSlideStateFromPreviewMessage(
-  data: unknown,
-  expectedToken: string,
-  source: unknown,
-  frameWindow: WindowProxy | null
-): HtmlSlideState | null {
-  const payload = extractPreviewMessagePayload(
-    data,
-    HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
-    expectedToken,
-    source,
-    frameWindow
-  );
-  if (!payload || !isHtmlSlideState(payload.state)) {
-    return null;
-  }
-
-  return payload.state;
 }
 
 export function extractChartActionFromPreviewMessage(

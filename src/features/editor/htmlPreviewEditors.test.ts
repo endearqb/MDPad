@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { getAppCopy } from "../../shared/i18n/appI18n";
 import ChartDataEditor from "./components/ChartDataEditor";
+import SvgTextCanvasEditor from "./components/SvgTextCanvasEditor";
+import type { HtmlSvgEditRequest, SvgEditableItem } from "./htmlPreviewEdit";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -65,7 +67,218 @@ function dispatchBlur(element: Element) {
   });
 }
 
+function createSvgItem(
+  overrides: Partial<SvgEditableItem> & Pick<SvgEditableItem, "locator" | "tagName" | "bbox">
+): SvgEditableItem {
+  return {
+    geometry: {},
+    style: {
+      fill: null,
+      stroke: "#222",
+      strokeWidth: 1,
+      opacity: 1,
+      fontSize: null,
+      textAnchor: null,
+      fontFamily: null,
+      markerStart: null,
+      markerEnd: null,
+      strokeDasharray: null,
+      strokeLinecap: null,
+      strokeLinejoin: null
+    },
+    transform: null,
+    canEditText: false,
+    ...overrides
+  };
+}
+
 describe("html preview editors", () => {
+  it("renders svg canvas hit targets without default element labels", () => {
+    const copy = getAppCopy("en").editor;
+    const request: HtmlSvgEditRequest = {
+      kind: "svg-elements",
+      svgLocator: {
+        root: "body",
+        path: [0]
+      },
+      svgMarkup:
+        '<svg viewBox="0 0 120 80"><rect x="10" y="12" width="30" height="18"></rect><text x="48" y="24">Hi</text><polyline points="10,50 60,50 60,70"></polyline></svg>',
+      viewBox: {
+        minX: 0,
+        minY: 0,
+        width: 120,
+        height: 80
+      },
+      initialSelectedLocatorPath: [0, 0],
+      items: [
+        createSvgItem({
+          locator: {
+            root: "body",
+            path: [0, 0]
+          },
+          tagName: "rect",
+          bbox: {
+            x: 10,
+            y: 12,
+            width: 30,
+            height: 18
+          },
+          geometry: {
+            x: 10,
+            y: 12,
+            width: 30,
+            height: 18
+          }
+        }),
+        createSvgItem({
+          locator: {
+            root: "body",
+            path: [0, 1]
+          },
+          tagName: "text",
+          bbox: {
+            x: 48,
+            y: 14,
+            width: 20,
+            height: 12
+          },
+          canEditText: true,
+          text: "Hi",
+          kind: "text",
+          geometry: {
+            x: 48,
+            y: 24
+          },
+          style: {
+            fill: "#111",
+            stroke: null,
+            strokeWidth: null,
+            opacity: 1,
+            fontSize: 12,
+            textAnchor: null,
+            fontFamily: null,
+            markerStart: null,
+            markerEnd: null,
+            strokeDasharray: null,
+            strokeLinecap: null,
+            strokeLinejoin: null
+          }
+        }),
+        createSvgItem({
+          locator: {
+            root: "body",
+            path: [0, 2]
+          },
+          tagName: "polyline",
+          bbox: {
+            x: 10,
+            y: 50,
+            width: 50,
+            height: 20
+          },
+          kind: "connector",
+          routeCandidate: true,
+          geometry: {
+            points: "10,50 60,50 60,70"
+          }
+        })
+      ]
+    };
+
+    const rendered = renderElement(
+      React.createElement(SvgTextCanvasEditor, {
+        copy,
+        onApply: () => undefined,
+        onCancel: () => undefined,
+        request,
+        selectedLocatorPath: [0, 0]
+      })
+    );
+
+    const hitTargets = rendered.container.querySelectorAll(".html-preview-svg-item");
+    expect(hitTargets).toHaveLength(3);
+    expect(
+      rendered.container.querySelector(".html-preview-svg-stage-overlay .html-preview-svg-item-label")
+    ).toBeNull();
+    expect(
+      rendered.container.querySelector(".html-preview-svg-item.is-selected")
+    ).toBeInstanceOf(HTMLButtonElement);
+    expect(rendered.container.textContent).not.toContain("Rectangle");
+    expect(rendered.container.textContent).not.toContain("Polyline");
+    rendered.unmount();
+  });
+
+  it("toggles the svg editor width expansion button", () => {
+    const copy = getAppCopy("en").editor;
+    const request: HtmlSvgEditRequest = {
+      kind: "svg-elements",
+      svgLocator: {
+        root: "body",
+        path: [0]
+      },
+      svgMarkup:
+        '<svg viewBox="0 0 120 80"><rect x="10" y="12" width="30" height="18"></rect></svg>',
+      viewBox: {
+        minX: 0,
+        minY: 0,
+        width: 120,
+        height: 80
+      },
+      initialSelectedLocatorPath: [0, 0],
+      items: [
+        createSvgItem({
+          locator: {
+            root: "body",
+            path: [0, 0]
+          },
+          tagName: "rect",
+          bbox: {
+            x: 10,
+            y: 12,
+            width: 30,
+            height: 18
+          },
+          geometry: {
+            x: 10,
+            y: 12,
+            width: 30,
+            height: 18
+          }
+        })
+      ]
+    };
+    const rendered = renderElement(
+      React.createElement(SvgTextCanvasEditor, {
+        copy,
+        onApply: () => undefined,
+        onCancel: () => undefined,
+        request,
+        selectedLocatorPath: [0, 0]
+      })
+    );
+
+    const dialog = rendered.container.querySelector(".html-preview-modal-wide");
+    expect(dialog).toBeInstanceOf(HTMLElement);
+    expect(dialog?.classList.contains("html-preview-svg-modal-expanded")).toBe(false);
+
+    const expandButton = Array.from(rendered.container.querySelectorAll("button")).find(
+      (button) => button.textContent === copy.htmlPreview.svgEditorMaximizeWidth
+    );
+    expect(expandButton).toBeInstanceOf(HTMLButtonElement);
+    expect((expandButton as HTMLButtonElement).getAttribute("aria-pressed")).toBe("false");
+    clickElement(expandButton as HTMLButtonElement);
+
+    expect(dialog?.classList.contains("html-preview-svg-modal-expanded")).toBe(true);
+    const restoreButton = Array.from(rendered.container.querySelectorAll("button")).find(
+      (button) => button.textContent === copy.htmlPreview.svgEditorRestoreWidth
+    );
+    expect(restoreButton).toBeInstanceOf(HTMLButtonElement);
+    expect((restoreButton as HTMLButtonElement).getAttribute("aria-pressed")).toBe("true");
+    clickElement(restoreButton as HTMLButtonElement);
+    expect(dialog?.classList.contains("html-preview-svg-modal-expanded")).toBe(false);
+    rendered.unmount();
+  });
+
   it("emits chart patches with parsed numeric cells", () => {
     const copy = getAppCopy("en").editor;
     const onApply = vi.fn();

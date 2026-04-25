@@ -11,7 +11,8 @@ export {
   extractExternalOpenUrlFromPreviewMessage,
   extractInlineTextCommitFromPreviewMessage,
   extractReadOnlyBlockedFromPreviewMessage,
-  extractSlideStateFromPreviewMessage,
-  extractSurfaceModeFromPreviewMessage,
+  extractSvgCommitPatchFromPreviewMessage,
+  extractSvgEditorRequestFromPreviewMessage,
+  extractSvgSelectionFromPreviewMessage,
   findHtmlPreviewAnchorTarget
 } from "../htmlPreviewDocument";

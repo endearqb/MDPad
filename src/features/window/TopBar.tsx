@@ -14,11 +14,15 @@ import {
   File,
   FileInput,
   FilePlus2,
+  Fullscreen,
   Lock,
+  Maximize,
   Maximize2,
   Minus,
   Moon,
   Pencil,
+  Projector,
+  Ratio,
   Save,
   SaveAll,
   SunMedium,
@@ -28,7 +32,7 @@ import type { EditorMode, ThemeMode } from "../../shared/types/doc";
 import type { TopBarCopy } from "../../shared/i18n/appI18n";
 import {
   computePseudoMaximizeBounds,
-  type WindowBounds
+  computeSlideAspectWindowBounds
 } from "../../shared/utils/windowPreset";
 
 interface TopBarProps {
@@ -42,8 +46,10 @@ interface TopBarProps {
   readOnlyIconBlinkTick: number;
   themeMode: ThemeMode;
   documentViewToggleLabel?: string | null;
+  isFullscreen?: boolean;
   onNewWindow: () => void;
   onOpen: () => void;
+  onRequestFullscreenChange?: (nextFullscreen: boolean) => Promise<void> | void;
   onSave: () => void;
   onSaveAs: () => void;
   onRename: (newBaseName: string) => Promise<boolean>;
@@ -63,8 +69,10 @@ export default function TopBar({
   readOnlyIconBlinkTick,
   themeMode,
   documentViewToggleLabel,
+  isFullscreen,
   onNewWindow,
   onOpen,
+  onRequestFullscreenChange,
   onSave,
   onSaveAs,
   onRename,
@@ -80,14 +88,14 @@ export default function TopBar({
     }
   }, []);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
-  const restoreBoundsRef = useRef<WindowBounds | null>(null);
   const fileMenuRef = useRef<HTMLDivElement | null>(null);
+  const windowMenuRef = useRef<HTMLDivElement | null>(null);
   const readOnlyIconBlinkTimerRef = useRef<number | null>(null);
   const lastHandledReadOnlyBlinkTickRef = useRef(readOnlyIconBlinkTick);
   const [isRenaming, setIsRenaming] = useState(false);
   const [isSubmittingRename, setIsSubmittingRename] = useState(false);
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
-  const [isPseudoMaximized, setIsPseudoMaximized] = useState(false);
+  const [isWindowMenuOpen, setIsWindowMenuOpen] = useState(false);
   const [isReadOnlyIconBlinking, setIsReadOnlyIconBlinking] = useState(false);
   const [readOnlyIconBlinkNonce, setReadOnlyIconBlinkNonce] = useState(0);
   const [renameDraft, setRenameDraft] = useState(fileBaseName);
@@ -138,6 +146,33 @@ export default function TopBar({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isFileMenuOpen]);
+
+  useEffect(() => {
+    if (!isWindowMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target || windowMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsWindowMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsWindowMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isWindowMenuOpen]);
 
   useEffect(() => {
     return () => {
@@ -201,48 +236,111 @@ export default function TopBar({
     }
   }, [appWindow]);
 
-  const handlePseudoMaximize = useCallback(async () => {
+  const setFullscreenState = useCallback(
+    async (nextFullscreen: boolean) => {
+      if (onRequestFullscreenChange) {
+        await onRequestFullscreenChange(nextFullscreen);
+        return;
+      }
+      if (!appWindow) {
+        return;
+      }
+      await appWindow.setFullscreen(nextFullscreen);
+    },
+    [appWindow, onRequestFullscreenChange]
+  );
+
+  const applyWindowBounds = useCallback(async (targetBounds: {
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+  }) => {
     if (!appWindow) {
       return;
     }
 
     try {
-      const restoreBounds = restoreBoundsRef.current;
-      if (isPseudoMaximized && restoreBounds) {
-        await appWindow.setSize(
-          new PhysicalSize(restoreBounds.width, restoreBounds.height)
-        );
-        await appWindow.setPosition(new PhysicalPosition(restoreBounds.x, restoreBounds.y));
-        setIsPseudoMaximized(false);
-        return;
+      const currentFullscreen =
+        typeof isFullscreen === "boolean"
+          ? isFullscreen
+          : await appWindow.isFullscreen();
+      if (currentFullscreen) {
+        await setFullscreenState(false);
       }
-
-      const monitor = await currentMonitor();
-      if (!monitor) {
-        return;
-      }
-
-      const currentSize = await appWindow.outerSize();
-      const currentPosition = await appWindow.outerPosition();
-      restoreBoundsRef.current = {
-        width: currentSize.width,
-        height: currentSize.height,
-        x: currentPosition.x,
-        y: currentPosition.y
-      };
-
-      const targetBounds = computePseudoMaximizeBounds(monitor.workArea);
       await appWindow.setSize(
         new PhysicalSize(targetBounds.width, targetBounds.height)
       );
       await appWindow.setPosition(
         new PhysicalPosition(targetBounds.x, targetBounds.y)
       );
-      setIsPseudoMaximized(true);
     } catch {
       // ignore runtime errors in non-tauri contexts
     }
-  }, [appWindow, isPseudoMaximized]);
+  }, [appWindow, isFullscreen, setFullscreenState]);
+
+  const handleCompactPreset = useCallback(async () => {
+    try {
+      const monitor = await currentMonitor();
+      if (!monitor) {
+        return;
+      }
+
+      const targetBounds = computePseudoMaximizeBounds(monitor.workArea);
+      await applyWindowBounds(targetBounds);
+    } catch {
+      // ignore runtime errors in non-tauri contexts
+    }
+  }, [applyWindowBounds]);
+
+  const handleSlidePreset = useCallback(async () => {
+    try {
+      const monitor = await currentMonitor();
+      if (!monitor) {
+        return;
+      }
+
+      const targetBounds = computeSlideAspectWindowBounds(monitor.workArea);
+      await applyWindowBounds(targetBounds);
+    } catch {
+      // ignore runtime errors in non-tauri contexts
+    }
+  }, [applyWindowBounds]);
+
+  const handleNativeMaximize = useCallback(async () => {
+    if (!appWindow) {
+      return;
+    }
+    try {
+      const currentFullscreen =
+        typeof isFullscreen === "boolean"
+          ? isFullscreen
+          : await appWindow.isFullscreen();
+      if (currentFullscreen) {
+        await setFullscreenState(false);
+      }
+      await appWindow.toggleMaximize();
+    } catch {
+      // ignore runtime errors in non-tauri contexts
+    }
+  }, [appWindow, isFullscreen, setFullscreenState]);
+
+  const handleFullscreen = useCallback(async () => {
+    if (!appWindow && !onRequestFullscreenChange) {
+      return;
+    }
+    try {
+      const currentFullscreen =
+        typeof isFullscreen === "boolean"
+          ? isFullscreen
+          : appWindow
+            ? await appWindow.isFullscreen()
+            : false;
+      await setFullscreenState(!currentFullscreen);
+    } catch {
+      // ignore runtime errors in non-tauri contexts
+    }
+  }, [appWindow, isFullscreen, onRequestFullscreenChange, setFullscreenState]);
 
   const beginRename = useCallback(() => {
     if (!canRename || isBusy || isSubmittingRename) {
@@ -291,12 +389,28 @@ export default function TopBar({
     setIsFileMenuOpen(false);
   }, []);
 
+  const openWindowMenu = useCallback(() => {
+    setIsWindowMenuOpen(true);
+  }, []);
+
+  const closeWindowMenu = useCallback(() => {
+    setIsWindowMenuOpen(false);
+  }, []);
+
   const runFileMenuAction = useCallback(
     (action: () => void) => {
       closeFileMenu();
       action();
     },
     [closeFileMenu]
+  );
+
+  const runWindowMenuAction = useCallback(
+    (action: () => void) => {
+      closeWindowMenu();
+      action();
+    },
+    [closeWindowMenu]
   );
 
   const IconButton = ({
@@ -345,6 +459,27 @@ export default function TopBar({
     </button>
   );
 
+  const WindowMenuItem = ({
+    label,
+    onClick,
+    children
+  }: {
+    label: string;
+    onClick: () => void;
+    children: ReactNode;
+  }) => (
+    <button
+      aria-label={label}
+      className="titlebar-icon-btn titlebar-window-item"
+      onClick={() => runWindowMenuAction(onClick)}
+      role="menuitem"
+      title={label}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+
   const WindowControlButton = ({
     label,
     onClick,
@@ -373,7 +508,7 @@ export default function TopBar({
         className="titlebar-drag-area"
         data-tauri-drag-region
         onDoubleClick={() => {
-          void handlePseudoMaximize();
+          void handleCompactPreset();
         }}
       />
       <section className="titlebar-actions">
@@ -534,14 +669,69 @@ export default function TopBar({
         >
           <Minus className="win-icon" />
         </WindowControlButton>
-        <WindowControlButton
-          label={isPseudoMaximized ? copy.restorePreviousSize : copy.resizePreset}
-          onClick={() => {
-            void handlePseudoMaximize();
+        <div
+          className="titlebar-window-menu"
+          ref={windowMenuRef}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (!next || !event.currentTarget.contains(next)) {
+              closeWindowMenu();
+            }
           }}
         >
-          <Maximize2 className="win-icon" />
-        </WindowControlButton>
+          <WindowControlButton
+            label={copy.resizePreset}
+            onClick={() => {
+              if (isWindowMenuOpen) {
+                closeWindowMenu();
+                return;
+              }
+              openWindowMenu();
+            }}
+          >
+            <Maximize2 className="win-icon" />
+          </WindowControlButton>
+          {isWindowMenuOpen && (
+            <div
+              aria-label={copy.windowSizeActionsAria}
+              className="titlebar-window-popover"
+              role="menu"
+            >
+              <WindowMenuItem
+                label={copy.resizePresetCompact}
+                onClick={() => {
+                  void handleCompactPreset();
+                }}
+              >
+                <Ratio className="titlebar-icon" />
+              </WindowMenuItem>
+              <WindowMenuItem
+                label={copy.resizePresetSlide}
+                onClick={() => {
+                  void handleSlidePreset();
+                }}
+              >
+                <Projector className="titlebar-icon" />
+              </WindowMenuItem>
+              <WindowMenuItem
+                label={copy.maximize}
+                onClick={() => {
+                  void handleNativeMaximize();
+                }}
+              >
+                <Maximize className="titlebar-icon" />
+              </WindowMenuItem>
+              <WindowMenuItem
+                label={copy.fullscreen}
+                onClick={() => {
+                  void handleFullscreen();
+                }}
+              >
+                <Fullscreen className="titlebar-icon" />
+              </WindowMenuItem>
+            </div>
+          )}
+        </div>
         <WindowControlButton
           className="close"
           label={copy.close}

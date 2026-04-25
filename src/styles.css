@@ -338,6 +338,13 @@ body {
   z-index: 9;
 }
 
+.titlebar-window-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  z-index: 9;
+}
+
 .titlebar-file-menu::after {
   content: "";
   position: absolute;
@@ -347,14 +354,23 @@ body {
   height: 12px;
 }
 
+.titlebar-window-menu::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: -132px;
+  width: 172px;
+  height: 12px;
+}
+
 .titlebar-file-trigger {
   position: relative;
 }
 
-.titlebar-file-popover {
+.titlebar-file-popover,
+.titlebar-window-popover {
   position: absolute;
   top: calc(100% + 2px);
-  left: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -365,6 +381,15 @@ body {
   backdrop-filter: blur(14px);
   box-shadow: var(--shadow-surface);
   z-index: 1200;
+}
+
+.titlebar-file-popover {
+  left: 0;
+}
+
+.titlebar-window-popover {
+  left: 0;
+  transform: translateX(calc(-100% + 32px));
 }
 
 .titlebar-icon-btn {
@@ -541,6 +566,25 @@ body {
   overflow: hidden;
 }
 
+.app-root.is-app-fullscreen {
+  border-radius: 0;
+}
+
+.app-root.is-app-fullscreen .workspace-shell {
+  gap: 0;
+  padding: 0;
+}
+
+.app-root.is-app-fullscreen .app-main {
+  height: 100%;
+}
+
+.app-root.is-app-fullscreen .source-editor-shell,
+.app-root.is-app-fullscreen .html-preview-shell,
+.app-root.is-app-fullscreen .editor-surface {
+  border-radius: 0;
+}
+
 .source-editor-shell,
 .html-preview-shell {
   position: relative;
@@ -550,125 +594,6 @@ body {
   border: 1px solid color-mix(in srgb, var(--editor-border) 82%, transparent);
   background: var(--editor-bg);
   overflow: hidden;
-}
-
-.html-preview-shell.has-surface-toolbar {
-  padding-top: 0;
-}
-
-.html-preview-toolbar-hover-shell {
-  --html-preview-toolbar-hotzone-height: 14px;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 13;
-  height: 74px;
-  pointer-events: none;
-}
-
-.html-preview-toolbar-hotzone {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--html-preview-toolbar-hotzone-height);
-  pointer-events: auto;
-}
-
-.html-preview-toolbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 52px;
-  padding: 10px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--editor-border) 82%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--editor-bg) 96%, var(--hover-soft) 4%),
-      color-mix(in srgb, var(--editor-bg) 92%, transparent)
-    );
-  backdrop-filter: blur(14px);
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(calc(-100% + var(--html-preview-toolbar-hotzone-height)));
-  transition:
-    transform 180ms ease,
-    opacity 180ms ease;
-}
-
-.html-preview-toolbar-hover-shell:hover .html-preview-toolbar,
-.html-preview-toolbar-hover-shell:focus-within .html-preview-toolbar {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.html-preview-toolbar-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.html-preview-toolbar-button {
-  min-height: 30px;
-  border: 1px solid color-mix(in srgb, var(--editor-border) 84%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--hover-soft) 68%, transparent);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  padding: 6px 12px;
-  cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-}
-
-.html-preview-toolbar-button:hover,
-.html-preview-toolbar-button:focus-visible {
-  background: color-mix(in srgb, var(--hover-soft) 82%, transparent);
-  border-color: color-mix(in srgb, var(--slate-400) 46%, var(--editor-border));
-  outline: none;
-}
-
-.html-preview-toolbar-button:active {
-  background: color-mix(in srgb, var(--hover-strong) 70%, transparent);
-}
-
-.html-preview-toolbar-button.is-active {
-  background: color-mix(in srgb, var(--accent-soft) 72%, var(--editor-bg) 28%);
-  border-color: color-mix(in srgb, var(--accent) 62%, var(--editor-border) 38%);
-  color: color-mix(in srgb, var(--accent) 84%, var(--text-primary) 16%);
-}
-
-.html-preview-slide-progress {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  border: 1px solid color-mix(in srgb, var(--editor-border) 84%, transparent);
-  border-radius: 8px;
-  padding: 0 12px;
-  background: color-mix(in srgb, var(--hover-soft) 62%, transparent);
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .html-preview-toolbar {
-    transition: none;
-  }
 }
 
 .source-editor-host {
@@ -1626,6 +1551,10 @@ body {
   width: min(960px, calc(100vw - 24px));
 }
 
+.html-preview-modal-wide.html-preview-svg-modal-expanded {
+  width: calc(100vw - 24px);
+}
+
 .html-preview-modal-body {
   display: grid;
   gap: 12px;
@@ -1682,6 +1611,217 @@ body {
   outline: none;
   border-color: color-mix(in srgb, var(--accent) 56%, var(--editor-border));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.html-preview-svg-editor {
+  grid-template-columns: minmax(0, 1.8fr) minmax(250px, 0.9fr);
+  align-items: start;
+}
+
+.html-preview-svg-modal-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.html-preview-svg-expand-btn {
+  white-space: nowrap;
+}
+
+.html-preview-svg-stage-wrap {
+  min-width: 0;
+}
+
+.html-preview-svg-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.html-preview-svg-toolbar-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.html-preview-svg-stage {
+  position: relative;
+  width: 100%;
+  min-height: 240px;
+  border: 1px solid color-mix(in srgb, var(--editor-border) 76%, transparent);
+  border-radius: var(--editor-surface-radius);
+  background: color-mix(in srgb, var(--editor-bg) 96%, var(--hover-soft));
+  overflow: hidden;
+}
+
+.html-preview-svg-viewport {
+  position: absolute;
+  inset: 0;
+}
+
+.html-preview-svg-stage-image,
+.html-preview-svg-stage-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.html-preview-svg-stage-image {
+  object-fit: contain;
+}
+
+.html-preview-svg-stage-overlay {
+  pointer-events: auto;
+}
+
+.html-preview-svg-item {
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  border: 1.5px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 0;
+  min-width: 12px;
+  min-height: 12px;
+  cursor: grab;
+  pointer-events: auto;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.html-preview-svg-item.is-selected {
+  border-color: var(--accent);
+  border-style: solid;
+  background: color-mix(in srgb, var(--accent-soft) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.html-preview-svg-item.is-connector {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.html-preview-svg-item.is-connector::before {
+  content: "";
+  position: absolute;
+  inset:
+    var(--svg-hit-pad-top, 0%)
+    var(--svg-hit-pad-right, 0%)
+    var(--svg-hit-pad-bottom, 0%)
+    var(--svg-hit-pad-left, 0%);
+  border: 1.5px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.html-preview-svg-item.is-selected.is-connector::before {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 12%, transparent);
+}
+
+.html-preview-svg-item:active {
+  cursor: grabbing;
+}
+
+.html-preview-svg-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--editor-bg) 94%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--editor-border) 80%, transparent);
+  pointer-events: auto;
+  cursor: crosshair;
+  z-index: 2;
+}
+
+.html-preview-svg-handle.is-anchor {
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+}
+
+.html-preview-svg-handle.is-control {
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  margin-top: -5px;
+  border-radius: 3px;
+}
+
+.html-preview-svg-handle.is-selected {
+  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+}
+
+.html-preview-svg-guides {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.html-preview-svg-guides line {
+  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
+  stroke-width: 0.2;
+  stroke-dasharray: 1.2 1.2;
+}
+
+.html-preview-svg-selection-box {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 18%, transparent);
+  pointer-events: none;
+}
+
+.html-preview-svg-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.html-preview-svg-text-field {
+  display: contents;
+}
+
+.html-preview-svg-text-input {
+  min-height: 88px;
+  border-radius: var(--editor-surface-radius);
+}
+
+.html-preview-svg-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.html-preview-svg-validation {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.html-preview-svg-validation.is-error {
+  color: #b91c1c;
+}
+
+.html-preview-svg-validation.is-warning {
+  color: #92400e;
 }
 
 .html-preview-chart-editor {
@@ -2079,6 +2219,10 @@ body {
   border-radius: 4px;
 }
 
+.app-root.ui-classic .html-preview-svg-text-input {
+  border-radius: var(--editor-surface-radius);
+}
+
 .app-root.ui-classic .app-modal-backdrop {
   background: color-mix(in srgb, var(--slate-950) 16%, transparent);
 }
@@ -2106,15 +2250,6 @@ body {
   border-radius: 4px;
   font-size: 11px;
   padding: 6px 10px;
-}
-
-.app-root.ui-classic .html-preview-toolbar {
-  padding: 8px 10px;
-}
-
-.app-root.ui-classic .html-preview-toolbar-button,
-.app-root.ui-classic .html-preview-slide-progress {
-  border-radius: 4px;
 }
 
 .export-dialog-card {
@@ -4401,7 +4536,8 @@ body {
   gap: 0;
 }
 
-.app-root.ui-classic .titlebar-file-popover {
+.app-root.ui-classic .titlebar-file-popover,
+.app-root.ui-classic .titlebar-window-popover {
   border: none;
   border-radius: 6px;
   background: var(--editor-bg);

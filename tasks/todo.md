@@ -1,3 +1,118 @@
+# 发布 v0.2.8 并同步 GitHub Releases（2026-04-25 12:xx）
+
+## Plan
+- [x] 盘点当前版本、工作区改动、现有 release 和本地安装包产物
+- [x] 编写 `docs/release-notes-v0.2.8.md` 与 `update/updatenote_2026042512.md`
+- [x] 运行必要验证并构建/确认 `MDPad_0.2.8_x64-setup.exe` 发布资产
+- [ ] 提交当前工作区改动并推送 `main` 到 GitHub
+- [ ] 创建 GitHub Release `v0.2.8`，上传安装包并核对发布结果
+
+## Progress Notes
+- 已确认当前分支为 `main`，远端为 `https://github.com/endearqb/MDPad.git`，当前版本号为 `0.2.8`。
+- 已确认 GitHub 当前最新 release 是 `v0.2.7`，本轮目标 release 为 `v0.2.8`。
+- 已新增 [docs/release-notes-v0.2.8.md](/D:/MyProject/MDPad/docs/release-notes-v0.2.8.md) 与 [update/updatenote_2026042512.md](/D:/MyProject/MDPad/update/updatenote_2026042512.md)。
+- 已执行 `pnpm tauri:build:no-bump`，重新生成 `MDPad_0.2.8_x64-setup.exe`。
+- 已确认安装包 SHA256：`491C163016CB329CB1C440BC61B89D209459924618F04F5AD1B3AC0EBAEC354F`。
+
+# 调整 SVG 选择视觉与编辑弹窗宽度（2026-04-25 10:xx）
+
+## Plan
+- [x] 禁用 HTML 渲染页中的 SVG 可见选中框/控制点，同时保留 SVG 命中、双击/右键打开编辑和只读保护
+- [x] 移除 SVG 编辑弹窗中的默认元素类型标注，让未选中 overlay 仅作为透明命中层存在
+- [x] 保留选中元素的蓝色边框、控制点、拖动和连接线热区行为
+- [x] 为 SVG 编辑弹窗增加最大化到应用当前宽度/恢复默认宽度按钮
+- [x] 更新相关测试与 `update/updatenote_2026042510.md`，运行定向测试和 build 验证
+
+## Progress Notes
+- 已确认本轮是在已恢复的 SVG 编辑链路上做视觉和弹窗尺寸收口，不改变 SVG patch 写回协议。
+- 已确认 `src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 等既有脏状态与本任务无关，本轮不触碰。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已停止在 HTML 渲染页创建 SVG selection overlay、selection box、控制点和 `data-mdpad-svg-selected` 属性；选择消息与编辑打开链路保留。
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 已移除 overlay item 中的默认元素 label，并新增最大化宽度/恢复宽度按钮。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已让未选中 SVG item 透明化，只在选中态显示蓝色边框；连接线透明热区继续保留。
+- 已补充 [HtmlPreview.test.ts](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.test.ts)、[htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts)、[htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts)，覆盖只读阻止、无预览 overlay、无默认 label 和宽度切换。
+- 验证已完成：`pnpm test -- htmlPreviewDocument HtmlPreview svgEditorGeometry htmlPreviewEditors` 通过（45 个文件 / 306 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：HTML 渲染页点击 SVG 元素后不再出现蓝色选中框或控制点，但仍会发送选择/编辑请求，双击和右键打开 SVG 编辑弹窗不受影响。
+- 结果：SVG 编辑弹窗内不再默认标注“矩形/直线”等文字；未选中 overlay 只作为命中层，选中元素仍保留蓝色边框、拖动入口和连接线端点/折线点编辑控件。
+- 结果：SVG 编辑弹窗新增宽度切换按钮，可在默认宽度和当前应用视口宽度之间切换。
+- 说明：终端验证覆盖了 DOM、消息和构建；仍建议在桌面应用中用截图里的 SVG 手工确认弹窗最大化宽度与实际拖动手感。
+
+# 对齐窗口菜单样式并隐藏全屏 Chrome（2026-04-25 10:xx）
+
+## Plan
+- [x] 将右上角窗口尺寸菜单改成与左侧文件菜单一致的白底、阴影、圆角和左侧展开位置
+- [x] 在 App 层同步全屏状态，进入全屏后隐藏应用 titlebar 与底部 statusbar，并让主区域铺满窗口
+- [x] 保留 40% x 90%、16:9 Slide、最大化、全屏四个窗口动作，以及 F11 / Esc 全屏快捷键
+- [x] 更新 TopBar / App 相关测试，并运行定向 vitest、TypeScript 检查与 build
+- [x] 更新 `update/updatenote_2026042510.md`，在本节补齐 Progress Notes / Review
+
+## Progress Notes
+- 已确认这轮是在上一轮窗口菜单基础上收口：不再新增窗口动作，只调整弹出菜单视觉位置和全屏布局状态。
+- 已确认全屏时如果直接卸载 titlebar，快捷键监听不能继续依赖 TopBar，因此全屏快捷键会提升到 App 层处理。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已让 `.titlebar-window-popover` 复用文件菜单弹层视觉，并从窗口按钮左下侧展开；classic 主题也同步套用文件菜单白底/阴影/圆角规则。
+- [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 已新增 `isAppFullscreen` 状态与根节点 `is-app-fullscreen` class，全屏时不渲染 `TopBar` 和 `StatusBar`，主区域去掉外圈间距。
+- [src/features/window/TopBar.tsx](/D:/MyProject/MDPad/src/features/window/TopBar.tsx) 已把全屏请求统一交给 App 层回调；窗口预设和最大化在需要时会先退出 fullscreen 状态。
+- 已新增 [src/App.test.ts](/D:/MyProject/MDPad/src/App.test.ts)，覆盖 fullscreen 初始化隐藏 chrome、`Esc` 退出恢复 chrome、`F11` 从 App 层进入 fullscreen；[TopBar.test.ts](/D:/MyProject/MDPad/src/features/window/TopBar.test.ts) 已更新窗口菜单和全屏菜单项断言。
+- 验证已完成：`pnpm exec vitest run src/features/window/TopBar.test.ts src/App.test.ts` 通过（2 个文件 / 5 个测试），`pnpm exec tsc --noEmit` 通过，`pnpm build` 通过。
+
+## Review
+- 结果：右上角窗口菜单不再使用图 1 的蓝灰大浮层，而是与左侧文件菜单一致的横向白底工具条风格，并向按钮左侧展开，避免贴右边缘时视觉漂移。
+- 结果：进入全屏后 React 布局会同步隐藏应用自绘 titlebar 和底部 statusbar，`.workspace-shell` 也去掉 padding/gap，让编辑或预览区域直接铺满窗口。
+- 结果：`F11` / `Esc` 快捷键由 App 层监听，因此全屏时即使 TopBar 已卸载也能退出；菜单里的全屏按钮仍通过同一状态更新路径进入全屏。
+- 说明：终端验证覆盖了布局状态与快捷键逻辑；仍建议在桌面应用里手工确认图 2 对齐效果和系统级全屏边界。
+
+# 修复 SVG 编辑命中、保存回流和文字输入视觉（2026-04-25 10:00）
+
+## Plan
+- [x] 恢复 SVG 编辑器所需组件、几何 helper 与会话 helper，并保留当前图表编辑与 HTML preview 改动
+- [x] 补齐 iframe 与父层 SVG 消息协议、patch 写回和预览同步，确保编辑后页面 HTML 立即更新
+- [x] 增大连接线命中范围，对 line、polyline、正交 path 使用线段距离判定，改善拐弯连接线选择
+- [x] 收口 SVG 文字编辑输入框视觉，去掉外层容器感并复用窗口圆角变量
+- [x] 更新测试与 `update/updatenote_2026042510.md`，运行定向测试和 build 验证
+
+## Progress Notes
+- 已确认当前工作区已有未提交的 HTML preview/窗口菜单相关改动；本轮在现有状态上增量合并，不回退这些文件。
+- 已确认 `src-tauri/Cargo.toml` 与 `src-tauri/tauri.conf.json` 仍是既有脏状态；本轮不触碰。
+- 已恢复 [SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx)、[svgEditorGeometry.ts](/D:/MyProject/MDPad/src/features/editor/svgEditorGeometry.ts) 与 SVG session helper，并按当前 `HtmlPreview` 结构接入，不回退已有图表编辑链路。
+- [htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已补齐 SVG open/selection/commit/sync 消息类型，右键和双击可生成 SVG 编辑请求，连接线 hit test 默认热区提升到 18px，并对 `line`、`polyline`、`path` 使用线段距离判定。
+- [HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已处理 SVG 编辑请求和 SVG patch，成功后调用 `commitVisualHtmlChange(result.html, { reloadPreview: true })`，让主页面 HTML 和 iframe 预览立即同步。
+- SVG 文字输入已改成单个 textarea 视觉，`border-radius` 使用 `var(--editor-surface-radius)`；classic 跟随 6px，modern 维持当前窗口圆角。
+- 已更新 [htmlPreviewDocument.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.test.ts)，覆盖 SVG 右键/双击打开和拐弯连接线扩展热区选择；恢复的 [svgEditorGeometry.test.ts](/D:/MyProject/MDPad/src/features/editor/svgEditorGeometry.test.ts) 通过。
+- 验证已完成：`pnpm test -- htmlPreviewDocument HtmlPreview svgEditorGeometry htmlPreviewEditors` 通过（44 个文件 / 302 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：SVG 编辑窗口重新接回父层 HTML 状态，应用 SVG patch 后会触发 dirty 写回，并强制刷新 iframe 预览，避免关闭编辑窗后页面仍显示旧 SVG。
+- 结果：iframe 内 SVG 连接线选择不再只依赖原始 bbox；折线与正交 path 可按线段距离命中，18px 内的拐弯段和端点附近更容易被选中。
+- 结果：SVG 编辑窗中的文字编辑区视觉只保留输入框边框，外层不再呈现 field/card 边框，圆角与应用窗口模式一致。
+- 说明：终端验证无法完全替代桌面手工验收；建议本地再用包含直线、折线、正交 path 和 SVG 文本的文档复查鼠标命中、应用后预览刷新和保存状态。
+
+# 移除 HTML 幻灯片模式并重做窗口尺寸菜单（2026-04-25 10:xx）
+
+## Plan
+- [x] 移除 HTML preview 的幻灯片模式 UI、状态、偏好、类型与 iframe 内 slide 变形逻辑，保留普通预览桥接、文字编辑与图表编辑
+- [x] 重做右上角窗口调整按钮为横向菜单，提供 40% x 90%、16:9 Slide、最大化、全屏四个动作
+- [x] 补齐/更新 HtmlPreview、htmlPreviewDocument、windowPreset、TopBar 相关测试
+- [x] 运行定向 vitest、TypeScript 检查与 build 验证
+- [x] 新增 `update/updatenote_2026042510.md` 并在本节回填 Progress Notes / Review
+
+## Progress Notes
+- 已确认本轮范围：去掉会改变 HTML slide 显示的阅读/演示/翻页/section 隐藏等变形逻辑，但保留普通 HTML preview host bridge。
+- 已确认当前工作区存在既有未提交状态 `src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`；本轮不触碰这两处。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已移除 slide 工具栏、surface mode 状态、slide 偏好读写、slide state 监听和 slide-present 全屏联动；HTML preview 继续只负责普通 iframe 预览、文字编辑、图表编辑和导出菜单。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已移除 iframe host script 中的 `detectSlideDocument`、`updateSlideState`、`stepSlides`、generic section 显隐和 slide 键盘处理，不再改写用户自带 slide HTML 的显示状态。
+- 已删除 `src/features/editor/slides/slideDetection.ts`、`src/shared/utils/htmlSlidePreferences.ts` 和对应测试；`HtmlPreviewSurfaceMode` / `HtmlSlideTreatment` 内部类型也已下线。
+- [src/features/window/TopBar.tsx](/D:/MyProject/MDPad/src/features/window/TopBar.tsx) 已把右上角调整按钮改为横向菜单，并新增 40% x 90%、16:9 Slide、最大化、全屏四个 icon-only 动作；`F11` 切换全屏，`Esc` 在全屏时退出。
+- [src/shared/utils/windowPreset.ts](/D:/MyProject/MDPad/src/shared/utils/windowPreset.ts) 已新增 16:9 Slide 窗口预设计算，使用显示器 work area 60% 高度和 16:9 宽高比，并沿用最小窗口尺寸约束。
+- 已新增 [update/updatenote_2026042510.md](/D:/MyProject/MDPad/update/updatenote_2026042510.md)，记录本轮移除 slide 模式和窗口菜单改造。
+- 验证已完成：`pnpm exec vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/shared/utils/windowPreset.test.ts src/features/window/TopBar.test.ts` 通过（4 个文件 / 44 个测试），`pnpm exec tsc --noEmit` 通过，`pnpm build` 通过。
+
+## Review
+- 结果：HTML 预览不再显示或驱动 MDPad 自带幻灯片模式，因此不会再因为自动识别 slide/section 而隐藏用户 HTML 中的内容或劫持翻页显示。
+- 结果：普通 HTML 预览的编辑桥接仍保留，图表编辑和双击文字编辑链路未被一并拆掉。
+- 结果：右上角窗口调整入口从单一 40% x 90% 动作变成横向菜单，适配普通紧凑窗口、16:9 slide 预览、系统最大化和全屏四种常用场景。
+- 说明：终端侧无法代替桌面 GUI；建议手工复查已有 slide HTML、窗口菜单展开位置、四个菜单项实际窗口尺寸，以及 `F11` / `Esc` 全屏行为。
+
 # 发布 v0.2.7 并同步 GitHub Releases（2026-04-23 13:00）
 
 ## Plan

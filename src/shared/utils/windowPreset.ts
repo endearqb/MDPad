@@ -1,5 +1,7 @@
 export const PSEUDO_MAXIMIZE_WIDTH_RATIO = 0.4;
 export const PSEUDO_MAXIMIZE_HEIGHT_RATIO = 0.9;
+export const SLIDE_WINDOW_HEIGHT_RATIO = 0.6;
+export const SLIDE_WINDOW_ASPECT_RATIO = 16 / 9;
 export const MIN_WINDOW_WIDTH = 420;
 export const MIN_WINDOW_HEIGHT = 320;
 
@@ -73,6 +75,26 @@ export function computePseudoMaximizeBounds(
   const height = Math.max(
     MIN_WINDOW_HEIGHT,
     Math.round(workArea.size.height * PSEUDO_MAXIMIZE_HEIGHT_RATIO)
+  );
+  const x = Math.round(workArea.position.x + (workArea.size.width - width) / 2);
+  const y = Math.round(workArea.position.y + (workArea.size.height - height) / 2);
+
+  return {
+    width,
+    height,
+    x,
+    y
+  };
+}
+
+export function computeSlideAspectWindowBounds(
+  workArea: MonitorWorkAreaLike
+): WindowBounds {
+  const preferredHeight = Math.round(workArea.size.height * SLIDE_WINDOW_HEIGHT_RATIO);
+  const height = Math.max(MIN_WINDOW_HEIGHT, preferredHeight);
+  const width = Math.max(
+    MIN_WINDOW_WIDTH,
+    Math.round(height * SLIDE_WINDOW_ASPECT_RATIO)
   );
   const x = Math.round(workArea.position.x + (workArea.size.width - width) / 2);
   const y = Math.round(workArea.position.y + (workArea.size.height - height) / 2);

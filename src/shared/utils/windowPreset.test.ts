@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeSlideAspectWindowBounds,
   enforceMinimumWindowSize,
   MIN_WINDOW_HEIGHT,
   MIN_WINDOW_WIDTH,
@@ -34,6 +35,34 @@ describe("windowPreset", () => {
       width: MIN_WINDOW_WIDTH,
       height: MIN_WINDOW_HEIGHT,
       x: Math.round((700 - MIN_WINDOW_WIDTH) / 2),
+      y: Math.round((300 - MIN_WINDOW_HEIGHT) / 2)
+    });
+  });
+
+  it("computes a centered 16:9 slide preset at 60% monitor height", () => {
+    expect(
+      computeSlideAspectWindowBounds({
+        position: { x: 100, y: 50 },
+        size: { width: 1600, height: 900 }
+      })
+    ).toEqual({
+      width: 960,
+      height: 540,
+      x: 420,
+      y: 230
+    });
+  });
+
+  it("applies minimum size constraints for the 16:9 slide preset", () => {
+    expect(
+      computeSlideAspectWindowBounds({
+        position: { x: 0, y: 0 },
+        size: { width: 700, height: 300 }
+      })
+    ).toEqual({
+      width: Math.round(MIN_WINDOW_HEIGHT * (16 / 9)),
+      height: MIN_WINDOW_HEIGHT,
+      x: Math.round((700 - Math.round(MIN_WINDOW_HEIGHT * (16 / 9))) / 2),
       y: Math.round((300 - MIN_WINDOW_HEIGHT) / 2)
     });
   });

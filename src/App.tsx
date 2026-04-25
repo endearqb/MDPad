@@ -368,6 +368,7 @@ export default function App() {
   );
   const [charCount, setCharCount] = useState(0);
   const [readOnlyIconBlinkTick, setReadOnlyIconBlinkTick] = useState(0);
+  const [isAppFullscreen, setIsAppFullscreen] = useState(false);
 
   const docRef = useRef(doc);
   const markdownViewModeRef = useRef(markdownViewMode);
@@ -460,6 +461,60 @@ export default function App() {
       // Ignore when window APIs are unavailable.
     }
   }, [uiTheme]);
+
+  const setWindowFullscreen = useCallback(async (nextFullscreen: boolean) => {
+    try {
+      const appWindow = getCurrentWindow();
+      await appWindow.setFullscreen(nextFullscreen);
+      setIsAppFullscreen(nextFullscreen);
+    } catch {
+      // Ignore runtime failures and keep current layout state.
+    }
+  }, []);
+
+  useEffect(() => {
+    let isDisposed = false;
+
+    try {
+      const appWindow = getCurrentWindow();
+      void appWindow
+        .isFullscreen()
+        .then((nextFullscreen) => {
+          if (!isDisposed) {
+            setIsAppFullscreen(nextFullscreen);
+          }
+        })
+        .catch(() => {
+          // Ignore runtime failures and keep default non-fullscreen layout.
+        });
+    } catch {
+      // Ignore when window APIs are unavailable.
+    }
+
+    return () => {
+      isDisposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenShortcuts = (event: KeyboardEvent) => {
+      if (event.key === "F11") {
+        event.preventDefault();
+        void setWindowFullscreen(!isAppFullscreen);
+        return;
+      }
+
+      if (event.key === "Escape" && isAppFullscreen) {
+        event.preventDefault();
+        void setWindowFullscreen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleFullscreenShortcuts);
+    return () => {
+      window.removeEventListener("keydown", handleFullscreenShortcuts);
+    };
+  }, [isAppFullscreen, setWindowFullscreen]);
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
@@ -1878,36 +1933,41 @@ export default function App() {
           "app-root",
           themeMode === "dark" ? "theme-dark dark" : "theme-light",
           uiTheme === "classic" ? "ui-classic" : "ui-modern",
+          isAppFullscreen ? "is-app-fullscreen" : "",
           `md-theme-${markdownTheme}`
         ].join(" ")}
       >
         <div className="workspace-shell">
-          <TopBar
-            canRename={Boolean(doc.currentPath)}
-            copy={copy.topBar}
-            documentViewToggleLabel={
-              canToggleDocumentView ? documentViewToggleLabel : null
-            }
-            fileName={displayFileBaseName}
-            fileBaseName={displayFileBaseName}
-            isBusy={isBusy}
-            isDirty={doc.isDirty}
-            editorMode={editorMode}
-            readOnlyIconBlinkTick={readOnlyIconBlinkTick}
-            onNewWindow={handleNewWindow}
-            onOpen={handleOpenFileDialog}
-            onRename={handleRename}
-            onSave={handleSave}
-            onSaveAs={handleSaveAs}
-            onToggleDocumentView={
-              canToggleDocumentView ? handleToggleDocumentView : null
-            }
-            onToggleEditorMode={handleToggleEditorMode}
-            onToggleTheme={() =>
-              setThemeMode((current) => (current === "light" ? "dark" : "light"))
-            }
-            themeMode={themeMode}
-          />
+          {!isAppFullscreen ? (
+            <TopBar
+              canRename={Boolean(doc.currentPath)}
+              copy={copy.topBar}
+              documentViewToggleLabel={
+                canToggleDocumentView ? documentViewToggleLabel : null
+              }
+              fileName={displayFileBaseName}
+              fileBaseName={displayFileBaseName}
+              isBusy={isBusy}
+              isDirty={doc.isDirty}
+              editorMode={editorMode}
+              isFullscreen={isAppFullscreen}
+              readOnlyIconBlinkTick={readOnlyIconBlinkTick}
+              onNewWindow={handleNewWindow}
+              onOpen={handleOpenFileDialog}
+              onRename={handleRename}
+              onRequestFullscreenChange={setWindowFullscreen}
+              onSave={handleSave}
+              onSaveAs={handleSaveAs}
+              onToggleDocumentView={
+                canToggleDocumentView ? handleToggleDocumentView : null
+              }
+              onToggleEditorMode={handleToggleEditorMode}
+              onToggleTheme={() =>
+                setThemeMode((current) => (current === "light" ? "dark" : "light"))
+              }
+              themeMode={themeMode}
+            />
+          ) : null}
 
           <main className="app-main">
             {isStartupReady ? (
@@ -1957,21 +2017,23 @@ export default function App() {
             ) : null}
           </main>
 
-          <StatusBar
-            copy={copy.statusBar}
-            saveState={saveState}
-            externalChangeMode={externalChangeMode}
-            charCount={charCount}
-            locale={locale}
-            markdownTheme={markdownTheme}
-            onToggleExternalChangeMode={handleToggleExternalChangeMode}
-            onOpenSamples={handleOpenSamples}
-            onToggleLocale={handleToggleLocale}
-            onToggleMarkdownTheme={handleToggleMarkdownTheme}
-            onSelectMarkdownTheme={handleSelectMarkdownTheme}
-            onToggleUiTheme={handleToggleUiTheme}
-            uiTheme={uiTheme}
-          />
+          {!isAppFullscreen ? (
+            <StatusBar
+              copy={copy.statusBar}
+              saveState={saveState}
+              externalChangeMode={externalChangeMode}
+              charCount={charCount}
+              locale={locale}
+              markdownTheme={markdownTheme}
+              onToggleExternalChangeMode={handleToggleExternalChangeMode}
+              onOpenSamples={handleOpenSamples}
+              onToggleLocale={handleToggleLocale}
+              onToggleMarkdownTheme={handleToggleMarkdownTheme}
+              onSelectMarkdownTheme={handleSelectMarkdownTheme}
+              onToggleUiTheme={handleToggleUiTheme}
+              uiTheme={uiTheme}
+            />
+          ) : null}
         </div>
 
         <Suspense fallback={null}>

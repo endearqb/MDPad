@@ -14,13 +14,6 @@ vi.mock("../file/fileService", () => ({
   openExternalUrl: openExternalUrlMock
 }));
 
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({
-    isFullscreen: vi.fn(async () => false),
-    setFullscreen: vi.fn(async () => undefined)
-  })
-}));
-
 import HtmlPreview from "./HtmlPreview";
 import {
   HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE,
@@ -28,12 +21,9 @@ import {
   HTML_PREVIEW_MESSAGE_SOURCE,
   HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
   HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
+  HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
   HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE
 } from "./htmlPreviewDocument";
-import {
-  HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
-  HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE
-} from "./html-visual/htmlVisualBridge";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -130,6 +120,62 @@ function dispatchInput(element: HTMLInputElement | HTMLTextAreaElement, value: s
   });
 }
 
+function createSvgEditorRequestForTest() {
+  return {
+    kind: "svg-elements",
+    svgLocator: {
+      root: "body",
+      path: [0]
+    },
+    svgMarkup:
+      '<svg viewBox="0 0 120 80"><rect x="10" y="12" width="30" height="18"></rect></svg>',
+    viewBox: {
+      minX: 0,
+      minY: 0,
+      width: 120,
+      height: 80
+    },
+    items: [
+      {
+        locator: {
+          root: "body",
+          path: [0, 0]
+        },
+        tagName: "rect",
+        bbox: {
+          x: 10,
+          y: 12,
+          width: 30,
+          height: 18
+        },
+        geometry: {
+          x: 10,
+          y: 12,
+          width: 30,
+          height: 18
+        },
+        style: {
+          fill: null,
+          stroke: null,
+          strokeWidth: 1,
+          opacity: 1,
+          fontSize: null,
+          textAnchor: null,
+          fontFamily: null,
+          markerStart: null,
+          markerEnd: null,
+          strokeDasharray: null,
+          strokeLinecap: null,
+          strokeLinejoin: null
+        },
+        transform: null,
+        canEditText: false
+      }
+    ],
+    initialSelectedLocatorPath: [0, 0]
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -151,20 +197,22 @@ describe("HtmlPreview", () => {
     expect(markup).toContain("data-mdpad-html-preview-host");
   });
 
-  it("renders the surface toolbar without preview/edit buttons", () => {
+  it("does not render the removed slide mode toolbar", () => {
     const rendered = renderPreview({
       copy: getAppCopy("en").editor,
       documentPath: null,
-      html: "<p>Hello</p>",
-      isEditable: true
+      html: "<section>Slide 1</section><section>Slide 2</section>",
+      isEditable: false
     });
 
     expect(
       rendered.container.querySelector(".html-preview-toolbar-hover-shell")
-    ).toBeInstanceOf(HTMLDivElement);
-    expect(rendered.container.textContent).toContain("Auto");
-    expect(rendered.container.textContent).not.toContain("Preview");
-    expect(rendered.container.textContent).not.toContain("Edit");
+    ).toBeNull();
+    expect(rendered.container.textContent).not.toContain("Read");
+    expect(rendered.container.textContent).not.toContain("Present");
+    expect(rendered.container.textContent).not.toContain("Slides");
+    expect(rendered.container.textContent).not.toContain("Document");
+    expect(rendered.frameWindow.postMessage).not.toHaveBeenCalled();
     rendered.unmount();
   });
 
@@ -246,36 +294,6 @@ describe("HtmlPreview", () => {
     rendered.unmount();
   });
 
-  it("renders slide controls and progress for readonly slide previews", () => {
-    const rendered = renderPreview({
-      copy: getAppCopy("en").editor,
-      documentPath: null,
-      html: "<section>Slide 1</section><section>Slide 2</section>",
-      isEditable: false,
-      slideTreatment: "slides"
-    });
-
-    const token = extractPreviewToken(rendered.iframe);
-    dispatchPreviewMessage(rendered.frameWindow, {
-      type: HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
-      source: HTML_PREVIEW_MESSAGE_SOURCE,
-      token,
-      state: {
-        isSlideDocument: true,
-        kind: "generic",
-        totalSlides: 11,
-        currentSlideIndex: 0
-      }
-    });
-
-    expect(rendered.container.textContent).toContain("Read");
-    expect(rendered.container.textContent).toContain("Present");
-    expect(rendered.container.textContent).toContain("Slides");
-    expect(rendered.container.textContent).toContain("Document");
-    expect(rendered.container.textContent).toContain("1 / 11");
-    rendered.unmount();
-  });
-
   it("applies inline text commit messages back into html content", () => {
     const onHtmlChange = vi.fn();
     const rendered = renderPreview({
@@ -320,117 +338,6 @@ describe("HtmlPreview", () => {
 
     expect(nextIframe.getAttribute("srcdoc")).not.toBe(initialSrcDoc);
     expect(nextIframe.getAttribute("srcdoc")).toContain("Hello from source");
-    rendered.unmount();
-  });
-
-  it("toggles read mode back to preview when clicking the active read button", () => {
-    const rendered = renderPreview({
-      copy: getAppCopy("en").editor,
-      documentPath: null,
-      html: "<section>Slide 1</section><section>Slide 2</section>",
-      isEditable: false,
-      onHtmlChange: vi.fn()
-    });
-
-    const token = extractPreviewToken(rendered.iframe);
-    dispatchPreviewMessage(rendered.frameWindow, {
-      type: HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
-      source: HTML_PREVIEW_MESSAGE_SOURCE,
-      token,
-      state: {
-        isSlideDocument: true,
-        kind: "generic",
-        totalSlides: 2,
-        currentSlideIndex: 0
-      }
-    });
-    vi.mocked(rendered.frameWindow.postMessage).mockClear();
-
-    const readButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Read"
-    );
-    expect(readButton).toBeInstanceOf(HTMLButtonElement);
-
-    act(() => {
-      (readButton as HTMLButtonElement).click();
-    });
-
-    expect(rendered.frameWindow.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-        source: HTML_PREVIEW_MESSAGE_SOURCE,
-        mode: "slide-reading"
-      }),
-      "*"
-    );
-
-    act(() => {
-      (readButton as HTMLButtonElement).click();
-    });
-
-    expect(rendered.frameWindow.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-        source: HTML_PREVIEW_MESSAGE_SOURCE,
-        mode: "preview"
-      }),
-      "*"
-    );
-    rendered.unmount();
-  });
-
-  it("toggles present mode back to preview when clicking the active present button", () => {
-    const rendered = renderPreview({
-      copy: getAppCopy("en").editor,
-      documentPath: null,
-      html: "<section>Slide 1</section><section>Slide 2</section>",
-      isEditable: false
-    });
-
-    const token = extractPreviewToken(rendered.iframe);
-    dispatchPreviewMessage(rendered.frameWindow, {
-      type: HTML_PREVIEW_SLIDE_STATE_CHANGE_MESSAGE_TYPE,
-      source: HTML_PREVIEW_MESSAGE_SOURCE,
-      token,
-      state: {
-        isSlideDocument: true,
-        kind: "generic",
-        totalSlides: 2,
-        currentSlideIndex: 0
-      }
-    });
-    vi.mocked(rendered.frameWindow.postMessage).mockClear();
-
-    const presentButton = Array.from(rendered.container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Present"
-    );
-    expect(presentButton).toBeInstanceOf(HTMLButtonElement);
-
-    act(() => {
-      (presentButton as HTMLButtonElement).click();
-    });
-
-    expect(rendered.frameWindow.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-        source: HTML_PREVIEW_MESSAGE_SOURCE,
-        mode: "slide-present"
-      }),
-      "*"
-    );
-
-    act(() => {
-      (presentButton as HTMLButtonElement).click();
-    });
-
-    expect(rendered.frameWindow.postMessage).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        type: HTML_PREVIEW_SET_SURFACE_MODE_MESSAGE_TYPE,
-        source: HTML_PREVIEW_MESSAGE_SOURCE,
-        mode: "preview"
-      }),
-      "*"
-    );
     rendered.unmount();
   });
 
@@ -485,7 +392,7 @@ describe("HtmlPreview", () => {
     rendered.unmount();
   });
 
-  it("ignores svg editor requests because SVG editing is disabled", () => {
+  it("opens the svg editor immediately when the preview requests svg editing", () => {
     const rendered = renderPreview({
       copy: getAppCopy("en").editor,
       documentPath: null,
@@ -495,16 +402,36 @@ describe("HtmlPreview", () => {
 
     const token = extractPreviewToken(rendered.iframe);
     dispatchPreviewMessage(rendered.frameWindow, {
-      type: "mdpad:html-preview:open-svg-editor",
+      type: HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
       source: HTML_PREVIEW_MESSAGE_SOURCE,
       token,
-      request: {
-        kind: "svg-elements"
-      }
+      request: createSvgEditorRequestForTest()
     });
 
+    expect(rendered.container.textContent).toContain("Edit SVG");
+    rendered.unmount();
+  });
+
+  it("blocks svg editor requests in read-only mode", () => {
+    const onReadOnlyInteraction = vi.fn();
+    const rendered = renderPreview({
+      copy: getAppCopy("en").editor,
+      documentPath: null,
+      html: '<svg viewBox="0 0 120 80"><rect x="10" y="12" width="30" height="18"></rect></svg>',
+      isEditable: false,
+      onReadOnlyInteraction
+    });
+
+    const token = extractPreviewToken(rendered.iframe);
+    dispatchPreviewMessage(rendered.frameWindow, {
+      type: HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
+      source: HTML_PREVIEW_MESSAGE_SOURCE,
+      token,
+      request: createSvgEditorRequestForTest()
+    });
+
+    expect(onReadOnlyInteraction).toHaveBeenCalledTimes(1);
     expect(rendered.container.textContent).not.toContain("Edit SVG");
-    expect(rendered.container.textContent).not.toContain("Edit SVG Elements");
     rendered.unmount();
   });
 

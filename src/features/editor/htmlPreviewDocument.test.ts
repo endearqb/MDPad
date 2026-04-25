@@ -8,13 +8,14 @@ import {
   extractContextMenuPositionFromPreviewMessage,
   extractExternalOpenUrlFromPreviewMessage,
   extractInlineTextCommitFromPreviewMessage,
-  extractSurfaceModeFromPreviewMessage,
   findHtmlPreviewAnchorTarget,
   HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
   HTML_PREVIEW_MESSAGE_SOURCE,
   HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
   HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
-  HTML_PREVIEW_OPEN_EXTERNAL_MESSAGE_TYPE
+  HTML_PREVIEW_OPEN_EXTERNAL_MESSAGE_TYPE,
+  HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
+  HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE
 } from "./htmlPreviewDocument";
 
 function extractPreviewHostScript(documentHtml: string): string {
@@ -389,23 +390,20 @@ describe("htmlPreviewDocument", () => {
     });
   });
 
-  it("rejects removed visual-edit surface mode messages", () => {
-    const frameWindow = {} as WindowProxy;
+  it("does not inject slide mode detection or visibility controls", () => {
+    const document = buildControlledHtmlPreviewDocument({
+      html: "<html><body><section>One</section><section>Two</section></body></html>",
+      documentPath: null,
+      instanceToken: "token-no-slide-mode",
+      isEditable: false
+    });
 
-    expect(
-      extractSurfaceModeFromPreviewMessage(
-        {
-          type: "mdpad:html-preview:set-surface-mode",
-          source: HTML_PREVIEW_MESSAGE_SOURCE,
-          token: "token-surface",
-          mode: "visual-edit",
-          slideTreatment: "auto"
-        },
-        "token-surface",
-        frameWindow,
-        frameWindow
-      )
-    ).toBeNull();
+    expect(document).not.toContain("detectSlideDocument");
+    expect(document).not.toContain("updateSlideState");
+    expect(document).not.toContain("stepSlides");
+    expect(document).not.toContain("slideStateChange");
+    expect(document).not.toContain("slide-reading");
+    expect(document).not.toContain("slide-present");
   });
 
   it("rejects svg edit context from preview messages", () => {
@@ -570,7 +568,7 @@ describe("htmlPreviewDocument", () => {
       );
 
       expect(runtime.postMessage).toHaveBeenNthCalledWith(
-        2,
+        1,
         expect.objectContaining({
           type: HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
           request: expect.objectContaining({
@@ -644,7 +642,7 @@ describe("htmlPreviewDocument", () => {
       );
 
       expect(runtime.postMessage).toHaveBeenNthCalledWith(
-        2,
+        1,
         expect.objectContaining({
           type: HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
           request: expect.objectContaining({
@@ -803,7 +801,7 @@ describe("htmlPreviewDocument", () => {
       );
 
       expect(runtime.postMessage).toHaveBeenNthCalledWith(
-        2,
+        1,
         expect.objectContaining({
           type: HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
           request: expect.objectContaining({
@@ -850,7 +848,7 @@ describe("htmlPreviewDocument", () => {
     }
   });
 
-  it("does not emit svg edit requests on svg mousedown or double click", () => {
+  it("selects inline svg elements and opens the svg editor on double click", () => {
     const runtime = setupPreviewHostScript(
       '<svg id="diagram" viewBox="0 0 160 80"><rect id="box" x="12" y="10" width="60" height="28" fill="#fff" stroke="#222" /></svg>'
     );
@@ -876,13 +874,36 @@ describe("htmlPreviewDocument", () => {
         new MouseEvent("dblclick", {
           bubbles: true,
           cancelable: true,
-          button: 0
+          button: 0,
+          clientX: 24,
+          clientY: 20
         })
       );
 
-      expect(runtime.postMessage).not.toHaveBeenCalledWith(
+      expect(runtime.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "mdpad:html-preview:open-svg-editor"
+          type: HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE,
+          request: expect.objectContaining({
+            kind: "svg-elements",
+            selectedLocator: {
+              root: "body",
+              path: [0, 0]
+            }
+          })
+        }),
+        "*"
+      );
+      expect(document.querySelector("[data-mdpad-svg-selection-overlay]")).toBeNull();
+      expect(document.querySelector("[data-mdpad-svg-selection-box]")).toBeNull();
+      expect(document.querySelectorAll("[data-mdpad-svg-handle]")).toHaveLength(0);
+      expect(rectElement.hasAttribute("data-mdpad-svg-selected")).toBe(false);
+      expect(runtime.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: HTML_PREVIEW_OPEN_SVG_EDITOR_MESSAGE_TYPE,
+          request: expect.objectContaining({
+            kind: "svg-elements",
+            initialSelectedLocatorPath: [0, 0]
+          })
         }),
         "*"
       );
@@ -891,7 +912,7 @@ describe("htmlPreviewDocument", () => {
     }
   });
 
-  it("opens a plain context menu on inline svg without svg edit action", () => {
+  it("opens an svg edit context menu on inline svg", () => {
     const runtime = setupPreviewHostScript(
       '<svg id="diagram" viewBox="0 0 160 80"><rect id="box" x="12" y="10" width="60" height="28" fill="#fff" stroke="#222" /></svg>'
     );
@@ -916,16 +937,61 @@ describe("htmlPreviewDocument", () => {
       );
 
       expect(runtime.postMessage).toHaveBeenCalledWith(
-        {
+        expect.objectContaining({
           type: HTML_PREVIEW_OPEN_CONTEXT_MENU_MESSAGE_TYPE,
-          source: HTML_PREVIEW_MESSAGE_SOURCE,
-          token: "interactive-token",
           x: 48,
           y: 64,
-          context: {
-            kind: "none"
-          }
-        },
+          context: expect.objectContaining({
+            kind: "svg",
+            request: expect.objectContaining({
+              kind: "svg-elements",
+              initialSelectedLocatorPath: [0, 0]
+            })
+          })
+        }),
+        "*"
+      );
+    } finally {
+      runtime.cleanup();
+    }
+  });
+
+  it("selects bent svg connectors inside the expanded hit area", () => {
+    const runtime = setupPreviewHostScript(
+      '<svg id="diagram" viewBox="0 0 160 80"><polyline id="connector" points="12,12 80,12 80,60" fill="none" stroke="#222" /></svg>'
+    );
+
+    try {
+      const svgElement = document.querySelector("#diagram");
+      const connectorElement = document.querySelector("#connector");
+      if (!(svgElement instanceof SVGSVGElement) || !(connectorElement instanceof SVGElement)) {
+        throw new Error("Missing inline svg connector test elements.");
+      }
+
+      mockSvgGeometry(svgElement, { x: 0, y: 0, width: 160, height: 80 });
+      mockSvgGeometry(connectorElement, { x: 12, y: 12, width: 68, height: 48 });
+
+      svgElement.dispatchEvent(
+        new MouseEvent("mousedown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          clientX: 96,
+          clientY: 44
+        })
+      );
+
+      expect(runtime.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: HTML_PREVIEW_SVG_SELECTION_MESSAGE_TYPE,
+          request: expect.objectContaining({
+            kind: "svg-elements",
+            selectedLocator: {
+              root: "body",
+              path: [0, 0]
+            }
+          })
+        }),
         "*"
       );
     } finally {
