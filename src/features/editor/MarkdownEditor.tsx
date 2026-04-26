@@ -27,6 +27,7 @@ import {
   type Editor
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { fixTables } from "@tiptap/pm/tables";
 import { createLowlight } from "lowlight";
 import bash from "highlight.js/lib/languages/bash";
 import c from "highlight.js/lib/languages/c";
@@ -81,6 +82,10 @@ import { createClipboardPipeline } from "./clipboard/pipeline";
 import { createBinaryMediaPasteHandler } from "./clipboard/handlers/binaryMedia";
 import { createTextMarkdownPasteHandler } from "./clipboard/handlers/textMarkdown";
 import { createTextMarkdownImagePasteHandler } from "./clipboard/handlers/textMarkdownImage";
+import {
+  applyPreparedRichHtmlPaste,
+  prepareRichHtmlPaste
+} from "./clipboard/richHtmlTables";
 import { CalloutBlockquote } from "./extensions/calloutBlockquote";
 import {
   BlockMath,
@@ -1019,6 +1024,19 @@ export default function MarkdownEditor({
     [ensureAttachmentLibraryDirectory, reportEditorError]
   );
 
+  const scheduleTableRepair = useCallback((activeEditor: Editor): void => {
+    window.setTimeout(() => {
+      if (activeEditor.isDestroyed) {
+        return;
+      }
+
+      const repairTransaction = fixTables(activeEditor.state);
+      if (repairTransaction) {
+        activeEditor.view.dispatch(repairTransaction);
+      }
+    }, 0);
+  }, []);
+
   const resolveMediaSrc = useCallback((src: string): string => {
     return resolveMediaSource(src, documentPathRef.current);
   }, []);
@@ -1632,6 +1650,56 @@ export default function MarkdownEditor({
             return false;
           }
           return handleEditorLinkClick(event);
+        },
+        paste: (view, event) => {
+          const activeEditor = editorRef.current;
+          if (!activeEditor) {
+            return false;
+          }
+          if (!activeEditor.isEditable) {
+            event.preventDefault();
+            reportEditorError(copy.errors.readOnlyBlocked);
+            return true;
+          }
+
+          const clipboardEvent = event as ClipboardEvent;
+          const clipboardData = clipboardEvent.clipboardData;
+          if (!clipboardData) {
+            return false;
+          }
+
+          if (clipboardPipeline.handle(clipboardEvent, activeEditor)) {
+            return true;
+          }
+
+          const richHtmlPaste = prepareRichHtmlPaste(clipboardData.getData("text/html"));
+          if (!richHtmlPaste) {
+            return false;
+          }
+
+          event.preventDefault();
+
+          let pasteError: unknown = null;
+          const didPaste = applyPreparedRichHtmlPaste({
+            event: clipboardEvent,
+            onError(error) {
+              pasteError = error;
+              console.warn("Failed to paste sanitized rich HTML.", error);
+            },
+            onTablePasteSuccess() {
+              scheduleTableRepair(activeEditor);
+            },
+            payload: richHtmlPaste,
+            plainText: clipboardData.getData("text/plain"),
+            view
+          });
+
+          if (didPaste) {
+            return true;
+          }
+
+          reportEditorError(formatErrorMessage(pasteError, "Failed to paste rich HTML."));
+          return true;
         }
       },
       handlePaste: (_view, event) => {

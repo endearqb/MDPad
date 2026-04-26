@@ -1,5 +1,19 @@
 # 经验沉淀
 
+## 2026-04-26 HTML Inline Text No-op
+- HTML preview inline 编辑的 `blur` 退出不能默认等同于“用户提交了修改”；如果 `nextText === originalText`，应在 iframe host 层直接恢复 DOM 并跳过 commit。
+- 对 locator 驱动的源码 patch，no-op 要优先短路，不要先解析和定位节点；否则运行时 DOM 与源码树轻微漂移也会把“未改动退出”误报成 locator 丢失。
+- 父层消息处理也要保留同样防线，避免旧 iframe、异步消息或未来协议变更绕过 host 层 no-op 判断。
+
+## 2026-04-26 Window Aspect Mode Scope
+- 如果窗口比例模式需要用禁用原生 resize、自定义 handles 和 resize 兜底校正才能维持，必须重新评估是否值得保留；复杂窗口约束容易与平台行为冲突。
+- 用户明确要求下线某个交互模式时，要删除入口、状态、样式、helper 和测试，不要只隐藏按钮或保留后台约束逻辑。
+
+## 2026-04-25 Window Close Hover
+- 用户明确纠正关闭按钮 hover 要保持红色时，不要再为了统一窗口按钮 hover 而移除 `.win-btn.close:hover`。
+- 窗口控制按钮的视觉一致性不等于关闭按钮也必须普通 hover；关闭按钮可保留危险操作的红色反馈，同时最小化、主题切换、窗口尺寸按钮继续使用普通 hover。
+- 自绘窗口控制按钮如果被 wrapper 包住，wrapper 也必须继承 titlebar 高度；否则子按钮 `height: 100%` 只会占满 wrapper 的内容高度，hover 看起来比最小化/关闭按钮矮。
+
 ## 2026-02-23
 
 ### 0. Tauri v2 ACL 默认窗口权限不包含 `close/destroy`
@@ -327,3 +341,8 @@
 - 如果全屏态要求隐藏 titlebar/statusbar，不要把 `F11` / `Esc` 监听放在会被隐藏或卸载的 titlebar 组件里；全屏状态和快捷键应上移到 App 层。
 - 自绘窗口菜单要复用已有菜单视觉语言，包括主题覆写；新增菜单时不能只在默认主题下看起来正确，classic/modern 都要同步检查。
 - 当用户用截图纠正 UI 位置时，除了功能测试，还要把 popover 对齐策略写入样式层并用手工验收清单记录，避免只验证“按钮能点”。
+
+## 2026-04-25 SVG Editor Viewport Alignment
+- SVG 编辑窗口的显示层、overlay 命中层和 pointer 坐标换算必须共享同一个实际 viewBox viewport；不能让外层固定高度舞台负责坐标，内层 SVG 再按 `preserveAspectRatio` 居中渲染。
+- 给 SVG editor 做固定高度时，优先新增一个按 viewBox 比例计算的内部 content rect，把 iframe/overlay/handles 都挂在该 rect 下；否则选中框会和真实元素产生系统性偏移。
+- 这类视觉坐标问题不能只靠 jsdom 事件测试验证，至少要在真实桌面窗口里用文本、矩形和连接线各拖一次确认框与元素同步移动。

@@ -5,21 +5,47 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
-const { appWindowMock, getInitialFileMock, listenMock } = vi.hoisted(() => ({
+type WindowResizeTestHandler = (event: {
+  payload: { width: number; height: number };
+}) => void;
+
+const {
+  appWindowMock,
+  currentMonitorMock,
+  getInitialFileMock,
+  htmlPreviewMock,
+  listenMock,
+  readTextFileSnapshotMock
+} = vi.hoisted(() => ({
   appWindowMock: {
     close: vi.fn(async () => undefined),
     innerSize: vi.fn(async () => ({ width: 800, height: 600 })),
     isFullscreen: vi.fn(async () => false),
+    isMaximized: vi.fn(async () => false),
     label: "main",
     onCloseRequested: vi.fn(async () => vi.fn()),
-    onResized: vi.fn(async () => vi.fn()),
+    onResized: vi.fn(async (_handler: WindowResizeTestHandler) => vi.fn()),
+    outerPosition: vi.fn(async () => ({ x: 0, y: 0 })),
     setFullscreen: vi.fn(async () => undefined),
     setMinSize: vi.fn(async () => undefined),
     setPosition: vi.fn(async () => undefined),
+    setResizable: vi.fn(async () => undefined),
     setShadow: vi.fn(async () => undefined),
-    setSize: vi.fn(async () => undefined)
+    setSize: vi.fn(async () => undefined),
+    unmaximize: vi.fn(async () => undefined)
   },
-  getInitialFileMock: vi.fn(async () => null),
+  currentMonitorMock: vi.fn(async () => ({
+    workArea: {
+      position: { x: 0, y: 0 },
+      size: { width: 1600, height: 900 }
+    }
+  })),
+  getInitialFileMock: vi.fn(async (): Promise<string | null> => null),
+  htmlPreviewMock: vi.fn((_props: unknown) => null),
+  readTextFileSnapshotMock: vi.fn(async () => ({
+    content: "",
+    snapshot: { modifiedMs: 0, size: 0 }
+  })),
   listenMock: vi.fn(async () => vi.fn())
 }));
 
@@ -43,12 +69,7 @@ vi.mock("baseui/toast", () => ({
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
-  currentMonitor: vi.fn(async () => ({
-    workArea: {
-      position: { x: 0, y: 0 },
-      size: { width: 1600, height: 900 }
-    }
-  })),
+  currentMonitor: currentMonitorMock,
   getCurrentWindow: () => appWindowMock
 }));
 
@@ -83,10 +104,7 @@ vi.mock("./features/file/fileService", () => ({
   getInitialFile: getInitialFileMock,
   openFileDialog: vi.fn(async () => null),
   pickExportDirectory: vi.fn(async () => null),
-  readTextFileSnapshot: vi.fn(async () => ({
-    content: "",
-    snapshot: { modifiedMs: 0, size: 0 }
-  })),
+  readTextFileSnapshot: readTextFileSnapshotMock,
   renameFile: vi.fn(async (_path: string, newBaseName: string) => newBaseName),
   saveExportPdfDialog: vi.fn(async () => null),
   saveFileAsDialog: vi.fn(async () => null),
@@ -103,7 +121,7 @@ vi.mock("./features/editor/SourceEditor", () => ({
 }));
 
 vi.mock("./features/editor/HtmlPreview", () => ({
-  default: () => null
+  default: htmlPreviewMock
 }));
 
 vi.mock("./features/file/ExportDialog", () => ({
@@ -163,8 +181,24 @@ async function flushAsyncHandlers() {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  currentMonitorMock.mockResolvedValue({
+    workArea: {
+      position: { x: 0, y: 0 },
+      size: { width: 1600, height: 900 }
+    }
+  });
+  appWindowMock.innerSize.mockResolvedValue({ width: 800, height: 600 });
+  appWindowMock.isMaximized.mockResolvedValue(false);
+  appWindowMock.onResized.mockImplementation(
+    async (_handler: WindowResizeTestHandler) => vi.fn()
+  );
+  appWindowMock.outerPosition.mockResolvedValue({ x: 0, y: 0 });
   appWindowMock.isFullscreen.mockResolvedValue(false);
   getInitialFileMock.mockResolvedValue(null);
+  readTextFileSnapshotMock.mockResolvedValue({
+    content: "",
+    snapshot: { modifiedMs: 0, size: 0 }
+  });
 });
 
 describe("App fullscreen chrome", () => {
@@ -212,6 +246,60 @@ describe("App fullscreen chrome", () => {
       "is-app-fullscreen"
     );
 
+    rendered.unmount();
+  });
+
+  it("exits fullscreen from the hover-revealed button", async () => {
+    appWindowMock.isFullscreen.mockResolvedValueOnce(true);
+    const rendered = await renderApp();
+    await flushAsyncHandlers();
+
+    const exitButton = rendered.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Exit fullscreen"]'
+    );
+    expect(exitButton).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => {
+      exitButton?.click();
+    });
+    await flushAsyncHandlers();
+
+    expect(appWindowMock.setFullscreen).toHaveBeenLastCalledWith(false);
+    expect(rendered.container.querySelector(".app-root")?.className).not.toContain(
+      "is-app-fullscreen"
+    );
+
+    rendered.unmount();
+  });
+
+  it("passes fullscreen state controls into HTML preview", async () => {
+    getInitialFileMock.mockResolvedValue("C:\\notes\\deck.html");
+    readTextFileSnapshotMock.mockResolvedValue({
+      content: "<html><body><button>Preview</button></body></html>",
+      snapshot: { modifiedMs: 1, size: 51 }
+    });
+    appWindowMock.isFullscreen.mockResolvedValueOnce(true);
+
+    const rendered = await renderApp();
+    await flushAsyncHandlers();
+
+    const previewProps = htmlPreviewMock.mock.calls[
+      htmlPreviewMock.mock.calls.length - 1
+    ]?.[0] as
+      | {
+          isFullscreen?: boolean;
+          onPreviewEscapeKey?: () => void;
+          onRequestFullscreenChange?: (nextFullscreen: boolean) => Promise<void>;
+        }
+      | undefined;
+
+    expect(previewProps?.isFullscreen).toBe(true);
+    await act(async () => {
+      await previewProps?.onRequestFullscreenChange?.(false);
+    });
+    await flushAsyncHandlers();
+
+    expect(appWindowMock.setFullscreen).toHaveBeenLastCalledWith(false);
     rendered.unmount();
   });
 });

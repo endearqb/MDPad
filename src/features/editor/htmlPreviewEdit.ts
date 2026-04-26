@@ -84,6 +84,13 @@ export interface SvgTransformTranslation {
   translateY: number;
 }
 
+interface SvgSourceSnapshot {
+  text?: string;
+  geometry?: SvgEditableGeometry;
+  style?: Partial<SvgEditableStyle>;
+  transform?: SvgTransformTranslation | null;
+}
+
 export interface SvgEditableItem {
   locator: HtmlNodeLocator;
   tagName: SvgEditableTagName;
@@ -403,6 +410,203 @@ function findNodeByPath(root: ParentNode, path: number[]): ChildNode | null {
   }
 
   return currentNode;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getElementTextContent(element: ElementNode): string {
+  return element.childNodes
+    .map((child) => {
+      if (isTextNode(child)) {
+        return child.value;
+      }
+      if (isElementNode(child)) {
+        return getElementTextContent(child);
+      }
+      return "";
+    })
+    .join("");
+}
+
+function parseNumericAttributeValue(value: string | null): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function areNumericValuesEquivalent(left: number, right: number): boolean {
+  return Math.abs(left - right) <= 0.001;
+}
+
+function isSvgSourceSnapshot(value: unknown): value is SvgSourceSnapshot {
+  return isRecord(value);
+}
+
+function doesSvgSnapshotGeometryMatch(
+  node: ElementNode,
+  geometry: SvgEditableGeometry | undefined
+): boolean {
+  if (!geometry) {
+    return true;
+  }
+
+  const attributeNames: Record<keyof SvgEditableGeometry, string> = {
+    x: "x",
+    y: "y",
+    width: "width",
+    height: "height",
+    rx: "rx",
+    ry: "ry",
+    cx: "cx",
+    cy: "cy",
+    r: "r",
+    x1: "x1",
+    y1: "y1",
+    x2: "x2",
+    y2: "y2",
+    points: "points",
+    pathData: "d"
+  };
+  let matchedAttributeCount = 0;
+
+  for (const [geometryKey, attributeName] of Object.entries(attributeNames) as [
+    keyof SvgEditableGeometry,
+    string
+  ][]) {
+    const expectedValue = geometry[geometryKey];
+    if (typeof expectedValue === "undefined" || expectedValue === null) {
+      continue;
+    }
+
+    const actualValue = readAttributeValue(node, attributeName);
+    if (actualValue === null) {
+      continue;
+    }
+
+    matchedAttributeCount += 1;
+    if (typeof expectedValue === "number") {
+      const actualNumber = parseNumericAttributeValue(actualValue);
+      if (
+        actualNumber === null ||
+        !areNumericValuesEquivalent(actualNumber, expectedValue)
+      ) {
+        return false;
+      }
+    } else if (actualValue.trim() !== expectedValue.trim()) {
+      return false;
+    }
+  }
+
+  return matchedAttributeCount > 0;
+}
+
+function readTranslateTransformValue(
+  element: ElementNode
+): SvgTransformTranslation | null {
+  const transform = readAttributeValue(element, "transform")?.trim() ?? "";
+  const matched = transform.match(
+    /translate\(\s*([^\s,)]+)(?:[\s,]+([^\s,)]+))?\s*\)/iu
+  );
+  if (!matched) {
+    return null;
+  }
+
+  const translateX = Number.parseFloat(matched[1] ?? "");
+  const translateY = Number.parseFloat(matched[2] ?? "0");
+  if (!Number.isFinite(translateX) || !Number.isFinite(translateY)) {
+    return null;
+  }
+
+  return { translateX, translateY };
+}
+
+function doesSvgSnapshotTransformMatch(
+  node: ElementNode,
+  transform: SvgTransformTranslation | null | undefined
+): boolean {
+  if (typeof transform === "undefined") {
+    return true;
+  }
+
+  const currentTransform = readTranslateTransformValue(node);
+  if (transform === null || currentTransform === null) {
+    return transform === currentTransform;
+  }
+
+  return (
+    areNumericValuesEquivalent(currentTransform.translateX, transform.translateX) &&
+    areNumericValuesEquivalent(currentTransform.translateY, transform.translateY)
+  );
+}
+
+function doesSvgSourceSnapshotMatch(
+  node: ElementNode,
+  item: HtmlSvgPatchItem
+): boolean {
+  const snapshot = isSvgSourceSnapshot(item.sourceSnapshot)
+    ? item.sourceSnapshot
+    : null;
+  if (!snapshot || node.tagName !== item.tagName) {
+    return false;
+  }
+
+  if (typeof snapshot.text === "string" && getElementTextContent(node) !== snapshot.text) {
+    return false;
+  }
+
+  return (
+    doesSvgSnapshotGeometryMatch(node, snapshot.geometry) &&
+    doesSvgSnapshotTransformMatch(node, snapshot.transform)
+  );
+}
+
+function collectElementNodes(root: ParentNode): ElementNode[] {
+  const elements: ElementNode[] = [];
+  const visit = (node: ParentNode) => {
+    for (const child of getChildNodes(node)) {
+      if (!isElementNode(child)) {
+        continue;
+      }
+
+      elements.push(child);
+      visit(child);
+    }
+  };
+
+  visit(root);
+  return elements;
+}
+
+function findSvgNodeBySourceSnapshot(
+  root: ParentNode,
+  item: HtmlSvgPatchItem
+): ElementNode | null {
+  const matches = collectElementNodes(root).filter((node) =>
+    doesSvgSourceSnapshotMatch(node, item)
+  );
+  return matches.length === 1 ? matches[0] ?? null : null;
+}
+
+function findSvgPatchNode(
+  root: ParentNode,
+  item: HtmlSvgPatchItem
+): ElementNode | null {
+  const node = findNodeByPath(root, item.locator.path);
+  if (
+    isElementNode(node) &&
+    node.tagName === item.tagName &&
+    (!isSvgSourceSnapshot(item.sourceSnapshot) ||
+      doesSvgSourceSnapshotMatch(node, item))
+  ) {
+    return node;
+  }
+
+  return findSvgNodeBySourceSnapshot(root, item);
 }
 
 function applyEdits(source: string, edits: SourceEdit[]): string {
@@ -957,6 +1161,13 @@ export function applyHtmlTextPatch(
   patch: HtmlInlineTextPatch
 ): PatchResult {
   try {
+    if (
+      typeof patch.currentText === "string" &&
+      patch.currentText === patch.nextText
+    ) {
+      return buildPatchSuccess(html);
+    }
+
     const { root } = parseHtmlRoot(html);
     const node = findNodeByPath(root, patch.locator.path);
     if (!isTextNode(node)) {
@@ -1233,8 +1444,8 @@ export function applySvgPatch(html: string, patch: HtmlSvgPatch): PatchResult {
     const edits: SourceEdit[] = [];
 
     for (const item of patch.items) {
-      const node = findNodeByPath(root, item.locator.path);
-      if (!isElementNode(node)) {
+      const node = findSvgPatchNode(root, item);
+      if (!node) {
         return buildPatchFailure(
           "LOCATOR_NOT_FOUND",
           "Selected SVG element could not be located.",

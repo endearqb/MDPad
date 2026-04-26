@@ -5,8 +5,11 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { getAppCopy } from "../../shared/i18n/appI18n";
 import ChartDataEditor from "./components/ChartDataEditor";
-import SvgTextCanvasEditor from "./components/SvgTextCanvasEditor";
-import type { HtmlSvgEditRequest, SvgEditableItem } from "./htmlPreviewEdit";
+import SvgTextCanvasEditor, {
+  buildSvgMarkupPreviewPatch,
+  transformClientPointToViewBox
+} from "./components/SvgTextCanvasEditor";
+import { applySvgPatch, type HtmlSvgEditRequest, type SvgEditableItem } from "./htmlPreviewEdit";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -57,6 +60,34 @@ function clickElement(element: Element) {
 function dispatchKeydown(element: Element, key: string) {
   act(() => {
     element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key }));
+  });
+}
+
+function dispatchPointerEvent(
+  target: EventTarget,
+  type: string,
+  init: {
+    clientX: number;
+    clientY: number;
+    pointerId?: number;
+    shiftKey?: boolean;
+  }
+) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    button: 0,
+    cancelable: true,
+    clientX: init.clientX,
+    clientY: init.clientY,
+    shiftKey: init.shiftKey ?? false
+  });
+  Object.defineProperty(event, "pointerId", {
+    configurable: true,
+    value: init.pointerId ?? 1
+  });
+
+  act(() => {
+    target.dispatchEvent(event);
   });
 }
 
@@ -198,6 +229,17 @@ describe("html preview editors", () => {
     const hitTargets = rendered.container.querySelectorAll(".html-preview-svg-item");
     expect(hitTargets).toHaveLength(3);
     expect(
+      rendered.container.querySelector(".html-preview-svg-stage-image")
+    ).toBeNull();
+    const previewFrame = rendered.container.querySelector(
+      ".html-preview-svg-stage-frame"
+    );
+    expect(previewFrame).toBeInstanceOf(HTMLIFrameElement);
+    expect((previewFrame as HTMLIFrameElement).getAttribute("sandbox")).toBe("");
+    expect((previewFrame as HTMLIFrameElement).getAttribute("srcdoc")).toContain(
+      "<svg viewBox"
+    );
+    expect(
       rendered.container.querySelector(".html-preview-svg-stage-overlay .html-preview-svg-item-label")
     ).toBeNull();
     expect(
@@ -206,6 +248,307 @@ describe("html preview editors", () => {
     expect(rendered.container.textContent).not.toContain("Rectangle");
     expect(rendered.container.textContent).not.toContain("Polyline");
     rendered.unmount();
+  });
+
+  it("keeps svg drag edits local until apply", () => {
+    const copy = getAppCopy("en").editor;
+    const onApply = vi.fn();
+    const request: HtmlSvgEditRequest = {
+      kind: "svg-elements",
+      svgLocator: {
+        root: "body",
+        path: [0]
+      },
+      svgMarkup:
+        '<svg viewBox="0 0 120 80"><rect x="10" y="12" width="30" height="18"></rect><rect x="70" y="12" width="20" height="18"></rect></svg>',
+      viewBox: {
+        minX: 0,
+        minY: 0,
+        width: 120,
+        height: 80
+      },
+      initialSelectedLocatorPath: [0, 0],
+      items: [
+        createSvgItem({
+          locator: {
+            root: "body",
+            path: [0, 0]
+          },
+          tagName: "rect",
+          bbox: {
+            x: 10,
+            y: 12,
+            width: 30,
+            height: 18
+          },
+          geometry: {
+            x: 10,
+            y: 12,
+            width: 30,
+            height: 18
+          }
+        }),
+        createSvgItem({
+          locator: {
+            root: "body",
+            path: [0, 1]
+          },
+          tagName: "rect",
+          bbox: {
+            x: 70,
+            y: 12,
+            width: 20,
+            height: 18
+          },
+          geometry: {
+            x: 70,
+            y: 12,
+            width: 20,
+            height: 18
+          }
+        })
+      ]
+    };
+
+    const rendered = renderElement(
+      React.createElement(SvgTextCanvasEditor, {
+        copy,
+        onApply,
+        onCancel: () => undefined,
+        request,
+        selectedLocatorPath: [0, 0]
+      })
+    );
+
+    const stageContent = rendered.container.querySelector(".html-preview-svg-stage-content");
+    expect(stageContent).toBeInstanceOf(HTMLElement);
+    vi.spyOn(stageContent as HTMLElement, "getBoundingClientRect").mockReturnValue({
+      bottom: 80,
+      height: 80,
+      left: 0,
+      right: 120,
+      top: 0,
+      width: 120,
+      x: 0,
+      y: 0,
+      toJSON: () => ({})
+    });
+
+    const hitTarget = rendered.container.querySelector(".html-preview-svg-item");
+    expect(hitTarget).toBeInstanceOf(HTMLButtonElement);
+    dispatchPointerEvent(hitTarget as HTMLButtonElement, "pointerdown", {
+      clientX: 10,
+      clientY: 12
+    });
+    dispatchPointerEvent(window, "pointermove", {
+      clientX: 22,
+      clientY: 20
+    });
+    dispatchPointerEvent(window, "pointerup", {
+      clientX: 22,
+      clientY: 20
+    });
+
+    expect(onApply).not.toHaveBeenCalled();
+
+    const applyButton = Array.from(rendered.container.querySelectorAll("button")).find(
+      (button) => button.textContent === copy.prompts.apply
+    );
+    expect(applyButton).toBeInstanceOf(HTMLButtonElement);
+    clickElement(applyButton as HTMLButtonElement);
+
+    expect(onApply).toHaveBeenCalledWith({
+      kind: "svg-elements",
+      items: [
+        expect.objectContaining({
+          locator: {
+            root: "body",
+            path: [0, 0]
+          },
+          tagName: "rect",
+          geometry: {
+            x: 22,
+            y: 20,
+            width: 30,
+            height: 18
+          }
+        })
+      ]
+    });
+    rendered.unmount();
+  });
+
+  it("localizes nested svg item locators for live preview patches", () => {
+    const request: HtmlSvgEditRequest = {
+      kind: "svg-elements",
+      svgLocator: {
+        root: "body",
+        path: [1, 0]
+      },
+      svgMarkup:
+        '<svg viewBox="0 0 120 80"><rect x="10" y="12" width="30" height="18"></rect></svg>',
+      viewBox: {
+        minX: 0,
+        minY: 0,
+        width: 120,
+        height: 80
+      },
+      initialSelectedLocatorPath: [1, 0, 0],
+      items: [
+        createSvgItem({
+          locator: {
+            root: "body",
+            path: [1, 0, 0]
+          },
+          tagName: "rect",
+          bbox: {
+            x: 22,
+            y: 20,
+            width: 30,
+            height: 18
+          },
+          geometry: {
+            x: 22,
+            y: 20,
+            width: 30,
+            height: 18
+          }
+        })
+      ]
+    };
+
+    const previewPatch = buildSvgMarkupPreviewPatch(request, request.items);
+    expect(previewPatch.items[0]?.locator.path).toEqual([0, 0]);
+
+    const result = applySvgPatch(request.svgMarkup, previewPatch);
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.html : "").toContain('rect x="22" y="20"');
+  });
+
+  it("keeps top-level svg preview locators compatible", () => {
+    const request: HtmlSvgEditRequest = {
+      kind: "svg-elements",
+      svgLocator: {
+        root: "body",
+        path: [0]
+      },
+      svgMarkup:
+        '<svg viewBox="0 0 120 80"><rect x="10" y="12" width="30" height="18"></rect></svg>',
+      viewBox: {
+        minX: 0,
+        minY: 0,
+        width: 120,
+        height: 80
+      },
+      initialSelectedLocatorPath: [0, 0],
+      items: [
+        createSvgItem({
+          locator: {
+            root: "body",
+            path: [0, 0]
+          },
+          tagName: "rect",
+          bbox: {
+            x: 14,
+            y: 16,
+            width: 30,
+            height: 18
+          },
+          geometry: {
+            x: 14,
+            y: 16,
+            width: 30,
+            height: 18
+          }
+        })
+      ]
+    };
+
+    const previewPatch = buildSvgMarkupPreviewPatch(request, request.items);
+    expect(previewPatch.items[0]?.locator.path).toEqual([0, 0]);
+
+    const result = applySvgPatch(request.svgMarkup, previewPatch);
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.html : "").toContain('rect x="14" y="16"');
+  });
+
+  it("applies svg patches by source snapshot when the body locator drifts", () => {
+    const html =
+      '<section><svg viewBox="0 0 120 80"><rect id="target" x="10" y="12" width="30" height="18"></rect></svg></section>';
+
+    const result = applySvgPatch(html, {
+      kind: "svg-elements",
+      items: [
+        {
+          locator: {
+            root: "body",
+            path: [99, 99]
+          },
+          tagName: "rect",
+          geometry: {
+            x: 22,
+            y: 20,
+            width: 30,
+            height: 18
+          },
+          sourceSnapshot: {
+            geometry: {
+              x: 10,
+              y: 12,
+              width: 30,
+              height: 18
+            },
+            transform: null
+          }
+        }
+      ]
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.html : "").toContain(
+      '<rect id="target" x="22" y="20" width="30" height="18">'
+    );
+  });
+
+  it("computes move deltas from viewBox points under pan and zoom", () => {
+    const request: HtmlSvgEditRequest = {
+      kind: "svg-elements",
+      svgLocator: {
+        root: "body",
+        path: [0]
+      },
+      svgMarkup: '<svg viewBox="0 0 120 80"></svg>',
+      viewBox: {
+        minX: 0,
+        minY: 0,
+        width: 120,
+        height: 80
+      },
+      items: []
+    };
+    const rect = {
+      bottom: 210,
+      height: 160,
+      left: 100,
+      right: 340,
+      top: 50,
+      width: 240,
+      x: 100,
+      y: 50,
+      toJSON: () => ({})
+    } as DOMRect;
+    const viewport = {
+      zoom: 2,
+      panX: 20,
+      panY: 10,
+      mode: "manual" as const
+    };
+
+    const start = transformClientPointToViewBox(140, 100, rect, request, viewport);
+    const current = transformClientPointToViewBox(188, 132, rect, request, viewport);
+
+    expect(current.x - start.x).toBe(12);
+    expect(current.y - start.y).toBe(8);
   });
 
   it("toggles the svg editor width expansion button", () => {
@@ -259,6 +602,10 @@ describe("html preview editors", () => {
 
     const dialog = rendered.container.querySelector(".html-preview-modal-wide");
     expect(dialog).toBeInstanceOf(HTMLElement);
+    expect(dialog?.classList.contains("html-preview-svg-modal")).toBe(true);
+    expect(
+      rendered.container.querySelector(".html-preview-svg-sidebar")
+    ).toBeInstanceOf(HTMLElement);
     expect(dialog?.classList.contains("html-preview-svg-modal-expanded")).toBe(false);
 
     const expandButton = Array.from(rendered.container.querySelectorAll("button")).find(

@@ -51,6 +51,10 @@ export const HTML_PREVIEW_HIDE_CHART_ACTION_MESSAGE_TYPE =
   "mdpad:html-preview:hide-chart-action";
 export const HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE =
   "mdpad:html-preview:read-only-blocked";
+export const HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE =
+  "mdpad:html-preview:fullscreen-shortcut";
+
+export type HtmlPreviewFullscreenShortcut = "F11" | "Escape";
 
 const RESOURCE_TAG_PATTERN =
   /<(script|img|audio|video|source|track|link)\b[^>]*>/giu;
@@ -392,7 +396,8 @@ function buildPreviewHostScript(
         applyChartModel: HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE,
         showChartAction: HTML_PREVIEW_SHOW_CHART_ACTION_MESSAGE_TYPE,
         hideChartAction: HTML_PREVIEW_HIDE_CHART_ACTION_MESSAGE_TYPE,
-        readOnlyBlocked: HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE
+        readOnlyBlocked: HTML_PREVIEW_READ_ONLY_BLOCKED_MESSAGE_TYPE,
+        fullscreenShortcut: HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE
       }
     });
 
@@ -443,6 +448,12 @@ function buildPreviewHostScript(
 
   function postReadOnlyBlocked() {
     postMessage(CONFIG.messageTypes.readOnlyBlocked, {});
+  }
+
+  function postFullscreenShortcut(key) {
+    postMessage(CONFIG.messageTypes.fullscreenShortcut, {
+      key: key
+    });
   }
 
   function dismissChartAction() {
@@ -691,6 +702,10 @@ function buildPreviewHostScript(
     }
 
     replaceInlineEditorWithText(editorState, nextText);
+
+    if (nextText === editorState.originalText) {
+      return;
+    }
 
     postMessage(CONFIG.messageTypes.inlineTextCommit, {
       locator: editorState.locator,
@@ -4164,6 +4179,23 @@ function buildPreviewHostScript(
   document.addEventListener(
     "keydown",
     function (event) {
+      if (event.key === "F11") {
+        event.preventDefault();
+        event.stopPropagation();
+        postFullscreenShortcut("F11");
+        return;
+      }
+
+      if (event.key === "Escape") {
+        postFullscreenShortcut("Escape");
+      }
+    },
+    true
+  );
+
+  document.addEventListener(
+    "keydown",
+    function (event) {
       if (activeElementDrag && event.key === "Escape") {
         cancelHtmlElementDrag();
         event.preventDefault();
@@ -5163,6 +5195,26 @@ export function extractReadOnlyBlockedFromPreviewMessage(
       frameWindow
     )
   );
+}
+
+export function extractFullscreenShortcutFromPreviewMessage(
+  data: unknown,
+  expectedToken: string,
+  source: unknown,
+  frameWindow: WindowProxy | null
+): HtmlPreviewFullscreenShortcut | null {
+  const payload = extractPreviewMessagePayload(
+    data,
+    HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
+    expectedToken,
+    source,
+    frameWindow
+  );
+  if (!payload || (payload.key !== "F11" && payload.key !== "Escape")) {
+    return null;
+  }
+
+  return payload.key;
 }
 
 export function createHtmlPreviewInstanceToken(): string {

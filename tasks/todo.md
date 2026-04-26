@@ -1,3 +1,222 @@
+# 调整 Markdown 表格单元格最小宽度（2026-04-26 22:xx）
+
+## Plan
+- [x] 将 Markdown 表格单元格最小宽度常量从 `120px` 改为 `40px`
+- [x] 保持现有表格整体 `min-width: 100%` 和 CSS 变量传递不变
+- [x] 运行定向测试与构建验证
+- [x] 在本节记录结果回顾
+
+## Progress Notes
+- 用户要求把当前 Markdown 表格预览/编辑的单列下限改成 `40px`；本轮按 `MD_TABLE_CELL_MIN_WIDTH` 处理，不改变表格整体撑满编辑器内容区的布局策略。
+- [src/features/editor/constants.ts](/D:/MyProject/MDPad/src/features/editor/constants.ts) 已将 `MD_TABLE_CELL_MIN_WIDTH` 从 `120` 改为 `40`；[src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 仍通过同一常量配置 TipTap table resize 和 CSS 变量。
+- 验证已完成：`pnpm exec vitest run src/features/editor/markdownCodec.test.ts src/features/editor/clipboard/richHtmlTables.test.ts` 通过（2 个文件 / 61 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：Markdown 表格单元格最小宽度下限已调整为 `40px`；表格整体 `min-width: 100%` 保持不变，所以单列表格仍会填满编辑器内容区，多列/拖拽缩放时会使用新的更小列宽下限。
+
+# 调整 Toast 透明度（2026-04-26）
+
+## Plan
+- [x] 将浅色主题 toast 背景 alpha 从 `0.7` 调整为 `0.3`
+- [x] 将深色主题 toast 背景 alpha 从 `0.7` 调整为 `0.3`
+- [x] 运行轻量验证并记录结果
+
+## Progress Notes
+- 用户确认当前 `0.7` 透明度偏高，要求改为 `0.3`。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已将浅色和深色主题的 `--toast-glass-bg` alpha 都调整为 `0.3`；toast 仍通过 `APP_TOASTER_OVERRIDES` 使用该变量。
+- 验证已完成：`pnpm exec vitest run src/shared/utils/appToastOverrides.test.ts` 通过，变量复查显示两处 `--toast-glass-bg` 均为 `0.3`。
+
+## Review
+- 结果：toast 背景透明度现在是 `0.3`，浅色主题为 `rgba(255, 255, 255, 0.3)`，深色主题为 `rgba(15, 23, 42, 0.3)`。
+
+# 修复富文本表格混合粘贴崩溃（2026-04-26 20:xx）
+
+## Plan
+- [x] 新增富文本表格 HTML 检测、清洗与纯文本 fallback helper
+- [x] 在 TipTap paste 早期分支接入高风险 HTML 表格受控粘贴
+- [x] 覆盖网页/Office 风格混合内容、空单元格和非表格误拦截测试
+- [x] 运行定向测试、全量测试和 build 验证
+- [x] 写入 `update/` 更新说明并补充回顾
+
+## Progress Notes
+- 用户反馈从网页复制“文本/标题 + 表格”混合内容会导致 `MDPad startup failed: Position 23 outside of fragment (<paragraph>)`；只粘贴表格或只粘贴标题文本不会触发。
+- 已确认当前 `handlePaste` 只处理媒体、Markdown 图片和无 HTML 的 Markdown 文本；含 `text/html` 的富文本会进入 ProseMirror 默认 HTML parse slice 链路，异常发生时现有 pipeline 已经太晚。
+- [src/features/editor/clipboard/richHtmlTables.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/richHtmlTables.ts) 已新增高风险 HTML 表格检测、DOMParser 清洗、表格单元格规范化和纯文本 fallback。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已在 `handleDOMEvents.paste` 早期接管高风险富文本表格：先复用现有 clipboard pipeline，再清洗后 `pasteHTML`，失败则 `pasteText` 降级，并在成功后调度 `fixTables`。
+- [src/features/editor/clipboard/richHtmlTables.test.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/richHtmlTables.test.ts) 已覆盖截图等价样本、Office 风格空单元格/inline 单元格、非表格/简单纯表格不误拦截，以及真实 TipTap editor 粘贴后 `doc.check()` 不抛错。
+- 验证已完成：`pnpm exec tsc --noEmit`、`pnpm test -- clipboard`、`pnpm test -- markdownCodec`、`pnpm test`、`pnpm build` 均通过。
+
+## Review
+- 结果：网页复制“标题/文本 + 表格”混合富文本时，会在 ProseMirror 默认 parse slice 前被清洗为合法 TipTap 表格结构，避免 `Position ... outside of fragment` 冒泡成 fatal startup screen。
+- 结果：无表格 HTML 和简单纯表格仍走默认粘贴路径；媒体、Markdown 图片、纯文本 Markdown 粘贴继续由原 pipeline 处理。
+- 结果：复杂来源或解析失败时至少降级为纯文本粘贴，不再让应用崩溃。
+
+# 发布 v0.2.9 并同步 GitHub Releases（2026-04-26 18:xx）
+
+## Plan
+- [x] 盘点当前版本、工作区改动、远端 release 和安装包产物
+- [x] 编写 `docs/release-notes-v0.2.9.md`，补齐本次 `update/` 记录
+- [x] 运行验证并构建/确认 `MDPad_0.2.9_x64-setup.exe`
+- [ ] 提交当前工作区改动并推送 `main`
+- [ ] 创建 GitHub Release `v0.2.9`，上传安装包并核对结果
+
+## Progress Notes
+- 当前版本已同步为 `0.2.9`，远端最新 release 为 `v0.2.8`；本轮目标发布 `v0.2.9`。
+- 已新增 [docs/release-notes-v0.2.9.md](/D:/MyProject/MDPad/docs/release-notes-v0.2.9.md)，覆盖 SVG 编辑稳定性、HTML 文本 no-op 修复、移除 16:9 Slide 窗口模式和安装包 SHA256。
+- 已确认现有安装包 [MDPad_0.2.9_x64-setup.exe](/D:/MyProject/MDPad/src-tauri/target/release/bundle/nsis/MDPad_0.2.9_x64-setup.exe)，当前 SHA256 为 `CC02C6321136260F3FB3C8FCB2E341F33296AA62ED37EBC68E1C795B7A7A0C62`。
+- 已执行 `pnpm tauri:build:no-bump` 重新生成安装包；已执行 `pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewEdit.test.ts src/features/window/TopBar.test.ts src/App.test.ts src/shared/utils/windowPreset.test.ts src/features/editor/htmlPreviewEditors.test.ts`，7 个文件 / 77 个测试通过。
+
+## Review
+- 待完成。
+
+# 移除 16:9 Slide 窗口模式（2026-04-26 14:xx）
+
+## Plan
+- [x] 移除 TopBar 中的 `16:9 Slide` 菜单入口与相关 props
+- [x] 移除 App 层 16:9 状态、退出浮层、resize handles 和窗口约束 effect
+- [x] 删除 windowPreset 中 16:9 计算 helper 与对应测试
+- [x] 清理 i18n 文案、样式和 App/TopBar 测试
+- [x] 运行相关 vitest 与 build 验证
+
+## Progress Notes
+- 用户要求直接去掉 `16:9` 窗口模式；本轮按功能下线处理，不保留隐藏入口或后台窗口比例约束。
+- [src/features/window/TopBar.tsx](/D:/MyProject/MDPad/src/features/window/TopBar.tsx) 已移除 `16:9 Slide` 菜单项、active 态、slide aspect props 和回调。
+- [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 已删除应用级 16:9 状态、Esc 分支、主内容区退出按钮、透明 resize handles、`setResizable(false)` 和 `onResized` 比例纠正逻辑。
+- [src/shared/utils/windowPreset.ts](/D:/MyProject/MDPad/src/shared/utils/windowPreset.ts) 已删除 `computeSlideAspectContentWindowBounds` 及相关常量/类型；[src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已删除 16:9 overlay/handles 样式。
+- [src/shared/i18n/appI18n.ts](/D:/MyProject/MDPad/src/shared/i18n/appI18n.ts) 已清理 `resizePresetSlide` 和 `exitSlideAspect` 文案字段。
+- 验证已完成：`pnpm exec vitest run src/features/window/TopBar.test.ts src/App.test.ts src/shared/utils/windowPreset.test.ts` 通过（3 个文件 / 14 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：窗口尺寸菜单只保留 `40% x 90%`、最大化和全屏，不再显示 `16:9 Slide`。
+- 结果：应用中不再存在 16:9 窗口模式状态、比例锁定、主内容区退出按钮或自定义 resize handles。
+- 结果：全屏 `F11` / `Esc` 逻辑保留；普通窗口 resize 回到原生行为。
+
+# 修复 HTML 文本未改动退出时报 locator 错误（2026-04-26 14:xx）
+
+## Plan
+- [x] 定位 HTML inline text 编辑在未改动退出时仍提交 patch 的原因
+- [x] 修复未改动退出编辑框时的误报，不影响真实文本修改保存
+- [x] 补充/更新回归测试覆盖未改动退出、真实修改、locator 失效三类路径
+- [x] 运行相关 vitest 与 build 验证
+
+## Progress Notes
+- 用户反馈点击 HTML 文本进入编辑、未做修改就退出编辑框时，会报 `Selected HTML text node could not be located.`；本轮按误报 bug 处理。
+- 已确认 iframe host script 的 `blur` 逻辑会把未修改文本也作为 inline commit 发给父层，父层随后按 locator 写回源码；locator 一旦因运行时 DOM 与源码树差异漂移，就会把 no-op 误报成 `LOCATOR_NOT_FOUND`。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已在 inline editor 退出时判断 `nextText === originalText`，未改动只恢复 DOM，不再发 commit 消息。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 和 [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 已增加 no-op 防线，即使收到旧的未改动 commit 也不会继续应用 patch 或显示 locator 错误。
+- 已补充 host script、父层消息处理和 patch helper 回归测试，覆盖未改动退出、真实修改、过期 locator no-op。
+- 验证已完成：`pnpm exec vitest run src/features/editor/htmlPreviewDocument.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewEdit.test.ts` 通过（3 个文件 / 51 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：HTML 预览中双击文本进入编辑后，如果没有修改就 blur/退出，不再触发源码写回，也不会显示 `Selected HTML text node could not be located.`。
+- 结果：真实修改文本仍会发送 inline commit 并写回 HTML。
+- 结果：父层与 patch helper 都能容忍旧版本 iframe 或异步消息发来的未改动 commit，避免同类 no-op 误报。
+
+# 强化 16:9 Slide 比例约束（2026-04-26 13:xx）
+
+## Plan
+- [x] 点击 `16:9 Slide` 后默认按当前显示器 workArea 高度 60% 计算主内容区高度
+- [x] 16:9 模式退出按钮移动到主内容区右上角，不覆盖 titlebar
+- [x] 16:9 模式下禁用原生 resize，并增加主内容区透明 resize handles 驱动窗口尺寸
+- [x] 保留 `onResized` 兜底校正，防止系统级 resize 漂移
+- [x] 更新 App / windowPreset / TopBar / HtmlPreview 测试并运行验证
+
+## Progress Notes
+- 已确认 Tauri v2 提供 `setResizable(false)`、`isMaximized()`、`unmaximize()`、`outerPosition()`，但不提供原生 aspect-ratio 约束；因此本轮采用“禁用原生 resize + 自定义 handles + `onResized` 兜底校正”的实现。
+- [src/shared/utils/windowPreset.ts](/D:/MyProject/MDPad/src/shared/utils/windowPreset.ts) 已新增 `initial` sizing 语义，进入 16:9 时按 workArea 高度 60% 计算主内容区尺寸。
+- [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 已在 16:9 模式下临时 `setResizable(false)`，并在主内容区内挂载退出按钮和 8 个透明 resize handles。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已将 16:9 退出 hover 区域限制在 `.app-main` 内，保留全屏退出按钮的窗口顶部逻辑。
+- 验证已完成：`pnpm exec vitest run src/features/window/TopBar.test.ts src/features/editor/HtmlPreview.test.ts src/App.test.ts src/shared/utils/windowPreset.test.ts` 通过（4 个文件 / 44 个测试），`pnpm build` 通过，`cargo check --manifest-path src-tauri/Cargo.toml` 通过。
+
+## Review
+- 结果：16:9 入口现在严格以桌面 workArea 高度 60% 为默认主内容区高度，不再保留当前窗口宽度。
+- 结果：16:9 模式退出按钮在主内容区右上角显示，不再覆盖标题栏。
+- 结果：16:9 模式下原生 resize 会被关闭，用户从主内容区边缘拖动透明 handles 时，应用按 16:9 计算并设置窗口尺寸；`onResized` 只作为兜底校正。
+
+# 修复 SVG 编辑应用保存失败（2026-04-26 13:xx）
+
+## Plan
+- [x] 定位 `Selected SVG element could not be located.` 的 Apply 保存失败来源和 locator 协议差异
+- [x] 修复 SVG 编辑最终写回整篇 HTML 的 locator 处理，保持实时预览局部 patch 不受影响
+- [x] 补充嵌套 SVG 点击应用保存的回归测试
+- [x] 运行相关 vitest 与 `pnpm build` 验证
+
+## Progress Notes
+- 用户截图显示 SVG 编辑弹窗内拖动后点击应用，父层报错 `Selected SVG element could not be located.`；本轮在上一轮预览修复基础上继续处理 Apply 写回路径。
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 已将最终 Apply patch 收敛为只提交相对打开弹窗时已变化的 SVG item，并携带原始 `sourceSnapshot` 供源 HTML 写回兜底定位使用。
+- [src/features/editor/htmlPreviewEdit.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEdit.ts) 已在 `applySvgPatch` 中保留 locator 快路径，同时当 locator 找不到或快路径与 source snapshot 不匹配时，通过唯一 source snapshot 匹配原 SVG 元素后再写回。
+- [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已补充 locator 漂移但 source snapshot 唯一匹配时仍能保存的回归，并让拖拽 Apply 用例覆盖“只提交变更 item”。
+- 验证已完成：`pnpm vitest run src/features/editor/svgEditorGeometry.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/htmlPreviewDocument.test.ts` 通过（3 个文件 / 32 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：SVG 编辑弹窗点击应用时，不再因为未修改 SVG item 的 locator 或浏览器 DOM 与 parse5 源树路径轻微漂移而整批保存失败。
+- 结果：实时预览 patch 仍使用局部 locator，且不会携带 source snapshot 影响连续预览更新；最终保存 patch 仍保持现有 `svg-elements` 协议。
+- 结果：如果 source snapshot 在源 HTML 中无法唯一匹配，仍会失败而不是误写其他 SVG 元素。
+
+# 修复 SVG 拖拽只移动框（2026-04-26 12:xx）
+
+## Plan
+- [x] 定位并修复 SVG 编辑弹窗实时预览 locator 不匹配，确保嵌套 SVG 预览中真实元素随框同步移动
+- [x] 将普通元素拖拽 delta 改为基于 viewBox 起点/终点计算，避免屏幕像素比例推导漂移
+- [x] 补充嵌套 SVG、顶层 SVG 与 zoom/pan 后拖拽 delta 的回归测试
+- [x] 运行相关 vitest 与 `pnpm build` 验证
+
+## Progress Notes
+- 已确认当前工作区存在多处既有未提交改动，本轮只增量修改 SVG 编辑器、相关测试和任务记录。
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 已新增 SVG 片段预览 patch locator 局部化，iframe 实时预览使用局部 locator，最终 Apply 仍保留 body 绝对 locator。
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 已将普通元素移动拖拽 delta 改为基于 viewBox 起点/终点计算，避免 pan/zoom 下重复用屏幕比例推导。
+- [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已补充嵌套 SVG 预览 patch、顶层 SVG 兼容和 pan/zoom 后 viewBox delta 回归。
+- 验证已完成：`pnpm vitest run src/features/editor/svgEditorGeometry.test.ts src/features/editor/htmlPreviewEditors.test.ts src/features/editor/htmlPreviewDocument.test.ts` 通过（3 个文件 / 31 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：嵌套 SVG 的实时预览会把元素 locator 从整篇 HTML 的 body 绝对路径转换为 `svgMarkup` 片段内路径，避免只移动 overlay 框而真实 SVG 不变。
+- 结果：拖拽移动使用同一套 viewBox 坐标转换保存起点并计算终点差值，overlay 仍只负责命中与显示，实际状态继续写入 SVG 元素 geometry/transform。
+- 结果：外部提交协议未改变，Apply 仍提交原始绝对 locator。
+
+# SVG 编辑窗口真实预览层与固定高度（2026-04-25 22:xx）
+
+## Plan
+- [x] 将 SVG 编辑窗口显示层从 data URI `<img>` 改为隔离真实 SVG 预览层
+- [x] 保留现有 overlay 拖拽草稿与 Apply 写回语义，确保 Cancel 无副作用
+- [x] 将 SVG 编辑窗口高度固定到接近 path 属性面板高度，右侧属性区内部滚动
+- [x] 更新 SVG 编辑器相关回归测试
+- [x] 运行定向测试与 build 验证
+
+## Progress Notes
+- 已确认当前工作区存在其他未提交改动，本轮只增量修改 SVG 编辑窗口、样式、测试和本任务记录。
+- [src/features/editor/components/SvgTextCanvasEditor.tsx](/D:/MyProject/MDPad/src/features/editor/components/SvgTextCanvasEditor.tsx) 已新增 sandbox iframe 预览层，移除 data URI `<img>` 预览依赖；拖拽仍沿用现有 overlay/handle 和弹窗内部 history。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已新增 SVG modal 专用固定高度布局，舞台区与属性侧栏共享稳定高度，属性侧栏超出时内部滚动。
+- [src/features/editor/htmlPreviewEditors.test.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewEditors.test.ts) 已补充真实预览层、拖动 Apply 语义和 SVG modal class 回归。
+- 验证已完成：`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts` 通过（8 个测试），`pnpm test -- htmlPreviewDocument HtmlPreview svgEditorGeometry htmlPreviewEditors` 通过（45 个文件 / 312 个测试），`pnpm build` 通过。
+- 截图复查后发现固定高度舞台与真实 SVG `preserveAspectRatio` 渲染区域不一致，已追加内部 `stage-content` viewport，让 iframe、overlay 和拖拽坐标换算共享同一实际 SVG 区域。
+
+## Review
+- 结果：SVG 编辑窗口显示层现在是 sandbox iframe 中的真实 SVG DOM，不再是 `data:image/svg+xml` 图片快照。
+- 结果：拖动 SVG 元素后只更新弹窗草稿；未点击 Apply 时不会触发父层写回，Cancel 仍可无副作用关闭。
+- 结果：SVG 编辑窗口高度不再随选中元素属性数量收缩，右侧属性面板改为在固定弹窗高度内滚动。
+- 结果：SVG 编辑窗口内选中框、控制点和实际 SVG 预览现在共用同一个 viewBox 比例 viewport，避免固定高度下出现框与元素偏移。
+
+# 修复窗口按钮、HTML 预览全屏与 16:9 预览比例（2026-04-25 22:xx）
+
+## Plan
+- [x] 关闭按钮 hover 改为与最小化、主题按钮一致，去掉红色 hover 覆盖
+- [x] 修复 HTML 预览 iframe 获焦后 `F11` / `Escape` 全屏退出桥接
+- [x] 全屏后顶部 hover 显示右上角退出全屏按钮，并可点击退出
+- [x] 将 `16:9 Slide` 改为仅切换 HTML 预览内部 16:9 舞台，不再调整整个应用窗口
+- [x] 更新 TopBar / HtmlPreview / htmlPreviewDocument / App 相关测试并运行验证
+
+## Progress Notes
+- 已确认本轮按计划实现，范围集中在窗口 chrome、HTML preview bridge、内部 16:9 预览舞台与对应测试。
+- [src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已移除关闭按钮红色 hover 覆盖，并新增全屏顶部退出按钮与 HTML 预览 16:9 stage 样式。
+- [src/features/editor/htmlPreviewDocument.ts](/D:/MyProject/MDPad/src/features/editor/htmlPreviewDocument.ts) 已新增 iframe 内 `F11` / `Escape` 全屏快捷键上报消息；[HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已接入消息并转交 App 全屏状态。
+- [src/features/window/TopBar.tsx](/D:/MyProject/MDPad/src/features/window/TopBar.tsx) 已将 `16:9 Slide` 改为 App 内部状态开关，不再调用 `appWindow.setSize/setPosition`；旧的 slide 窗口预设 helper 已从 `windowPreset` 移除。
+- 验证已完成：`pnpm exec vitest run src/features/window/TopBar.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/App.test.ts` 通过（4 个文件 / 45 个测试），`pnpm exec vitest run src/shared/utils/windowPreset.test.ts` 通过（7 个测试），`pnpm build` 通过。
+
+## Review
+- 结果：右上角关闭按钮 hover 现在与最小化、主题按钮一致，不再出现红色底色。
+- 结果：HTML 预览 iframe 获焦后，`F11` 可继续切换全屏，`Escape` 在应用全屏时可退出；全屏顶部 hover 会显示右上角退出按钮。
+- 结果：`16:9 Slide` 只影响 HTML 预览内部 iframe 舞台，再次点击会恢复自适应填满，不再改变整个应用窗口尺寸。
+
 # 发布 v0.2.8 并同步 GitHub Releases（2026-04-25 12:xx）
 
 ## Plan
@@ -1723,3 +1942,54 @@
 - 结果：结构操作已经统一为菜单语义。标签支持 `编辑 / 左移 / 右移 / 删除`，系列支持 `编辑 / 上移 / 下移 / 删除`，边界禁用规则和“仅剩一个时不可删”都已落地。
 - 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/htmlPreviewEditors.test.ts src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts` 通过（3 个文件 / 35 个测试）；`pnpm build` 通过。
 - 说明：工作区原本就有用户现成未提交改动 `src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json`；本轮只增量修改 chart editor、样式、i18n、测试和本节任务记录，没有回退这些既有变更。
+# 修正 16:9 Slide 为主内容区比例模式（2026-04-26 13:xx）
+
+## Plan
+- [x] 将 `16:9 Slide` 从 HTML 预览内部 stage 改为应用主内容区 16:9 模式
+- [x] 让 16:9 模式下窗口 resize 时自动纠正 inner size，保持主内容区 16:9
+- [x] 增加 `Esc` 退出 16:9 模式与顶部 hover 退出按钮，复用全屏退出交互样式
+- [x] 调整 TopBar / App / HtmlPreview / windowPreset 测试覆盖新行为
+- [x] 运行定向 vitest、build，并记录验证结果
+
+## Progress Notes
+- 已确认用户目标区域为标题栏下方、状态栏上方的主内容区；标题栏和状态栏在 16:9 模式中保持可见。
+- [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 已新增应用级 16:9 状态、主内容区测量、resize 纠正 effect，以及 `Esc` / 顶部 hover 退出入口。
+- [src/features/window/TopBar.tsx](/D:/MyProject/MDPad/src/features/window/TopBar.tsx) 已将 `16:9 Slide` 改为应用级模式开关，并让 40% x 90%、最大化、全屏操作退出 16:9 模式。
+- [src/features/editor/HtmlPreview.tsx](/D:/MyProject/MDPad/src/features/editor/HtmlPreview.tsx) 已移除 `isSlideAspect` 渲染职责；HTML 预览只填满外部主内容区。
+- [src/shared/utils/windowPreset.ts](/D:/MyProject/MDPad/src/shared/utils/windowPreset.ts) 已新增主内容区 16:9 窗口尺寸计算 helper，覆盖 resize 方向、chrome offset 和 work area 夹紧。
+- 验证已完成：`pnpm exec vitest run src/features/window/TopBar.test.ts src/features/editor/HtmlPreview.test.ts src/App.test.ts src/shared/utils/windowPreset.test.ts` 通过（4 个文件 / 42 个测试），`pnpm build` 通过，`cargo check --manifest-path src-tauri/Cargo.toml` 通过。
+
+## Review
+- 结果：`16:9 Slide` 不再给 HTML preview 内部加 padding/边框/阴影，也不再制造预览与应用窗口之间的额外间距。
+- 结果：16:9 模式现在约束的是应用主内容区；进入模式会按当前主内容区宽度修正窗口尺寸并居中，后续拖拽 resize 会按主要拖动方向继续纠正比例。
+- 结果：`Esc`、顶部 hover 按钮都可以退出 16:9 模式；全屏、最大化和 40% x 90% preset 与 16:9 模式互斥。
+
+# 富文本混合粘贴崩溃二次加固（2026-04-26 22:xx）
+
+## Plan
+- [x] 保留表格混合粘贴专用清洗路径，并增加统一富文本粘贴准备入口
+- [x] 对明显外部/复杂的非表格 HTML 做轻量清洗与纯文本 fallback
+- [x] 将 `MarkdownEditor` 早期 paste 分支切换到统一入口，并捕获 `pasteHTML` 异常降级
+- [x] 补充表格、非表格富文本、fallback 和光标上下文回归测试
+- [x] 运行 TypeScript、clipboard、markdownCodec、全量测试和 build 验证
+
+## Progress Notes
+- [src/features/editor/clipboard/richHtmlTables.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/richHtmlTables.ts) 已从表格专用准备函数扩展为统一富文本准备入口：表格路径仍优先处理，非表格路径只接管带外部复制特征或复杂 wrapper 的 HTML。
+- 通用清洗现在会移除 `script/style/meta/link/object/iframe/svg/math` 等节点，剥离事件属性、样式、class/id 和外部复制噪声，并规范 `figure/figcaption`、`details/summary`、`dl/dt/dd` 为 TipTap 更容易解析的块内容。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 的早期 paste 分支已改用统一 payload；`pasteHTML` 抛错时会捕获并降级到纯文本 fallback，表格成功粘贴后仍调度 `fixTables` 修复。
+- [src/features/editor/clipboard/richHtmlTables.test.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/richHtmlTables.test.ts) 已补充 Office/Google 风格、完整 HTML 文档、figure/details/dl/svg 噪声、fallback 抛错和空文档/段落/选区/表格单元格/列表项上下文测试。
+
+## Review
+- 结果：当前已知的“文字/标题 + 表格”崩溃路径仍走表格清洗和 `fixTables` 兜底；其它明显外部富文本混合粘贴现在会在 ProseMirror 默认解析前进入受控粘贴，失败时至少插入纯文本，不再冒泡成 fatal startup 屏。
+- 结果：纯文本 Markdown、无 HTML 内容、简单内部 HTML、简单纯表格没有被通用路径接管，保持原有默认行为。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/clipboard/richHtmlTables.test.ts` 通过（9 个测试）；`pnpm test -- clipboard`、`pnpm test -- markdownCodec`、`pnpm test` 均通过（46 个文件 / 329 个测试）；`pnpm build` 通过。
+- 说明：Vitest stderr 仍包含项目既有的 jsdom canvas `toDataURL()` 未实现提示和 HtmlPreview 预期失败路径日志，但测试结果全部通过；当前工作区原本已有大量未提交改动，本轮没有回退这些既有变更。
+
+# 发布 v0.2.10（2026-04-26 23:xx）
+
+## Plan
+- [x] 补充本次发布 updatenote，并记录 Paste 后续待完善项
+- [x] 编写 `docs/release-notes-v0.2.10.md`，覆盖安装包、校验值和已知边界
+- [x] 复核版本号、安装包和 GitHub release 状态
+- [ ] 提交当前发布改动到 `main`
+- [ ] 推送 `main`、创建 `v0.2.10` tag，并发布 GitHub Release

@@ -31,6 +31,7 @@ import {
   extractChartActionFromPreviewMessage,
   extractContextMenuPositionFromPreviewMessage,
   extractExternalOpenUrlFromPreviewMessage,
+  extractFullscreenShortcutFromPreviewMessage,
   extractInlineTextCommitFromPreviewMessage,
   extractReadOnlyBlockedFromPreviewMessage,
   extractSvgCommitPatchFromPreviewMessage,
@@ -49,9 +50,12 @@ interface HtmlPreviewProps {
   isEditable?: boolean;
   themeMode?: ThemeMode;
   uiTheme?: UiTheme;
+  isFullscreen?: boolean;
   onHtmlChange?: (nextHtml: string) => void;
+  onPreviewEscapeKey?: () => void;
   onReadOnlyInteraction?: () => void;
   onRequestExport?: (request: DocumentExportRequest) => void;
+  onRequestFullscreenChange?: (nextFullscreen: boolean) => Promise<void> | void;
 }
 
 const DEFAULT_SCROLLBAR_THEME: HtmlPreviewScrollbarTheme = {
@@ -91,9 +95,12 @@ export default function HtmlPreview({
   isEditable = false,
   themeMode = "light",
   uiTheme = "modern",
+  isFullscreen = false,
   onHtmlChange,
+  onPreviewEscapeKey,
   onReadOnlyInteraction,
-  onRequestExport
+  onRequestExport,
+  onRequestFullscreenChange
 }: HtmlPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -101,8 +108,11 @@ export default function HtmlPreview({
   const htmlRef = useRef(html);
   const skipNextIframeReloadForHtmlRef = useRef<string | null>(null);
   const isEditableRef = useRef(isEditable);
+  const isFullscreenRef = useRef(isFullscreen);
   const onHtmlChangeRef = useRef(onHtmlChange);
+  const onPreviewEscapeKeyRef = useRef(onPreviewEscapeKey);
   const onReadOnlyInteractionRef = useRef(onReadOnlyInteraction);
+  const onRequestFullscreenChangeRef = useRef(onRequestFullscreenChange);
   const [contextMenuPosition, setContextMenuPosition] =
     useState<HtmlPreviewContextMenuRequest | null>(null);
   const [chartEditorRequest, setChartEditorRequest] =
@@ -128,12 +138,24 @@ export default function HtmlPreview({
   }, [isEditable]);
 
   useEffect(() => {
+    isFullscreenRef.current = isFullscreen;
+  }, [isFullscreen]);
+
+  useEffect(() => {
     onHtmlChangeRef.current = onHtmlChange;
   }, [onHtmlChange]);
 
   useEffect(() => {
+    onPreviewEscapeKeyRef.current = onPreviewEscapeKey;
+  }, [onPreviewEscapeKey]);
+
+  useEffect(() => {
     onReadOnlyInteractionRef.current = onReadOnlyInteraction;
   }, [onReadOnlyInteraction]);
+
+  useEffect(() => {
+    onRequestFullscreenChangeRef.current = onRequestFullscreenChange;
+  }, [onRequestFullscreenChange]);
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -212,6 +234,31 @@ export default function HtmlPreview({
         return;
       }
 
+      const fullscreenShortcut = extractFullscreenShortcutFromPreviewMessage(
+        event.data,
+        instanceTokenRef.current,
+        event.source,
+        frameWindow
+      );
+      if (fullscreenShortcut) {
+        const requestFullscreenChange = onRequestFullscreenChangeRef.current;
+
+        if (fullscreenShortcut === "F11") {
+          if (requestFullscreenChange) {
+            void requestFullscreenChange(!isFullscreenRef.current);
+          }
+          return;
+        }
+
+        if (isFullscreenRef.current && requestFullscreenChange) {
+          void requestFullscreenChange(false);
+          return;
+        }
+
+        onPreviewEscapeKeyRef.current?.();
+        return;
+      }
+
       const inlineTextPatch = extractInlineTextCommitFromPreviewMessage(
         event.data,
         instanceTokenRef.current,
@@ -224,6 +271,13 @@ export default function HtmlPreview({
         setSvgEditorRequest(null);
         if (!isEditableRef.current) {
           onReadOnlyInteractionRef.current?.();
+          return;
+        }
+
+        if (
+          typeof inlineTextPatch.currentText === "string" &&
+          inlineTextPatch.currentText === inlineTextPatch.nextText
+        ) {
           return;
         }
 
@@ -405,13 +459,15 @@ export default function HtmlPreview({
       ref={shellRef}
       className="html-preview-shell"
     >
-      <iframe
-        ref={iframeRef}
-        className="html-preview-frame"
-        sandbox="allow-scripts"
-        srcDoc={srcDoc}
-        title="HTML Preview"
-      />
+      <div className="html-preview-stage">
+        <iframe
+          ref={iframeRef}
+          className="html-preview-frame"
+          sandbox="allow-scripts"
+          srcDoc={srcDoc}
+          title="HTML Preview"
+        />
+      </div>
 
       {patchError ? (
         <div

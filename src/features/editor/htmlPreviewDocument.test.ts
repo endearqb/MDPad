@@ -7,7 +7,9 @@ import {
   extractChartEditorRequestFromPreviewMessage,
   extractContextMenuPositionFromPreviewMessage,
   extractExternalOpenUrlFromPreviewMessage,
+  extractFullscreenShortcutFromPreviewMessage,
   extractInlineTextCommitFromPreviewMessage,
+  HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
   findHtmlPreviewAnchorTarget,
   HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
   HTML_PREVIEW_MESSAGE_SOURCE,
@@ -260,6 +262,155 @@ describe("htmlPreviewDocument", () => {
         });
       }
     }
+  });
+
+  it("forwards fullscreen shortcuts from the preview iframe host script", () => {
+    const runtime = setupPreviewHostScript("<button>Focus</button>");
+    try {
+      const f11Event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "F11"
+      });
+      document.dispatchEvent(f11Event);
+
+      expect(f11Event.defaultPrevented).toBe(true);
+      expect(runtime.postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          type: HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "interactive-token",
+          key: "F11"
+        }),
+        "*"
+      );
+
+      const escapeEvent = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Escape"
+      });
+      document.dispatchEvent(escapeEvent);
+
+      expect(escapeEvent.defaultPrevented).toBe(false);
+      expect(runtime.postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          type: HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "interactive-token",
+          key: "Escape"
+        }),
+        "*"
+      );
+    } finally {
+      runtime.cleanup();
+    }
+  });
+
+  it("does not post inline text commits when blur exits without changes", () => {
+    const runtime = setupPreviewHostScript("<p>Hello</p>");
+    try {
+      const paragraph = document.querySelector("p");
+      if (!(paragraph instanceof HTMLParagraphElement)) {
+        throw new Error("Missing inline text paragraph.");
+      }
+
+      paragraph.dispatchEvent(
+        new MouseEvent("dblclick", {
+          bubbles: true,
+          cancelable: true,
+          button: 0
+        })
+      );
+
+      const editor = document.querySelector("[data-mdpad-inline-editor]");
+      if (!(editor instanceof HTMLElement)) {
+        throw new Error("Missing inline text editor.");
+      }
+
+      runtime.postMessage.mockClear();
+      editor.dispatchEvent(new FocusEvent("blur"));
+
+      expect(runtime.postMessage).not.toHaveBeenCalled();
+      expect(paragraph.textContent).toBe("Hello");
+      expect(document.querySelector("[data-mdpad-inline-editor]")).toBeNull();
+    } finally {
+      runtime.cleanup();
+    }
+  });
+
+  it("posts inline text commits on blur when the text changed", () => {
+    const runtime = setupPreviewHostScript("<p>Hello</p>");
+    try {
+      const paragraph = document.querySelector("p");
+      if (!(paragraph instanceof HTMLParagraphElement)) {
+        throw new Error("Missing inline text paragraph.");
+      }
+
+      paragraph.dispatchEvent(
+        new MouseEvent("dblclick", {
+          bubbles: true,
+          cancelable: true,
+          button: 0
+        })
+      );
+
+      const editor = document.querySelector("[data-mdpad-inline-editor]");
+      if (!(editor instanceof HTMLElement)) {
+        throw new Error("Missing inline text editor.");
+      }
+
+      editor.textContent = "Updated";
+      runtime.postMessage.mockClear();
+      editor.dispatchEvent(new FocusEvent("blur"));
+
+      expect(runtime.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "interactive-token",
+          nextText: "Updated",
+          currentText: "Hello"
+        }),
+        "*"
+      );
+      expect(paragraph.textContent).toBe("Updated");
+      expect(document.querySelector("[data-mdpad-inline-editor]")).toBeNull();
+    } finally {
+      runtime.cleanup();
+    }
+  });
+
+  it("extracts trusted fullscreen shortcut messages", () => {
+    const frameWindow = {} as WindowProxy;
+
+    expect(
+      extractFullscreenShortcutFromPreviewMessage(
+        {
+          type: HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "token-shortcut",
+          key: "F11"
+        },
+        "token-shortcut",
+        frameWindow,
+        frameWindow
+      )
+    ).toBe("F11");
+
+    expect(
+      extractFullscreenShortcutFromPreviewMessage(
+        {
+          type: HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
+          source: HTML_PREVIEW_MESSAGE_SOURCE,
+          token: "token-shortcut",
+          key: "Enter"
+        },
+        "token-shortcut",
+        frameWindow,
+        frameWindow
+      )
+    ).toBeNull();
   });
 
   it("injects preview scrollbar styles for the viewport and nested scroll containers", () => {

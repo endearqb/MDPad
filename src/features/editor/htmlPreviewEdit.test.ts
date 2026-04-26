@@ -65,6 +65,24 @@ describe("htmlPreviewEdit", () => {
     });
   });
 
+  it("treats unchanged inline text patches as no-ops before resolving stale locators", () => {
+    const html = "<p>Hello</p>";
+    const result = applyHtmlTextPatch(html, {
+      kind: "inline-text",
+      locator: {
+        root: "body",
+        path: [99, 99]
+      },
+      nextText: "Hello",
+      currentText: "Hello"
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      html
+    });
+  });
+
   it("updates html element text and inline styles in place", () => {
     const next = expectPatchSuccess(
       applyHtmlElementPatch('<section><h1 class="hero">Title</h1></section>', {

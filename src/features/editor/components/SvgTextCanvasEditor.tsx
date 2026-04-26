@@ -11,7 +11,7 @@ import type {
   SvgEditableTagName,
   SvgTransformTranslation
 } from "../htmlPreviewEdit";
-import { applySvgPatch, svgMarkupToDataUri } from "../htmlPreviewEdit";
+import { applySvgPatch } from "../htmlPreviewEdit";
 import {
   areLocatorPathsEqual,
   areSvgItemsEqual,
@@ -69,6 +69,11 @@ interface SvgViewportState {
   mode: "fit" | "manual";
 }
 
+interface SvgStageViewportSize {
+  width: number;
+  height: number;
+}
+
 interface SvgSelectionState {
   locatorPaths: number[][];
   primaryLocatorPath: number[] | null;
@@ -124,8 +129,7 @@ type DragState =
   | {
       kind: "move-selection";
       pointerId: number;
-      startClientX: number;
-      startClientY: number;
+      startPointInViewBox: SvgPoint;
       basePresent: SvgEditorPresentState;
       locatorKeys: string[];
     }
@@ -226,9 +230,25 @@ function buildPatchFromItems(items: SvgEditableItem[]): HtmlSvgPatch {
       text: item.canEditText ? item.text ?? "" : undefined,
       geometry: item.geometry,
       style: item.style,
-      transform: item.transform
+      transform: item.transform,
+      sourceSnapshot: item.sourceSnapshot
     }))
   };
+}
+
+function buildCommitPatchFromItems(
+  request: HtmlSvgEditRequest,
+  items: SvgEditableItem[]
+): HtmlSvgPatch {
+  const initialItemsByLocator = new Map(
+    request.items.map((item) => [locatorPathKey(item.locator.path), item])
+  );
+  const changedItems = items.filter((item) => {
+    const initialItem = initialItemsByLocator.get(locatorPathKey(item.locator.path));
+    return !initialItem || JSON.stringify(item) !== JSON.stringify(initialItem);
+  });
+
+  return buildPatchFromItems(changedItems);
 }
 
 function getElementTypeName(copy: EditorCopy, tagName: SvgEditableTagName): string {
@@ -242,12 +262,107 @@ function getDisplayLabel(copy: EditorCopy, item: SvgEditableItem): string {
   return getElementTypeName(copy, item.tagName);
 }
 
+function isLocatorPathPrefix(prefix: number[], path: number[]): boolean {
+  return (
+    prefix.length <= path.length &&
+    prefix.every((value, index) => path[index] === value)
+  );
+}
+
+function localizeSvgMarkupLocatorPath(
+  svgLocatorPath: number[],
+  itemLocatorPath: number[]
+): number[] {
+  if (!isLocatorPathPrefix(svgLocatorPath, itemLocatorPath)) {
+    return [...itemLocatorPath];
+  }
+
+  return [0, ...itemLocatorPath.slice(svgLocatorPath.length)];
+}
+
+export function buildSvgMarkupPreviewPatch(
+  request: HtmlSvgEditRequest,
+  items: SvgEditableItem[]
+): HtmlSvgPatch {
+  const patch = buildPatchFromItems(items);
+  return {
+    ...patch,
+    items: patch.items.map(({ sourceSnapshot: _sourceSnapshot, ...item }) => ({
+      ...item,
+      locator: {
+        ...item.locator,
+        path: localizeSvgMarkupLocatorPath(
+          request.svgLocator.path,
+          item.locator.path
+        )
+      }
+    }))
+  };
+}
+
 function buildLivePreviewMarkup(
-  sourceSvgMarkup: string,
+  request: HtmlSvgEditRequest,
   items: SvgEditableItem[]
 ): string {
-  const result = applySvgPatch(sourceSvgMarkup, buildPatchFromItems(items));
-  return result.ok ? result.html : sourceSvgMarkup;
+  const result = applySvgPatch(
+    request.svgMarkup,
+    buildSvgMarkupPreviewPatch(request, items)
+  );
+  return result.ok ? result.html : request.svgMarkup;
+}
+
+function buildSvgPreviewDocument(svgMarkup: string): string {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+body {
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+</style>
+</head>
+<body>
+${svgMarkup}
+</body>
+</html>`;
+}
+
+function SvgLivePreviewFrame({
+  markup,
+  title
+}: {
+  markup: string;
+  title: string;
+}) {
+  const documentSource = useMemo(() => buildSvgPreviewDocument(markup), [markup]);
+
+  return (
+    <iframe
+      className="html-preview-svg-stage-frame"
+      sandbox=""
+      srcDoc={documentSource}
+      tabIndex={-1}
+      title={title}
+    />
+  );
 }
 
 function getInitialPrimaryLocatorPath(
@@ -750,7 +865,7 @@ function getNearestEditablePathSegmentIndex(
   return bestIndex;
 }
 
-function transformClientPointToViewBox(
+export function transformClientPointToViewBox(
   clientX: number,
   clientY: number,
   rect: DOMRect,
@@ -960,14 +1075,17 @@ export default function SvgTextCanvasEditor({
   } | null>(null);
   const [textEditFocusTick, setTextEditFocusTick] = useState(0);
   const [previewMarkup, setPreviewMarkup] = useState(() =>
-    buildLivePreviewMarkup(request.svgMarkup, initialHistory.present.items)
+    buildLivePreviewMarkup(request, initialHistory.present.items)
   );
+  const stageOuterRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastRequestKeyRef = useRef<string | null>(null);
   const pendingFormBaseRef = useRef<SvgEditorPresentState | null>(null);
   const spacePressedRef = useRef(false);
+  const [stageViewportSize, setStageViewportSize] =
+    useState<SvgStageViewportSize | null>(null);
 
   const requestKey = useMemo(
     () =>
@@ -1045,21 +1163,65 @@ export default function SvgTextCanvasEditor({
   );
   const blockingValidationMessage = getBlockingValidationMessage(primarySelectedItem, copy);
   const warningMessage = getNonBlockingWarning(primarySelectedItem, copy);
-  const previewSource = useMemo(
-    () => svgMarkupToDataUri(previewMarkup),
-    [previewMarkup]
-  );
 
   useEffect(() => {
     if (blockingValidationMessage) {
       return;
     }
     try {
-      setPreviewMarkup(buildLivePreviewMarkup(request.svgMarkup, history.present.items));
+      setPreviewMarkup(buildLivePreviewMarkup(request, history.present.items));
     } catch {
       setPreviewMarkup(request.svgMarkup);
     }
-  }, [blockingValidationMessage, history.present.items, request.svgMarkup]);
+  }, [blockingValidationMessage, history.present.items, request]);
+
+  useEffect(() => {
+    const stage = stageOuterRef.current;
+    if (!stage) {
+      return;
+    }
+
+    const updateStageViewportSize = () => {
+      const rect = stage.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+
+      const aspectRatio =
+        request.viewBox.height > 0 ? request.viewBox.width / request.viewBox.height : 1;
+      const stageRatio = rect.width / rect.height;
+      const nextSize =
+        stageRatio > aspectRatio
+          ? {
+              width: rect.height * aspectRatio,
+              height: rect.height
+            }
+          : {
+              width: rect.width,
+              height: rect.width / aspectRatio
+            };
+
+      setStageViewportSize((current) => {
+        const width = roundCoordinate(nextSize.width);
+        const height = roundCoordinate(nextSize.height);
+        if (current && current.width === width && current.height === height) {
+          return current;
+        }
+        return { width, height };
+      });
+    };
+
+    updateStageViewportSize();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(updateStageViewportSize);
+      observer.observe(stage);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", updateStageViewportSize);
+    return () => window.removeEventListener("resize", updateStageViewportSize);
+  }, [request.viewBox.height, request.viewBox.width]);
 
   const updatePresentTransient = (
     updater: (state: SvgEditorPresentState) => SvgEditorPresentState
@@ -1159,6 +1321,16 @@ export default function SvgTextCanvasEditor({
     });
     setSelectedHandle(null);
   };
+
+  const stageContentStyle = {
+    aspectRatio: `${request.viewBox.width} / ${request.viewBox.height}`,
+    ...(stageViewportSize
+      ? {
+          width: `${stageViewportSize.width}px`,
+          height: `${stageViewportSize.height}px`
+        }
+      : {})
+  } as CSSProperties;
 
   const setPrimarySelection = (
     locatorPath: number[],
@@ -1537,14 +1709,8 @@ export default function SvgTextCanvasEditor({
       }
 
       if (dragState.kind === "move-selection") {
-        const deltaX =
-          ((event.clientX - dragState.startClientX) /
-            (rect.width * dragState.basePresent.viewport.zoom)) *
-          request.viewBox.width;
-        const deltaY =
-          ((event.clientY - dragState.startClientY) /
-            (rect.height * dragState.basePresent.viewport.zoom)) *
-          request.viewBox.height;
+        const deltaX = pointInViewBox.x - dragState.startPointInViewBox.x;
+        const deltaY = pointInViewBox.y - dragState.startPointInViewBox.y;
         updatePresentTransient(() => {
           const selectedKeys = new Set(dragState.locatorKeys);
           let nextPresent: SvgEditorPresentState = {
@@ -2128,6 +2294,7 @@ export default function SvgTextCanvasEditor({
           "app-modal-card",
           "html-preview-modal",
           "html-preview-modal-wide",
+          "html-preview-svg-modal",
           isExpanded ? "html-preview-svg-modal-expanded" : ""
         ]
           .filter(Boolean)
@@ -2283,26 +2450,26 @@ export default function SvgTextCanvasEditor({
               className="html-preview-svg-stage"
               onPointerDown={handleStagePointerDown}
               onWheel={handleWheel}
-              ref={stageRef}
-              style={{
-                aspectRatio: `${request.viewBox.width} / ${request.viewBox.height}`
-              }}
+              ref={stageOuterRef}
             >
               <div
-                className="html-preview-svg-viewport"
-                style={{
-                  transform: `translate(${history.present.viewport.panX}px, ${history.present.viewport.panY}px) scale(${history.present.viewport.zoom})`,
-                  transformOrigin: "0 0"
-                }}
+                className="html-preview-svg-stage-content"
+                ref={stageRef}
+                style={stageContentStyle}
               >
-                <img
-                  alt={copy.htmlPreview.svgEditorTitle}
-                  className="html-preview-svg-stage-image"
-                  draggable={false}
-                  src={previewSource}
-                />
-                <div className="html-preview-svg-stage-overlay">
-                  {history.present.items.map((item) => {
+                <div
+                  className="html-preview-svg-viewport"
+                  style={{
+                    transform: `translate(${history.present.viewport.panX}px, ${history.present.viewport.panY}px) scale(${history.present.viewport.zoom})`,
+                    transformOrigin: "0 0"
+                  }}
+                >
+                  <SvgLivePreviewFrame
+                    markup={previewMarkup}
+                    title={copy.htmlPreview.svgEditorTitle}
+                  />
+                  <div className="html-preview-svg-stage-overlay">
+                    {history.present.items.map((item) => {
                     const key = locatorPathKey(item.locator.path);
                     const isConnector = classifySvgItemKind(item) === "connector";
                     const baseLeft =
@@ -2414,11 +2581,24 @@ export default function SvgTextCanvasEditor({
                             withSelection(present, targetSelection, item.locator.path)
                           );
                           setSelectedHandle(null);
+                          const stageRect = stageRef.current?.getBoundingClientRect();
+                          if (
+                            !stageRect ||
+                            stageRect.width <= 0 ||
+                            stageRect.height <= 0
+                          ) {
+                            return;
+                          }
                           dragStateRef.current = {
                             kind: "move-selection",
                             pointerId: event.pointerId,
-                            startClientX: event.clientX,
-                            startClientY: event.clientY,
+                            startPointInViewBox: transformClientPointToViewBox(
+                              event.clientX,
+                              event.clientY,
+                              stageRect,
+                              request,
+                              history.present.viewport
+                            ),
                             basePresent: clonePresentState(history.present),
                             locatorKeys: targetSelection.map((path) => locatorPathKey(path))
                           };
@@ -2732,6 +2912,7 @@ export default function SvgTextCanvasEditor({
                     />
                   ) : null}
                 </div>
+              </div>
               </div>
             </div>
           </div>
@@ -3243,7 +3424,7 @@ export default function SvgTextCanvasEditor({
               if (blockingValidationMessage) {
                 return;
               }
-              onApply(buildPatchFromItems(history.present.items));
+              onApply(buildCommitPatchFromItems(request, history.present.items));
             }}
             type="button"
           >

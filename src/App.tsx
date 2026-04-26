@@ -11,6 +11,7 @@ import {
 } from "react";
 import { BaseProvider, DarkTheme, LightTheme } from "baseui";
 import { PLACEMENT, ToasterContainer, toaster } from "baseui/toast";
+import { Minimize2 } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
@@ -112,7 +113,8 @@ import {
   MIN_WINDOW_WIDTH,
   computePseudoMaximizeBounds,
   normalizeWindowSize,
-  sanitizePersistedWindowSize
+  sanitizePersistedWindowSize,
+  type WindowSize
 } from "./shared/utils/windowPreset";
 import { getSampleDocResourcePath } from "./shared/utils/sampleDocs";
 import { stripFrontMatterForExport } from "./features/editor/plainMarkdownExport";
@@ -472,6 +474,12 @@ export default function App() {
     }
   }, []);
 
+  const handleEscapeShortcut = useCallback(() => {
+    if (isAppFullscreen) {
+      void setWindowFullscreen(false);
+    }
+  }, [isAppFullscreen, setWindowFullscreen]);
+
   useEffect(() => {
     let isDisposed = false;
 
@@ -506,7 +514,7 @@ export default function App() {
 
       if (event.key === "Escape" && isAppFullscreen) {
         event.preventDefault();
-        void setWindowFullscreen(false);
+        handleEscapeShortcut();
       }
     };
 
@@ -514,7 +522,7 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleFullscreenShortcuts);
     };
-  }, [isAppFullscreen, setWindowFullscreen]);
+  }, [handleEscapeShortcut, isAppFullscreen, setWindowFullscreen]);
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
@@ -1997,11 +2005,14 @@ export default function App() {
                     documentPath={doc.currentPath}
                     html={doc.content}
                     isEditable={editorMode === "editable"}
+                    isFullscreen={isAppFullscreen}
                     themeMode={themeMode}
                     uiTheme={uiTheme}
                     onHtmlChange={handleMarkdownChange}
+                    onPreviewEscapeKey={handleEscapeShortcut}
                     onReadOnlyInteraction={handleReadOnlyInteraction}
                     onRequestExport={handleDocumentExportRequest}
+                    onRequestFullscreenChange={setWindowFullscreen}
                   />
                 ) : (
                   <SourceEditor
@@ -2015,6 +2026,7 @@ export default function App() {
                 )}
               </Suspense>
             ) : null}
+
           </main>
 
           {!isAppFullscreen ? (
@@ -2035,6 +2047,22 @@ export default function App() {
             />
           ) : null}
         </div>
+
+        {isAppFullscreen ? (
+          <div className="app-fullscreen-exit-zone app-mode-exit-zone">
+            <button
+              aria-label={copy.topBar.exitFullscreen}
+              className="app-fullscreen-exit-button app-mode-exit-button"
+              onClick={() => {
+                void setWindowFullscreen(false);
+              }}
+              title={copy.topBar.exitFullscreen}
+              type="button"
+            >
+              <Minimize2 className="app-fullscreen-exit-icon" />
+            </button>
+          </div>
+        ) : null}
 
         <Suspense fallback={null}>
           <ExportDialog

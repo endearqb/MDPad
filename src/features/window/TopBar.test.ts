@@ -132,9 +132,7 @@ describe("TopBar window size menu", () => {
     expect(
       rendered.container.querySelector(`button[aria-label="${copy.resizePresetCompact}"]`)
     ).toBeInstanceOf(HTMLButtonElement);
-    expect(
-      rendered.container.querySelector(`button[aria-label="${copy.resizePresetSlide}"]`)
-    ).toBeInstanceOf(HTMLButtonElement);
+    expect(rendered.container.textContent).not.toContain("16:9 Slide");
     expect(
       rendered.container.querySelector(`button[aria-label="${copy.maximize}"]`)
     ).toBeInstanceOf(HTMLButtonElement);
@@ -150,7 +148,7 @@ describe("TopBar window size menu", () => {
     rendered.unmount();
   });
 
-  it("applies the compact and slide size presets", async () => {
+  it("applies the compact preset", async () => {
     const rendered = renderTopBar();
 
     act(() => {
@@ -171,25 +169,8 @@ describe("TopBar window size menu", () => {
     expect(appWindowMock.setPosition).toHaveBeenLastCalledWith(
       expect.objectContaining({ x: 580, y: 95 })
     );
-
-    act(() => {
-      rendered.container
-        .querySelector<HTMLButtonElement>(`button[aria-label="${copy.resizePreset}"]`)
-        ?.click();
-    });
-    act(() => {
-      rendered.container
-        .querySelector<HTMLButtonElement>(`button[aria-label="${copy.resizePresetSlide}"]`)
-        ?.click();
-    });
-    await flushAsyncHandlers();
-
-    expect(appWindowMock.setSize).toHaveBeenLastCalledWith(
-      expect.objectContaining({ width: 960, height: 540 })
-    );
-    expect(appWindowMock.setPosition).toHaveBeenLastCalledWith(
-      expect.objectContaining({ x: 420, y: 230 })
-    );
+    expect(appWindowMock.setSize).toHaveBeenCalledTimes(1);
+    expect(appWindowMock.setPosition).toHaveBeenCalledTimes(1);
     rendered.unmount();
   });
 

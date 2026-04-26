@@ -99,9 +99,9 @@ export interface TopBarCopy {
   minimize: string;
   resizePreset: string;
   resizePresetCompact: string;
-  resizePresetSlide: string;
   maximize: string;
   fullscreen: string;
+  exitFullscreen: string;
   windowSizeActionsAria: string;
   close: string;
 }
@@ -508,9 +508,9 @@ const enCopy: AppCopy = {
     minimize: "Minimize",
     resizePreset: "Window size",
     resizePresetCompact: "40% x 90%",
-    resizePresetSlide: "16:9 Slide",
     maximize: "Maximize",
     fullscreen: "Fullscreen",
+    exitFullscreen: "Exit fullscreen",
     windowSizeActionsAria: "Window size actions",
     close: "Close"
   },
@@ -943,9 +943,9 @@ const zhCopy: AppCopy = {
     minimize: "最小化",
     resizePreset: "调整窗口",
     resizePresetCompact: "40% x 90%",
-    resizePresetSlide: "16:9 Slide",
     maximize: "最大化",
     fullscreen: "全屏",
+    exitFullscreen: "退出全屏",
     windowSizeActionsAria: "窗口尺寸操作",
     close: "关闭"
   },

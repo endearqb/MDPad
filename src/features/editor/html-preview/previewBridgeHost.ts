@@ -9,6 +9,7 @@ export {
   extractElementPatchFailedFromPreviewMessage,
   extractElementSelectionFromPreviewMessage,
   extractExternalOpenUrlFromPreviewMessage,
+  extractFullscreenShortcutFromPreviewMessage,
   extractInlineTextCommitFromPreviewMessage,
   extractReadOnlyBlockedFromPreviewMessage,
   extractSvgCommitPatchFromPreviewMessage,

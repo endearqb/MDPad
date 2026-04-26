@@ -17,6 +17,7 @@ vi.mock("../file/fileService", () => ({
 import HtmlPreview from "./HtmlPreview";
 import {
   HTML_PREVIEW_APPLY_CHART_MODEL_MESSAGE_TYPE,
+  HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
   HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
   HTML_PREVIEW_MESSAGE_SOURCE,
   HTML_PREVIEW_OPEN_CHART_EDITOR_MESSAGE_TYPE,
@@ -247,6 +248,86 @@ describe("HtmlPreview", () => {
     rendered.unmount();
   });
 
+  it("renders the iframe inside a stage that fills the preview shell", () => {
+    const rendered = renderPreview({
+      documentPath: null,
+      html: "<p>Slide stage</p>",
+      isEditable: false
+    });
+
+    const shell = rendered.container.querySelector(".html-preview-shell");
+    const stage = rendered.container.querySelector(".html-preview-stage");
+
+    expect(shell?.classList.contains("is-slide-aspect")).toBe(false);
+    expect(stage).toBeInstanceOf(HTMLDivElement);
+    expect(stage?.contains(rendered.iframe)).toBe(true);
+    rendered.unmount();
+  });
+
+  it("handles fullscreen shortcuts forwarded from the preview iframe", () => {
+    const onRequestFullscreenChange = vi.fn();
+    const rendered = renderPreview({
+      documentPath: null,
+      html: "<button>Focusable</button>",
+      isEditable: false,
+      isFullscreen: false,
+      onRequestFullscreenChange
+    });
+    const token = extractPreviewToken(rendered.iframe);
+
+    dispatchPreviewMessage(rendered.frameWindow, {
+      type: HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
+      source: HTML_PREVIEW_MESSAGE_SOURCE,
+      token,
+      key: "F11"
+    });
+
+    expect(onRequestFullscreenChange).toHaveBeenLastCalledWith(true);
+
+    rendered.rerender({
+      documentPath: null,
+      html: "<button>Focusable</button>",
+      isEditable: false,
+      isFullscreen: true,
+      onRequestFullscreenChange
+    });
+
+    dispatchPreviewMessage(rendered.frameWindow, {
+      type: HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
+      source: HTML_PREVIEW_MESSAGE_SOURCE,
+      token,
+      key: "Escape"
+    });
+
+    expect(onRequestFullscreenChange).toHaveBeenLastCalledWith(false);
+    rendered.unmount();
+  });
+
+  it("forwards iframe Escape shortcuts outside fullscreen to the app layer", () => {
+    const onRequestFullscreenChange = vi.fn();
+    const onPreviewEscapeKey = vi.fn();
+    const rendered = renderPreview({
+      documentPath: null,
+      html: "<button>Focusable</button>",
+      isEditable: false,
+      isFullscreen: false,
+      onPreviewEscapeKey,
+      onRequestFullscreenChange
+    });
+    const token = extractPreviewToken(rendered.iframe);
+
+    dispatchPreviewMessage(rendered.frameWindow, {
+      type: HTML_PREVIEW_FULLSCREEN_SHORTCUT_MESSAGE_TYPE,
+      source: HTML_PREVIEW_MESSAGE_SOURCE,
+      token,
+      key: "Escape"
+    });
+
+    expect(onRequestFullscreenChange).not.toHaveBeenCalled();
+    expect(onPreviewEscapeKey).toHaveBeenCalledTimes(1);
+    rendered.unmount();
+  });
+
   it("refreshes iframe scrollbar theme tokens when the app theme changes", () => {
     const scrollbarTokens = {
       "--scrollbar-track": "rgba(203, 213, 225, 0.84)",
@@ -317,6 +398,36 @@ describe("HtmlPreview", () => {
     });
 
     expect(onHtmlChange).toHaveBeenCalledWith("<p>Hello inline</p>");
+    rendered.unmount();
+  });
+
+  it("ignores unchanged inline text commits without surfacing stale locator errors", () => {
+    const onHtmlChange = vi.fn();
+    const rendered = renderPreview({
+      copy: getAppCopy("en").editor,
+      documentPath: null,
+      html: "<p>Hello</p>",
+      isEditable: true,
+      onHtmlChange
+    });
+
+    const token = extractPreviewToken(rendered.iframe);
+    dispatchPreviewMessage(rendered.frameWindow, {
+      type: HTML_PREVIEW_INLINE_TEXT_COMMIT_MESSAGE_TYPE,
+      source: HTML_PREVIEW_MESSAGE_SOURCE,
+      token,
+      locator: {
+        root: "body",
+        path: [99, 99]
+      },
+      nextText: "Hello",
+      currentText: "Hello"
+    });
+
+    expect(onHtmlChange).not.toHaveBeenCalled();
+    expect(rendered.container.textContent).not.toContain(
+      "Selected HTML text node could not be located."
+    );
     rendered.unmount();
   });
 

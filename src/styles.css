@@ -84,7 +84,7 @@ body {
   --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 78%, var(--slate-200));
   --code-scrollbar-thumb: rgba(148, 163, 184, 0.46);
   --code-scrollbar-thumb-hover: rgba(100, 116, 139, 0.54);
-  --toast-glass-bg: rgba(255, 255, 255, 0.7);
+  --toast-glass-bg: rgba(255, 255, 255, 0.3);
   --toast-glass-border: rgba(148, 163, 184, 0.28);
   --toast-glass-highlight: rgba(255, 255, 255, 0.24);
   --toast-glass-shadow: 0 16px 30px rgba(15, 23, 42, 0.14);
@@ -119,7 +119,7 @@ body {
   --code-scrollbar-track: color-mix(in srgb, var(--editor-bg) 88%, var(--slate-950));
   --code-scrollbar-thumb: color-mix(in srgb, var(--slate-500) 72%, transparent);
   --code-scrollbar-thumb-hover: color-mix(in srgb, var(--slate-400) 76%, transparent);
-  --toast-glass-bg: rgba(15, 23, 42, 0.7);
+  --toast-glass-bg: rgba(15, 23, 42, 0.3);
   --toast-glass-border: rgba(148, 163, 184, 0.2);
   --toast-glass-highlight: rgba(255, 255, 255, 0.08);
   --toast-glass-shadow: 0 20px 36px rgba(0, 0, 0, 0.32);
@@ -342,6 +342,7 @@ body {
   position: relative;
   display: inline-flex;
   align-items: center;
+  height: 100%;
   z-index: 9;
 }
 
@@ -423,6 +424,10 @@ body {
   width: 18px;
   height: 18px;
   stroke-width: 1.7;
+}
+
+.titlebar-icon-active {
+  color: var(--accent);
 }
 
 @keyframes titlebar-readonly-icon-blink {
@@ -561,6 +566,7 @@ body {
 
 
 .app-main {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -585,6 +591,62 @@ body {
   border-radius: 0;
 }
 
+.app-fullscreen-exit-zone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  z-index: 1400;
+}
+
+.app-fullscreen-exit-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid color-mix(in srgb, var(--chrome-border) 80%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--chrome-bg) 92%, transparent);
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+  box-shadow: var(--shadow-surface);
+  backdrop-filter: blur(14px);
+}
+
+.app-fullscreen-exit-zone:hover .app-fullscreen-exit-button,
+.app-fullscreen-exit-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.app-fullscreen-exit-button:hover {
+  background: var(--hover-soft);
+  color: var(--text-primary);
+}
+
+.app-fullscreen-exit-button:active {
+  background: var(--hover-strong);
+}
+
+.app-fullscreen-exit-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.9;
+}
+
 .source-editor-shell,
 .html-preview-shell {
   position: relative;
@@ -598,6 +660,14 @@ body {
 
 .source-editor-host {
   height: 100%;
+}
+
+.html-preview-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .source-editor-shell .cm-scroller {
@@ -1551,6 +1621,11 @@ body {
   width: min(960px, calc(100vw - 24px));
 }
 
+.html-preview-modal-wide.html-preview-svg-modal {
+  max-height: calc(100dvh - 24px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
 .html-preview-modal-wide.html-preview-svg-modal-expanded {
   width: calc(100vw - 24px);
 }
@@ -1615,7 +1690,11 @@ body {
 
 .html-preview-svg-editor {
   grid-template-columns: minmax(0, 1.8fr) minmax(250px, 0.9fr);
-  align-items: start;
+  align-items: stretch;
+  height: clamp(560px, calc(100dvh - 150px), 720px);
+  max-height: calc(100dvh - 150px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .html-preview-svg-modal-header {
@@ -1629,11 +1708,15 @@ body {
 }
 
 .html-preview-svg-stage-wrap {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .html-preview-svg-toolbar {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
@@ -1647,6 +1730,9 @@ body {
 
 .html-preview-svg-stage {
   position: relative;
+  display: grid;
+  place-items: center;
+  flex: 1 1 0;
   width: 100%;
   min-height: 240px;
   border: 1px solid color-mix(in srgb, var(--editor-border) 76%, transparent);
@@ -1655,12 +1741,19 @@ body {
   overflow: hidden;
 }
 
+.html-preview-svg-stage-content {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+
 .html-preview-svg-viewport {
   position: absolute;
   inset: 0;
 }
 
-.html-preview-svg-stage-image,
+.html-preview-svg-stage-frame,
 .html-preview-svg-stage-overlay {
   position: absolute;
   inset: 0;
@@ -1668,8 +1761,11 @@ body {
   height: 100%;
 }
 
-.html-preview-svg-stage-image {
-  object-fit: contain;
+.html-preview-svg-stage-frame {
+  display: block;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
 }
 
 .html-preview-svg-stage-overlay {
@@ -1793,6 +1889,9 @@ body {
   display: grid;
   align-content: start;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .html-preview-svg-text-field {

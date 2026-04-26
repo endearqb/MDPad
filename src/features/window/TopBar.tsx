@@ -21,7 +21,6 @@ import {
   Minus,
   Moon,
   Pencil,
-  Projector,
   Ratio,
   Save,
   SaveAll,
@@ -30,10 +29,7 @@ import {
 } from "lucide-react";
 import type { EditorMode, ThemeMode } from "../../shared/types/doc";
 import type { TopBarCopy } from "../../shared/i18n/appI18n";
-import {
-  computePseudoMaximizeBounds,
-  computeSlideAspectWindowBounds
-} from "../../shared/utils/windowPreset";
+import { computePseudoMaximizeBounds } from "../../shared/utils/windowPreset";
 
 interface TopBarProps {
   fileName: string;
@@ -293,20 +289,6 @@ export default function TopBar({
     }
   }, [applyWindowBounds]);
 
-  const handleSlidePreset = useCallback(async () => {
-    try {
-      const monitor = await currentMonitor();
-      if (!monitor) {
-        return;
-      }
-
-      const targetBounds = computeSlideAspectWindowBounds(monitor.workArea);
-      await applyWindowBounds(targetBounds);
-    } catch {
-      // ignore runtime errors in non-tauri contexts
-    }
-  }, [applyWindowBounds]);
-
   const handleNativeMaximize = useCallback(async () => {
     if (!appWindow) {
       return;
@@ -340,7 +322,12 @@ export default function TopBar({
     } catch {
       // ignore runtime errors in non-tauri contexts
     }
-  }, [appWindow, isFullscreen, onRequestFullscreenChange, setFullscreenState]);
+  }, [
+    appWindow,
+    isFullscreen,
+    onRequestFullscreenChange,
+    setFullscreenState
+  ]);
 
   const beginRename = useCallback(() => {
     if (!canRename || isBusy || isSubmittingRename) {
@@ -704,14 +691,6 @@ export default function TopBar({
                 }}
               >
                 <Ratio className="titlebar-icon" />
-              </WindowMenuItem>
-              <WindowMenuItem
-                label={copy.resizePresetSlide}
-                onClick={() => {
-                  void handleSlidePreset();
-                }}
-              >
-                <Projector className="titlebar-icon" />
               </WindowMenuItem>
               <WindowMenuItem
                 label={copy.maximize}
