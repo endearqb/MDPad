@@ -1991,5 +1991,12 @@
 - [x] 补充本次发布 updatenote，并记录 Paste 后续待完善项
 - [x] 编写 `docs/release-notes-v0.2.10.md`，覆盖安装包、校验值和已知边界
 - [x] 复核版本号、安装包和 GitHub release 状态
-- [ ] 提交当前发布改动到 `main`
-- [ ] 推送 `main`、创建 `v0.2.10` tag，并发布 GitHub Release
+- [x] 提交当前发布改动到 `main`
+- [x] 推送 `main`、创建 `v0.2.10` tag，并发布 GitHub Release
+
+## Review
+- 结果：发布提交 `cf174fc` 已推送到 `origin/main`，版本号为 `0.2.10`。
+- 结果：已创建并推送 tag `v0.2.10`。
+- 结果：GitHub Release 已发布：`https://github.com/endearqb/MDPad/releases/tag/v0.2.10`。
+- 结果：Release 附件已上传 `MDPad_0.2.10_x64-setup.exe`，SHA256 为 `7E4325DB3010DA28DA895A69A2DEEC2FD5FF142F7E06963E7C1FFA0EB2D64BBA`。
+- 说明：本轮 release note 已明确记录 Paste 后续待完善项：Paste Rules 只适合 Markdown-like 文本模式，复杂富文本继续走 HTML sanitizer/source normalizer，并继续沉淀真实来源 fixture。
