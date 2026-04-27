@@ -27,7 +27,7 @@ import {
   type Editor
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { fixTables } from "@tiptap/pm/tables";
+import { Markdown } from "tiptap-markdown";
 import { createLowlight } from "lowlight";
 import bash from "highlight.js/lib/languages/bash";
 import c from "highlight.js/lib/languages/c";
@@ -72,7 +72,7 @@ import {
   Video
 } from "lucide-react";
 import "katex/dist/katex.min.css";
-import { htmlToMarkdown, markdownToHtml } from "./markdownCodec";
+import { htmlToMarkdown } from "./markdownCodec";
 import {
   parseObsidianEmbedImageSyntax,
   parseMarkdownImageSyntax,
@@ -80,12 +80,7 @@ import {
 } from "./markdownImageSyntax";
 import { createClipboardPipeline } from "./clipboard/pipeline";
 import { createBinaryMediaPasteHandler } from "./clipboard/handlers/binaryMedia";
-import { createTextMarkdownPasteHandler } from "./clipboard/handlers/textMarkdown";
 import { createTextMarkdownImagePasteHandler } from "./clipboard/handlers/textMarkdownImage";
-import {
-  applyPreparedRichHtmlPaste,
-  prepareRichHtmlPaste
-} from "./clipboard/richHtmlTables";
 import { CalloutBlockquote } from "./extensions/calloutBlockquote";
 import {
   BlockMath,
@@ -133,7 +128,6 @@ import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
 import {
   canExportCurrentSelection,
-  getMarkdownClipboardText,
   getMarkdownExportSnapshot,
   getMarkdownSelectionExport
 } from "./markdownExport";
@@ -549,6 +543,22 @@ function formatErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function getEditorMarkdown(activeEditor: Editor): string {
+  const markdownStorage = (
+    activeEditor.storage as {
+      markdown?: {
+        getMarkdown?: () => string;
+      };
+    }
+  ).markdown;
+  const pluginMarkdown = markdownStorage?.getMarkdown?.();
+  if (typeof pluginMarkdown === "string") {
+    return pluginMarkdown.trimEnd();
+  }
+
+  return htmlToMarkdown(activeEditor.getHTML());
+}
+
 function buildEditorStats(editor: Editor): EditorStats {
   const text = editor.getText();
   const normalized = text.trim();
@@ -649,13 +659,9 @@ export default function MarkdownEditor({
     [onStatsChange]
   );
   const normalizedMarkdown = useMemo(() => normalizeMarkdown(markdown), [markdown]);
-  const initialContentHtmlRef = useRef<string | null>(null);
-  if (initialContentHtmlRef.current === null) {
-    const parseStart = nowMs();
-    initialContentHtmlRef.current = markdownToHtml(initialMarkdownState.bodyMarkdown);
-    logOpenPerfElapsed("open.markdown_to_html_ms", parseStart, {
-      phase: "initial"
-    });
+  const initialContentMarkdownRef = useRef<string | null>(null);
+  if (initialContentMarkdownRef.current === null) {
+    initialContentMarkdownRef.current = initialMarkdownState.bodyMarkdown;
     lastSyncedMarkdownRef.current = normalizeMarkdown(markdown);
   }
   const parsedFrontMatter = useMemo(
@@ -1015,27 +1021,11 @@ export default function MarkdownEditor({
             parseObsidianEmbedImageSyntax,
             widthPxToPercent,
             defaultWidth: mediaDefaults.defaultWidth
-          }),
-          createTextMarkdownPasteHandler({
-            markdownToHtml
           })
         ]
       }),
     [ensureAttachmentLibraryDirectory, reportEditorError]
   );
-
-  const scheduleTableRepair = useCallback((activeEditor: Editor): void => {
-    window.setTimeout(() => {
-      if (activeEditor.isDestroyed) {
-        return;
-      }
-
-      const repairTransaction = fixTables(activeEditor.state);
-      if (repairTransaction) {
-        activeEditor.view.dispatch(repairTransaction);
-      }
-    }, 0);
-  }, []);
 
   const resolveMediaSrc = useCallback((src: string): string => {
     return resolveMediaSource(src, documentPathRef.current);
@@ -1071,7 +1061,7 @@ export default function MarkdownEditor({
     }
 
     clearMarkdownSyncTimer();
-    const nextBodyMarkdown = htmlToMarkdown(activeEditor.getHTML());
+    const nextBodyMarkdown = getEditorMarkdown(activeEditor);
     bodyMarkdownRef.current = nextBodyMarkdown;
     hasLocalDocChangesRef.current = false;
     return nextBodyMarkdown;
@@ -1114,7 +1104,7 @@ export default function MarkdownEditor({
         return null;
       }
       const serializeStart = nowMs();
-      const nextBodyMarkdown = htmlToMarkdown(targetEditor.getHTML());
+      const nextBodyMarkdown = getEditorMarkdown(targetEditor);
       logOpenPerfElapsed("open.html_to_markdown_ms", serializeStart, {
         reason
       });
@@ -1632,9 +1622,14 @@ export default function MarkdownEditor({
       }),
       BlockMath.configure({
         onRequestEdit: handleMathEditRequest
+      }),
+      Markdown.configure({
+        html: true,
+        transformCopiedText: true,
+        transformPastedText: true
       })
     ],
-    content: initialContentHtmlRef.current,
+    content: initialContentMarkdownRef.current,
     editable: isEditable,
     immediatelyRender: false,
     editorProps: {
@@ -1643,7 +1638,6 @@ export default function MarkdownEditor({
           "mdpad-editor prose max-w-none focus:outline-none selection:bg-blue-200 selection:text-blue-900 dark:selection:bg-blue-500/30 dark:selection:text-blue-200",
         style: `--md-table-cell-min-width: ${MD_TABLE_CELL_MIN_WIDTH}px;`
       },
-      clipboardTextSerializer: () => getMarkdownClipboardText(editorRef.current),
       handleDOMEvents: {
         click: (_view, event) => {
           if (!(event instanceof MouseEvent)) {
@@ -1651,7 +1645,7 @@ export default function MarkdownEditor({
           }
           return handleEditorLinkClick(event);
         },
-        paste: (view, event) => {
+        paste: (_view, event) => {
           const activeEditor = editorRef.current;
           if (!activeEditor) {
             return false;
@@ -1672,34 +1666,7 @@ export default function MarkdownEditor({
             return true;
           }
 
-          const richHtmlPaste = prepareRichHtmlPaste(clipboardData.getData("text/html"));
-          if (!richHtmlPaste) {
-            return false;
-          }
-
-          event.preventDefault();
-
-          let pasteError: unknown = null;
-          const didPaste = applyPreparedRichHtmlPaste({
-            event: clipboardEvent,
-            onError(error) {
-              pasteError = error;
-              console.warn("Failed to paste sanitized rich HTML.", error);
-            },
-            onTablePasteSuccess() {
-              scheduleTableRepair(activeEditor);
-            },
-            payload: richHtmlPaste,
-            plainText: clipboardData.getData("text/plain"),
-            view
-          });
-
-          if (didPaste) {
-            return true;
-          }
-
-          reportEditorError(formatErrorMessage(pasteError, "Failed to paste rich HTML."));
-          return true;
+          return false;
         }
       },
       handlePaste: (_view, event) => {
@@ -1865,17 +1832,12 @@ export default function MarkdownEditor({
       hasLocalDocChangesRef.current = false;
       bodyMarkdownRef.current = nextMarkdownState.bodyMarkdown;
       applyFrontMatterState(nextMarkdownState.state);
-      const parseStart = nowMs();
-      const nextHtml = markdownToHtml(nextMarkdownState.bodyMarkdown);
-      logOpenPerfElapsed("open.markdown_to_html_ms", parseStart, {
-        phase: "sync"
-      });
 
       skipNextUpdate.current = true;
       const setContentStart = nowMs();
       syncEditorContentSafely({
         editor,
-        html: nextHtml,
+        html: nextMarkdownState.bodyMarkdown,
         onBeforeSync: () => {
           recentTextSelectionRef.current = null;
         }
@@ -2896,5 +2858,3 @@ export default function MarkdownEditor({
     </div>
   );
 }
-
-

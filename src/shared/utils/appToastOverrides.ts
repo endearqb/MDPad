@@ -18,7 +18,9 @@ export const APP_TOASTER_OVERRIDES = {
       backdropFilter: "blur(16px)",
       WebkitBackdropFilter: "blur(16px)",
       minWidth: "280px",
-      maxWidth: "360px"
+      maxWidth: "360px",
+      maxHeight: "min(60vh, 520px)",
+      overflowY: "auto"
     }
   },
   ToastInnerContainer: {
@@ -26,10 +28,13 @@ export const APP_TOASTER_OVERRIDES = {
       fontSize: "12px",
       fontWeight: 500,
       lineHeight: "1.42",
+      overflowWrap: "anywhere",
       paddingTop: "10px",
       paddingBottom: "10px",
       paddingLeft: "12px",
-      paddingRight: "12px"
+      paddingRight: "12px",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word"
     }
   },
   ToastCloseIcon: {

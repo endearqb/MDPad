@@ -184,6 +184,19 @@ function formatError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+const LONG_ERROR_MESSAGE_LIMIT = 260;
+
+function formatToastErrorMessage(message: string): string {
+  const normalized = message.replace(/\s+/g, " ").trim();
+  if (/^Position \d+ outside of fragment\b/u.test(normalized)) {
+    return "粘贴内容无法直接插入，请重试或先清除格式后粘贴。";
+  }
+  if (normalized.length <= LONG_ERROR_MESSAGE_LIMIT) {
+    return normalized;
+  }
+  return `${normalized.slice(0, LONG_ERROR_MESSAGE_LIMIT - 1)}...`;
+}
+
 function interpolateTemplate(
   template: string,
   values: Record<string, string>
@@ -730,8 +743,9 @@ export default function App() {
     if (errorClearTimerRef.current !== null) {
       window.clearTimeout(errorClearTimerRef.current);
     }
-    setErrorMessage(message);
-    toaster.negative(message, {
+    const toastMessage = formatToastErrorMessage(message);
+    setErrorMessage(toastMessage);
+    toaster.negative(toastMessage, {
       autoHideDuration: TOAST_AUTO_HIDE_MS
     });
     errorClearTimerRef.current = window.setTimeout(() => {

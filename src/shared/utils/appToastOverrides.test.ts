@@ -13,5 +13,12 @@ describe("appToastOverrides", () => {
     expect(APP_TOASTER_OVERRIDES.ToastBody.style.borderColor).toBe(
       "var(--toast-glass-border)"
     );
+    expect(APP_TOASTER_OVERRIDES.ToastBody.style.overflowY).toBe("auto");
+    expect(APP_TOASTER_OVERRIDES.ToastInnerContainer.style.overflowWrap).toBe(
+      "anywhere"
+    );
+    expect(APP_TOASTER_OVERRIDES.ToastInnerContainer.style.whiteSpace).toBe(
+      "pre-wrap"
+    );
   });
 });

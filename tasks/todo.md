@@ -1,3 +1,66 @@
+# 直接接入 tiptap-markdown 替代编辑器 Markdown 主链路（2026-04-27）
+
+## Plan
+- [x] 安装 `tiptap-markdown@0.8.10` 并接入截图同款配置
+- [x] 撤回上一轮手动 `pasteHTML + sanitizer fallback` 改动，让 HTML 富文本回到原生 paste 路径
+- [x] 将编辑器加载/保存/复制主链路切到 tiptap-markdown，保留 export/PDF 侧 `markdownCodec`
+- [x] 修复长错误 toast 溢出与粘贴错误文案
+- [x] 更新 `update/updatenote_2026042623.md` 与相关测试
+- [x] 运行 TypeScript、定向测试和 build 验证
+
+## Progress Notes
+- 用户明确要求直接安装 `tiptap-markdown` 替代当前实现；本项目 Tiptap 为 2.27.2，因此使用兼容 Tiptap 2 的 `tiptap-markdown@0.8.10`，不升级到要求 Tiptap 3 的 `0.9.0`。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已接入 `Markdown.configure({ html: true, transformCopiedText: true, transformPastedText: true })`；初始内容和外部同步改为传入 Markdown，由插件解析。
+- 编辑器保存同步优先使用 `editor.storage.markdown.getMarkdown()`，只有插件 storage 不可用时才 fallback 到原 `htmlToMarkdown(editor.getHTML())`。
+- 粘贴事件中保留媒体/Markdown 图片 pipeline；普通 HTML 富文本不再手动 sanitizer 或 `pasteHTML`，交给 ProseMirror 原生路径。
+- [src/features/editor/tiptapMarkdownIntegration.test.ts](/D:/MyProject/MDPad/src/features/editor/tiptapMarkdownIntegration.test.ts) 已新增插件集成测试，覆盖 Markdown 标题/表格加载与 HTML 标题/表格默认 paste。
+- [src/shared/utils/appToastOverrides.ts](/D:/MyProject/MDPad/src/shared/utils/appToastOverrides.ts) 与 [src/App.tsx](/D:/MyProject/MDPad/src/App.tsx) 已收口长错误 toast 的换行、滚动和短文案。
+
+## Review
+- 结果：MDPad 编辑器主链路已直接使用 `tiptap-markdown@0.8.10`；HTML 富文本粘贴不再被本地 sanitizer 抢先接管。
+- 结果：toast 遇到 `Position ... outside of fragment` 这类长错误时会显示短中文提示，并且长文本具备换行/滚动样式。
+- 验证已完成：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/clipboard src/features/editor/markdownCodec.test.ts src/features/editor/markdownExport.test.ts src/features/editor/tiptapMarkdownIntegration.test.ts src/shared/utils/appToastOverrides.test.ts` 通过（7 个文件 / 78 个测试）；`pnpm build` 通过。
+
+# 按 tiptap-markdown 经验重调富文本粘贴（2026-04-27）
+
+## Plan
+- [x] 调整富文本粘贴入口：默认 Tiptap/ProseMirror HTML paste 优先，sanitizer 只做失败兜底
+- [x] 为默认成功和失败 fallback 补充 clipboard 回归测试
+- [x] 更新 `update/updatenote_2026042623.md`，同步新的技术判断
+- [x] 运行 TypeScript、clipboard/markdownCodec 测试和 build 验证
+- [x] 在本节记录结果回顾
+
+## Progress Notes
+- 用户补充：另一个项目使用 `tiptap-markdown` 时，Office/表格 HTML 富文本实测也没有问题；本轮以“优先相信默认 HTML paste，sanitizer 降级为兜底”为目标。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已改为对 `text/html` 先调用默认 `view.pasteHTML`，并在抛错或 `doc.check()` 失败时回滚到粘贴前文档，再进入 sanitized fallback。
+- [src/features/editor/clipboard/richHtmlTables.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/richHtmlTables.ts) 已新增 `applyRichHtmlPasteWithSanitizedFallback`，现有 sanitizer 保留为 fallback payload 生成器。
+- [update/updatenote_2026042623.md](/D:/MyProject/MDPad/update/updatenote_2026042623.md) 已同步说明：参考 `tiptap-markdown` 的默认 HTML 不干预边界，Office/表格来源只作为 fallback fixture 沉淀。
+
+## Review
+- 结果：Office/表格/普通 HTML 富文本会优先走 Tiptap 默认 HTML paste；sanitizer 不再作为复杂 HTML 第一入口。
+- 结果：默认 HTML paste 抛错或生成非法 ProseMirror doc 时，会恢复粘贴前内容并用 sanitized HTML 重试；sanitized HTML 仍失败时降级纯文本。
+- 验证已完成：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/clipboard/richHtmlTables.test.ts src/features/editor/clipboard/handlers/textMarkdown.test.ts` 通过（2 个文件 / 18 个测试）；`pnpm exec vitest run src/features/editor/clipboard` 通过（3 个文件 / 21 个测试）；`pnpm exec vitest run src/features/editor/markdownCodec.test.ts` 通过（52 个测试）；`pnpm build` 通过。
+- 说明：`pnpm test -- clipboard` 和 `pnpm test -- markdownCodec` 会在当前脚本参数传递下跑到 `src/App.test.ts`，并因既有测试环境问题 `localStorage.clear is not a function` 失败；已用明确路径过滤完成本轮相关验证。
+
+# 解决 git pull 后的本地冲突（2026-04-27）
+
+## Plan
+- [x] 复查拉取后的冲突文件和 `stash@{0}` 来源，确认 ours/theirs 语义
+- [x] 对代码冲突采用远端 2026-04-25/26 新实现为主，避免把 2026-04-23 旧宿主 SVG overlay 架构重新接回主线
+- [x] 将本地未跟踪 SVG overlay 文件和 update 记录移到 `tasks/conflict-backup-20260427/`，避免旧文件留在 `src/` 影响 TypeScript 构建
+- [x] 清理冲突标记并标记 Git 冲突已解决
+- [x] 运行测试/构建验证，记录结果
+
+## Progress Notes
+- 当前 `main` 已快进到 `origin/main`；冲突来自 `stash pop` 恢复拉取前本地改动。
+- 本地 stash 中的 SVG 编辑改动主要是 2026-04-23 的宿主 overlay 路线；远端已经包含 2026-04-25/26 后续 SVG 编辑、HTML no-op、窗口模式移除与版本发布记录，因此 tracked 代码冲突以远端为主更符合当前主线。
+- `src/features/editor/components/SvgCanvasViewport.tsx`、`SvgEditorOverlay.tsx`、`SvgMoveableLayer.tsx`、`SvgTextPopover.tsx`、`src/features/editor/svg-edit/` 以及 `update/updatenote_2026042315.md` / `updatenote_2026042316.md` 是 2026-04-23 旧实现文件；类型检查会扫描 `src/` 下未跟踪 TS 文件并失败，因此已移动到 `tasks/conflict-backup-20260427/`，后续可单独评估是否迁移或删除。
+
+## Review
+- 结果：`git pull --ff-only` 已完成，`stash pop` 产生的 tracked 文件冲突已全部解决；当前没有 `UU` 未合并路径。
+- 结果：主线代码保持远端 `0.2.10` 版本与 2026-04-25/26 SVG/HTML 编辑实现，旧 overlay 试验文件已隔离到 `tasks/conflict-backup-20260427/`。
+- 验证已完成：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/HtmlPreview.test.ts src/features/editor/htmlPreviewDocument.test.ts src/features/editor/htmlPreviewEditors.test.ts` 通过（3 个文件 / 53 个测试）；`pnpm build` 通过。
+
 # 调整 Markdown 表格单元格最小宽度（2026-04-26 22:xx）
 
 ## Plan
