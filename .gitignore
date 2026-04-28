@@ -42,3 +42,7 @@ Thumbs.db
 # Patch / merge leftovers
 *.orig
 *.rej
+
+# Local reference projects
+new_envdama_ui/
+new_envdama_ui.rar

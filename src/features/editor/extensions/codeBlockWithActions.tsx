@@ -169,7 +169,7 @@ function CodeBlockNodeView({
         </button>
       </div>
       <NodeViewContent
-        as="code"
+        as={"code" as never}
         className={codeClassName}
       />
     </NodeViewWrapper>
@@ -184,6 +184,14 @@ export const CodeBlockWithActions = CodeBlockLowlight.extend<
   addOptions() {
     return {
       ...this.parent?.(),
+      lowlight: null,
+      languageClassPrefix: "language-",
+      exitOnTripleEnter: true,
+      exitOnArrowDown: true,
+      defaultLanguage: null,
+      enableTabIndentation: false,
+      tabSize: 4,
+      HTMLAttributes: {},
       copy: DEFAULT_COPY
     };
   },
@@ -194,7 +202,7 @@ export const CodeBlockWithActions = CodeBlockLowlight.extend<
       <CodeBlockNodeView
         {...props}
         copy={copy}
-        languageClassPrefix={languageClassPrefix}
+        languageClassPrefix={languageClassPrefix ?? "language-"}
       />
     ));
   }

@@ -1,5 +1,18 @@
 # 经验沉淀
 
+## 2026-04-28 Scratch Route for TipTap 3
+- 用户多次用真实粘贴反馈纠正后，不能继续在 Tiptap 2 + `tiptap-markdown` + 自研 paste fallback 上叠补丁；当问题根因集中在 schema/paste parser 交互时，应考虑升级到官方 Tiptap 3 Markdown manager 与官方 TableKit，减少非标准链路。
+- 对从 ProseMirror/Tiptap 页面复制的内容，剪贴板通常同时包含 `text/html` 与 Markdown-ish `text/plain`；只要存在 `text/html`，MDPad 就不应把 plain text 当 Markdown 主动解析，否则会重新触发 fragment position 类错误或结构丢失。
+- Tiptap 3 的 `StarterKit` 已内置部分扩展（如 Link）；迁移时必须关闭重复内置扩展再添加自定义配置，避免 schema/plugin 重名警告污染问题定位。
+- Tiptap 3 BubbleMenu 已从 Tippy 迁移到 Floating UI，`tippyOptions` 需要改为 `appendTo` + `options`，不要照搬 v2 props。
+
+## 2026-04-28 TipTap Markdown Paste Boundary
+- `tiptap-markdown` 接入后，不能只用 `editor.view.pasteHTML(...)` 单测证明真实粘贴链路安全；真实浏览器 paste 会经过 MDPad 的 raw DOM paste handler、clipboard pipeline、ProseMirror parse/replace 和后续 Markdown 同步，测试必须覆盖应用级入口或等价 fallback。
+- 对复杂表格/Office/Google HTML，若 ProseMirror 默认 paste 在当前 schema 下仍会抛 `Position ... outside of fragment`，应在 raw paste 阶段受控接管并提供 sanitized HTML / plain text fallback，避免异常先冒泡到全局错误或 toast。
+- 参考项目能默认 paste 成功，不代表 MDPad 的自定义 table/media/math schema 也能完全依赖默认路径；跨项目借鉴要同时核对 extension set、保存格式和 paste 事件顺序。
+- 用户用 `new_envdama_ui` 对比截图纠正后，本项目的目标应优先保证复杂 HTML 第一入口不被 sanitizer 或 Markdown serializer 压平；sanitizer 只做 native paste 失败后的防崩兜底，Markdown 无法无损表达的结构应保留 raw HTML。
+- 当用户继续反馈粘贴结果成为单个巨大段落时，要优先怀疑 `text/plain` fallback 或纯文本 handler 抢占；对含 `text/html` 的粘贴，plain text fallback 不应静默插入完整内容，必须保留诊断对象确认真实路径。
+
 ## 2026-04-26 HTML Inline Text No-op
 - HTML preview inline 编辑的 `blur` 退出不能默认等同于“用户提交了修改”；如果 `nextText === originalText`，应在 iframe host 层直接恢复 DOM 并跳过 commit。
 - 对 locator 驱动的源码 patch，no-op 要优先短路，不要先解析和定位节点；否则运行时 DOM 与源码树轻微漂移也会把“未改动退出”误报成 locator 丢失。
@@ -346,3 +359,13 @@
 - SVG 编辑窗口的显示层、overlay 命中层和 pointer 坐标换算必须共享同一个实际 viewBox viewport；不能让外层固定高度舞台负责坐标，内层 SVG 再按 `preserveAspectRatio` 居中渲染。
 - 给 SVG editor 做固定高度时，优先新增一个按 viewBox 比例计算的内部 content rect，把 iframe/overlay/handles 都挂在该 rect 下；否则选中框会和真实元素产生系统性偏移。
 - 这类视觉坐标问题不能只靠 jsdom 事件测试验证，至少要在真实桌面窗口里用文本、矩形和连接线各拖一次确认框与元素同步移动。
+
+## 2026-04-28 TipTap HTML Paste Native Path
+- 复杂 HTML 粘贴不要在 `handleDOMEvents.paste` 里轻易 `preventDefault()` 后手动 `view.pasteHTML()`；这会绕开 ProseMirror 对真实 `ClipboardEvent` 的原生 slice 构建流程，容易制造位置映射类错误。
+- 富文本粘贴诊断应尽量非侵入：记录 clipboard payload 和 `handlePaste` 收到的 slice 结构即可，不能为了诊断改变粘贴路径。
+- 与参考项目对齐时，先对齐链路语义和 schema 能力，再考虑版本降级；版本差异只应作为实证失败后的备选项。
+
+## 2026-04-28 new_envdama_ui Paste Architecture
+- 当参考项目已经证明复杂富文本粘贴能稳定工作时，优先复制它的职责边界：除图片文件外，不要在应用层拦截 paste。
+- `tiptap-markdown` 负责 Markdown 文本增强即可，不要再叠加自研 Markdown paste handler、HTML sanitizer、plain-text fallback 和 diagnostics 分支。
+- 图片文件粘贴应作为图片节点/文件处理扩展的局部能力实现，不能重新引入全局 clipboard pipeline。

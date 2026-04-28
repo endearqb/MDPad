@@ -2,10 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { JSDOM } from "jsdom";
 import { Editor } from "@tiptap/core";
 import Link from "@tiptap/extension-link";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
+import { TableKit } from "@tiptap/extension-table";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import StarterKit from "@tiptap/starter-kit";
@@ -65,14 +62,13 @@ function createEditor(content: string): Editor {
   return new Editor({
     element,
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        link: false
+      }),
       Link,
       TaskList,
       TaskItem.configure({ nested: true }),
-      Table,
-      TableRow,
-      TableHeader,
-      TableCell
+      TableKit
     ],
     content
   });

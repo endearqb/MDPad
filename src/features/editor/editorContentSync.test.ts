@@ -2,10 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import { Editor } from "@tiptap/core";
 import Image from "@tiptap/extension-image";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
+import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 import { Selection } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
@@ -88,7 +85,7 @@ describe("editorContentSync", () => {
       const clearCachedSelection = vi.fn();
       syncEditorContentSafely({
         editor,
-        html: "<p>短段落一</p><p>短段落二</p><p>短段落三</p>",
+        content: "<p>短段落一</p><p>短段落二</p><p>短段落三</p>",
         onBeforeSync: clearCachedSelection
       });
 
@@ -112,7 +109,7 @@ describe("editorContentSync", () => {
 
       syncEditorContentSafely({
         editor,
-        html: "<p>短段落一</p><p>短段落二</p><p>短段落三</p>"
+        content: "<p>短段落一</p><p>短段落二</p><p>短段落三</p>"
       });
 
       expect(editor.state.selection.eq(Selection.atStart(editor.state.doc))).toBe(true);
@@ -127,10 +124,7 @@ describe("editorContentSync", () => {
     const editor = createEditor({
       extensions: [
         StarterKit,
-        Table,
-        TableRow,
-        TableHeader,
-        TableCell
+        TableKit
       ],
       content:
         "<table><tbody><tr><th>a</th><th>b</th></tr><tr><td>c</td><td>d</td></tr></tbody></table><p>tail</p>"
@@ -143,7 +137,7 @@ describe("editorContentSync", () => {
 
       syncEditorContentSafely({
         editor,
-        html: "<p>短段落一</p><p>短段落二</p><p>短段落三</p>"
+        content: "<p>短段落一</p><p>短段落二</p><p>短段落三</p>"
       });
 
       expect(editor.state.selection.eq(Selection.atStart(editor.state.doc))).toBe(true);

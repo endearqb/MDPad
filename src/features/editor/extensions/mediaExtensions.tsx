@@ -1,5 +1,13 @@
-import { InputRule, Node, mergeAttributes, type InputRuleMatch } from "@tiptap/core";
+import {
+  Extension,
+  InputRule,
+  Node,
+  mergeAttributes,
+  type Editor as CoreEditor,
+  type InputRuleMatch
+} from "@tiptap/core";
 import Image from "@tiptap/extension-image";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import {
   NodeViewWrapper,
   ReactNodeViewRenderer,
@@ -22,6 +30,10 @@ const MAX_MEDIA_WIDTH = 100;
 const markdownLinkedImageRegex =
   /\[!\[([^\]\n]*)\]\((<[^>\n]+>|[^)\s]+)(?:\s+"([^"\n]*)")?\)\]\((<[^>\n]+>|[^)\s]+)(?:\s+"([^"\n]*)")?\)$/u;
 type ResolveMediaSrc = (src: string) => string;
+type ImageFilePasteHandler = (context: {
+  editor: CoreEditor;
+  file: File;
+}) => Promise<void> | void;
 
 let mediaSourceResolver: ResolveMediaSrc = (src) => src;
 const DEFAULT_MEDIA_COPY: MediaCopy = {
@@ -32,6 +44,10 @@ const DEFAULT_MEDIA_COPY: MediaCopy = {
   imagePreviewAria: "Image preview"
 };
 let mediaCopy: MediaCopy = DEFAULT_MEDIA_COPY;
+
+export interface ImageFilePasteOptions {
+  onPasteImageFile: ImageFilePasteHandler | null;
+}
 
 export function setMediaSourceResolver(resolver: ResolveMediaSrc): void {
   mediaSourceResolver = resolver;
@@ -86,6 +102,34 @@ function parseWidthValue(value: unknown): number {
 
 function normalizeLinkTarget(value: string): string {
   return value.trim().replace(/^<|>$/g, "");
+}
+
+function isClipboardImageFile(file: File): boolean {
+  return file.type.toLowerCase().startsWith("image/");
+}
+
+function findClipboardImageFile(event: ClipboardEvent): File | null {
+  const clipboardData = event.clipboardData;
+  if (!clipboardData) {
+    return null;
+  }
+
+  const fileFromFiles = Array.from(clipboardData.files).find(isClipboardImageFile);
+  if (fileFromFiles) {
+    return fileFromFiles;
+  }
+
+  for (const item of Array.from(clipboardData.items)) {
+    if (item.kind !== "file") {
+      continue;
+    }
+    const file = item.getAsFile();
+    if (file && isClipboardImageFile(file)) {
+      return file;
+    }
+  }
+
+  return null;
 }
 
 function escapeHtmlAttr(value: string): string {
@@ -469,7 +513,7 @@ function AudioNodeView({ node, selected }: NodeViewProps) {
 }
 
 export const ResizableImage = Image.extend({
-  name: "resizableImage",
+  name: "image",
 
   addAttributes() {
     return {
@@ -581,6 +625,45 @@ export const ResizableImage = Image.extend({
         }
       }),
       ...parentRules
+    ];
+  }
+});
+
+export const ImageFilePasteExtension = Extension.create<ImageFilePasteOptions>({
+  name: "imageFilePaste",
+
+  addOptions() {
+    return {
+      onPasteImageFile: null
+    };
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey(this.name),
+        props: {
+          handleDOMEvents: {
+            paste: (_view, event) => {
+              if (!(event instanceof ClipboardEvent)) {
+                return false;
+              }
+
+              const file = findClipboardImageFile(event);
+              if (!file || !this.options.onPasteImageFile) {
+                return false;
+              }
+
+              event.preventDefault();
+              void this.options.onPasteImageFile({
+                editor: this.editor,
+                file
+              });
+              return true;
+            }
+          }
+        }
+      })
     ];
   }
 });

@@ -59,6 +59,8 @@ const turndown = new TurndownService({
 });
 turndown.use(gfm);
 
+const RAW_HTML_PRESERVE_ATTR = "data-mdpad-preserve-raw-html";
+
 function escapeHtmlAttr(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -798,6 +800,69 @@ function hasTagName(node: unknown, tagName: string): node is Element {
   return isElementNode(node) && node.nodeName.toUpperCase() === tagName.toUpperCase();
 }
 
+function toRawHtmlBlock(element: Element): string {
+  const clone = element.cloneNode(true) as Element;
+  clone.removeAttribute(RAW_HTML_PRESERVE_ATTR);
+  return `\n\n${clone.outerHTML}\n\n`;
+}
+
+interface PreservedRawHtmlBlocks {
+  blocks: Array<{ token: string; html: string }>;
+  html: string;
+}
+
+function extractPreservedRawHtmlBlocks(html: string): PreservedRawHtmlBlocks {
+  const doc = createHtmlNormalizationDocument(html);
+  if (!doc) {
+    const blocks: PreservedRawHtmlBlocks["blocks"] = [];
+    const nextHtml = html.replace(
+      new RegExp(
+        `<table\\b(?=[^>]*\\b${RAW_HTML_PRESERVE_ATTR}\\s*=\\s*["']?true["']?)[\\s\\S]*?<\\/table>`,
+        "giu"
+      ),
+      (tableHtml) => {
+        const token = `MDPADRAWHTMLBLOCK${blocks.length}TOKEN`;
+        blocks.push({
+          token,
+          html: `\n\n${tableHtml
+            .replace(
+              new RegExp(`\\s${RAW_HTML_PRESERVE_ATTR}\\s*=\\s*(?:"true"|'true'|true)`, "iu"),
+              ""
+            )
+            .trim()}\n\n`
+        });
+        return `<p>${token}</p>`;
+      }
+    );
+    return { blocks, html: nextHtml };
+  }
+
+  const blocks: PreservedRawHtmlBlocks["blocks"] = [];
+  doc.querySelectorAll(`[${RAW_HTML_PRESERVE_ATTR}="true"]`).forEach((element) => {
+    const token = `MDPADRAWHTMLBLOCK${blocks.length}TOKEN`;
+    blocks.push({ token, html: toRawHtmlBlock(element) });
+
+    const placeholder = doc.createElement("p");
+    placeholder.textContent = token;
+    element.replaceWith(placeholder);
+  });
+
+  return {
+    blocks,
+    html: doc.body.innerHTML
+  };
+}
+
+function restorePreservedRawHtmlBlocks(
+  markdown: string,
+  blocks: PreservedRawHtmlBlocks["blocks"]
+): string {
+  return blocks.reduce(
+    (current, block) => current.split(block.token).join(block.html),
+    markdown
+  );
+}
+
 function readTagAttribute(tag: string, name: string): string | null {
   const matcher = new RegExp(`${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "iu");
   const matched = tag.match(matcher);
@@ -1070,6 +1135,18 @@ function installCoreTurndownRules(service: TurndownService): void {
       return `<audio src="${escapeHtmlAttr(src)}" controls></audio>`;
     }
   });
+
+  service.addRule("preserveRawHtmlBlock", {
+    filter(node) {
+      return (
+        isElementNode(node) &&
+        node.getAttribute(RAW_HTML_PRESERVE_ATTR) === "true"
+      );
+    },
+    replacement(_, node) {
+      return toRawHtmlBlock(node as Element);
+    }
+  });
 }
 
 function createMarkdownHookRegistry(): MarkdownHookRegistry {
@@ -1149,8 +1226,8 @@ function normalizeHtmlTablesForMarkdownExport(html: string): {
     const hasComplexTables =
       /<(?:td|th)\b[^>]*\b(?:colspan|rowspan)\s*=\s*["']?(?:[2-9]|\d{2,})/iu.test(
         html
-      );
-    const normalizedHtml = html
+      ) || /<table\b[\s\S]*<table\b/iu.test(html);
+    let normalizedHtml = html
       .replace(/<colgroup\b[\s\S]*?<\/colgroup>/giu, "")
       .replace(/\s(?:colspan|rowspan)=["']?1["']?/giu, "")
       .replace(/\s(?:style|class|data-colwidth)=["'][^"']*["']/giu, "")
@@ -1158,6 +1235,12 @@ function normalizeHtmlTablesForMarkdownExport(html: string): {
         /<(td|th)([^>]*)>\s*<p>([\s\S]*?)<\/p>\s*<\/\1>/giu,
         "<$1$2>$3</$1>"
       );
+    if (hasComplexTables) {
+      normalizedHtml = normalizedHtml.replace(
+        /<table\b(?![^>]*\bdata-mdpad-preserve-raw-html\b)/iu,
+        `<table ${RAW_HTML_PRESERVE_ATTR}="true"`
+      );
+    }
 
     return {
       html: normalizedHtml,
@@ -1167,20 +1250,34 @@ function normalizeHtmlTablesForMarkdownExport(html: string): {
 
   let hasComplexTables = false;
   doc.querySelectorAll("table").forEach((table) => {
+    let preserveTableAsRawHtml = false;
     if (table.querySelector("table")) {
       hasComplexTables = true;
+      preserveTableAsRawHtml = true;
+    }
+
+    const cells = Array.from(table.querySelectorAll("th, td"));
+    cells.forEach((cell) => {
+      const colspan = cell.getAttribute("colspan");
+      const rowspan = cell.getAttribute("rowspan");
+      if (isComplexTableSpanValue(colspan) || isComplexTableSpanValue(rowspan)) {
+        hasComplexTables = true;
+        preserveTableAsRawHtml = true;
+      }
+    });
+
+    if (preserveTableAsRawHtml) {
+      table.setAttribute(RAW_HTML_PRESERVE_ATTR, "true");
+      return;
     }
 
     table.querySelectorAll("colgroup").forEach((colgroup) => {
       colgroup.remove();
     });
 
-    table.querySelectorAll("th, td").forEach((cell) => {
+    cells.forEach((cell) => {
       const colspan = cell.getAttribute("colspan");
       const rowspan = cell.getAttribute("rowspan");
-      if (isComplexTableSpanValue(colspan) || isComplexTableSpanValue(rowspan)) {
-        hasComplexTables = true;
-      }
 
       if (colspan === "1") {
         cell.removeAttribute("colspan");
@@ -1216,8 +1313,10 @@ export function htmlToMarkdownWithDiagnostics(
   html: string
 ): HtmlToMarkdownDiagnostics {
   const normalized = normalizeHtmlTablesForMarkdownExport(html);
+  const preserved = extractPreservedRawHtmlBlocks(normalized.html);
+  const markdown = turndown.turndown(preserved.html).trimEnd();
   return {
-    markdown: turndown.turndown(normalized.html).trimEnd(),
+    markdown: restorePreservedRawHtmlBlocks(markdown, preserved.blocks).trimEnd(),
     hasComplexTables: normalized.hasComplexTables
   };
 }

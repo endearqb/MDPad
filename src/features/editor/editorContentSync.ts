@@ -3,7 +3,8 @@ import { Selection } from "@tiptap/pm/state";
 
 export interface SyncEditorContentInput {
   editor: Editor;
-  html: string;
+  content: string;
+  contentType?: "html" | "markdown" | "json";
   emitUpdate?: boolean;
   onBeforeSync?: () => void;
 }
@@ -26,7 +27,8 @@ export function resetEditorSelectionToSafeStart(editor: Editor): boolean {
 
 export function syncEditorContentSafely({
   editor,
-  html,
+  content,
+  contentType = "html",
   emitUpdate = false,
   onBeforeSync
 }: SyncEditorContentInput): void {
@@ -36,6 +38,9 @@ export function syncEditorContentSafely({
 
   onBeforeSync?.();
   resetEditorSelectionToSafeStart(editor);
-  editor.commands.setContent(html, emitUpdate);
+  editor.commands.setContent(content, {
+    contentType,
+    emitUpdate
+  });
   resetEditorSelectionToSafeStart(editor);
 }

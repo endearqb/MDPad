@@ -1,3 +1,88 @@
+# 修复复杂富文本粘贴退化为纯文本（2026-04-28 10:xx）
+
+## Plan
+- [x] 在真实 paste 入口增加 `window.__MDPAD_LAST_PASTE_DEBUG__` 诊断
+- [x] 调整 HTML 粘贴分支，确保 `text/html` 存在时不静默降级为纯文本
+- [x] 让结构化 sanitizer fallback 失败时停止插入，而不是 `pasteText`
+- [x] 补充 HTML 优先、fallback 不压平和诊断回归测试
+- [x] 运行 TypeScript、定向测试和 build 验证
+
+## Progress Notes
+- 用户截图确认当前 MDPad 粘贴结果仍是巨大纯文本段落；本轮目标是让带 `text/html` 的复杂富文本要么保持结构化 HTML 粘贴，要么失败不插入，不能再把完整内容压平成 plain text。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已增加最近一次 paste 诊断，真实复现后可读取 `window.__MDPAD_LAST_PASTE_DEBUG__`。
+- [src/features/editor/clipboard/richHtmlTables.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/richHtmlTables.ts) 的结构化 fallback 已支持禁用 plain-text fallback，MDPad HTML 分支现在禁用该降级。
+- [src/features/editor/clipboard/handlers/textMarkdownImage.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/handlers/textMarkdownImage.ts) 已在剪贴板有 `text/html` 时放行默认富文本路径。
+- 已接入 `@tiptap/extension-underline`、`@tiptap/extension-text-style`、`@tiptap/extension-color`、`@tiptap/extension-text-align`，向 `new_envdama_ui` 的非 Pro paste 能力靠拢。
+- [update/updatenote_2026042811.md](/D:/MyProject/MDPad/update/updatenote_2026042811.md) 已记录本轮修复。
+
+## Review
+- 结果：带 `text/html` 的富文本粘贴不再静默退化为 `text/plain` 大段落；native/sanitizer 都失败时会短文案失败并保留诊断，而不是插入压平文本。
+- 结果：真实复现后可通过 `window.__MDPAD_LAST_PASTE_DEBUG__` 查看 clipboard types、HTML/plain text 长度、native/sanitizer/fallback 路径。
+- 结果：集成测试已切到 MDPad 的 `TableKit`，并补充了 HTML 剪贴板优先与禁用 plain-text fallback 的回归。
+- 验证已完成：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/clipboard src/features/editor/markdownCodec.test.ts src/features/editor/markdownExport.test.ts src/features/editor/tiptapMarkdownIntegration.test.ts src/shared/utils/appToastOverrides.test.ts` 通过（7 个文件 / 85 个测试）；`pnpm build` 通过。
+
+# 全量采用 new_envdama_ui 粘贴链路（2026-04-28 10:xx）
+
+## Plan
+- [x] 将复杂 HTML 粘贴从 sanitizer-first 改为 native HTML paste 优先
+- [x] sanitizer 仅在原始 HTML paste 抛错、返回失败或生成非法 doc 时作为 fallback
+- [x] 强化 HTML -> Markdown 保存边界，对复杂表格保留 raw HTML，避免结构被 Markdown 表格规则压扁
+- [x] 更新 tiptap-markdown / rich HTML paste 回归测试与今天的 updatenote
+- [x] 运行 TypeScript、定向测试和 build 验证
+
+## Progress Notes
+- 用户用 `new_envdama_ui` 对比截图指出，同一段富文本在参考项目中结构完整，在 MDPad 中仍被压平；本轮按“HTML editor state + Markdown 文件边界 + native paste 优先”实施。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已将 `text/html` raw paste 分支改为先用原始 HTML 调用 Tiptap/ProseMirror paste，失败后才准备 sanitizer payload。
+- [src/features/editor/clipboard/richHtmlTables.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/richHtmlTables.ts) 已提取 native-first guard helper，覆盖 native 成功、非法 doc 回滚和 fallback 入口。
+- [src/features/editor/markdownCodec.ts](/D:/MyProject/MDPad/src/features/editor/markdownCodec.ts) 已对复杂表格保存做 raw HTML block preserve，简单 Tiptap 表格继续输出 GFM Markdown。
+- [update/updatenote_2026042810.md](/D:/MyProject/MDPad/update/updatenote_2026042810.md) 已记录本轮链路重构。
+
+## Review
+- 结果：MDPad 复杂 HTML 粘贴现在先走原始 Tiptap/ProseMirror HTML paste，只有 native paste 失败或生成非法 doc 时才进入 sanitizer/plain-text fallback。
+- 结果：保存 Markdown 时，简单表格仍输出 GFM table；合并单元格、嵌套表格等复杂结构保留 raw HTML block，避免被 Markdown 表格规则压扁。
+- 验证已完成：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/clipboard src/features/editor/markdownCodec.test.ts src/features/editor/markdownExport.test.ts src/features/editor/tiptapMarkdownIntegration.test.ts src/shared/utils/appToastOverrides.test.ts` 通过（7 个文件 / 83 个测试）；`pnpm build` 通过。
+
+# 复杂富文本粘贴仍报错二次修复（2026-04-28 09:xx）
+
+## Plan
+- [x] 复查 `tiptap-markdown` 与 ProseMirror clipboard 源码，确认 HTML 粘贴默认路径仍可能在当前 schema 下抛错
+- [x] 将现有复杂 HTML sanitizer/fallback helper 重新接入 raw paste 阶段，只接管风险 HTML
+- [x] 补充连续复杂粘贴和 fallback 回归测试
+- [x] 记录被纠正后的经验
+- [x] 运行 TypeScript、定向测试和 build 验证
+
+## Progress Notes
+- 用户反馈上一轮后实际粘贴仍报错；本轮确认 `tiptap-markdown` 还会覆盖 `setContent/insertContentAt` 并注册剪贴板 parser，但 `text/html` 默认粘贴最终仍由 ProseMirror parse/replace 完成，MDPad 的自定义 schema 下不能继续完全依赖默认路径。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已在 raw `paste` 阶段恢复复杂 HTML 判断：媒体/图片 pipeline 未处理后，如果 HTML 命中表格/Office/Google/复杂 wrapper 风险，就先走 `prepareRichHtmlPaste` + sanitized paste，失败时降级纯文本，并阻止异常冒泡。
+- [tasks/lessons.md](/D:/MyProject/MDPad/tasks/lessons.md) 已补充本次纠正经验。
+- [update/updatenote_2026042809.md](/D:/MyProject/MDPad/update/updatenote_2026042809.md) 已补充说明：简单 HTML 默认，复杂风险 HTML 受控 fallback。
+
+## Review
+- 结果：复杂表格/Office/Google HTML 不再直接暴露给默认 ProseMirror paste；即使 sanitized HTML paste 仍抛 `Position ... outside of fragment`，也会降级为纯文本并吞掉异常，避免应用报错。
+- 结果：简单 HTML 富文本、媒体粘贴、Markdown 图片粘贴和 Markdown 文件读写边界保持上一轮行为。
+- 验证已完成：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/clipboard src/features/editor/markdownCodec.test.ts src/features/editor/markdownExport.test.ts src/features/editor/tiptapMarkdownIntegration.test.ts src/shared/utils/appToastOverrides.test.ts` 通过（7 个文件 / 80 个测试）；`pnpm build` 通过。
+
+# 重调 tiptap-markdown 与 HTML 富文本粘贴主链路（2026-04-28 09:xx）
+
+## Plan
+- [x] 恢复编辑器内部 HTML/Tiptap doc 状态，Markdown 只作为文件读写边界
+- [x] 保留 `tiptap-markdown@0.8.10` 剪贴板配置，但停止用 `storage.markdown.getMarkdown()` 作为保存主链路
+- [x] 确认 HTML 富文本粘贴只经过媒体/图片 pipeline 后交给 ProseMirror 默认路径
+- [x] 补充复杂 HTML paste 与 HTML 边界序列化回归测试
+- [x] 新增今天的 update note，并运行 TypeScript、定向测试和 build 验证
+
+## Progress Notes
+- 用户反馈上一轮直接把编辑器主链路切到 `tiptap-markdown` 后，复杂富文本仍会报 `Position ... outside of fragment`；参考 `new_envdama_ui` 后确认其编辑器保存主链路是 `editor.getHTML()`，`tiptap-markdown` 主要提供 Markdown 粘贴/复制能力。
+- 本轮改回“编辑器内 HTML/doc、文件边界 Markdown”的架构，避免把复杂 HTML paste 后的 ProseMirror doc 立刻交给 `tiptap-markdown` Markdown serializer。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已恢复 `markdownToHtml(bodyMarkdown)` 作为编辑器初始化/外部同步输入，并让保存同步固定从 `editor.getHTML()` 走 `htmlToMarkdown`。
+- [src/features/editor/tiptapMarkdownIntegration.test.ts](/D:/MyProject/MDPad/src/features/editor/tiptapMarkdownIntegration.test.ts) 已调整为覆盖 MDPad HTML 边界、默认 HTML paste 与连续复杂富文本粘贴。
+- [update/updatenote_2026042809.md](/D:/MyProject/MDPad/update/updatenote_2026042809.md) 已记录本轮链路调整。
+
+## Review
+- 结果：`tiptap-markdown` 保留剪贴板能力，但不再替代 MDPad 文件保存 serializer；复杂 HTML 富文本粘贴后的编辑器 doc 不会再优先进入插件 Markdown storage。
+- 结果：Markdown 文件仍按现有 `markdownCodec` 读写，front matter 拼装逻辑保持不变。
+- 验证已完成：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/clipboard src/features/editor/markdownCodec.test.ts src/features/editor/markdownExport.test.ts src/features/editor/tiptapMarkdownIntegration.test.ts src/shared/utils/appToastOverrides.test.ts` 通过（7 个文件 / 79 个测试）；`pnpm build` 通过。
+
 # 直接接入 tiptap-markdown 替代编辑器 Markdown 主链路（2026-04-27）
 
 ## Plan
@@ -2063,3 +2148,71 @@
 - 结果：GitHub Release 已发布：`https://github.com/endearqb/MDPad/releases/tag/v0.2.10`。
 - 结果：Release 附件已上传 `MDPad_0.2.10_x64-setup.exe`，SHA256 为 `7E4325DB3010DA28DA895A69A2DEEC2FD5FF142F7E06963E7C1FFA0EB2D64BBA`。
 - 说明：本轮 release note 已明确记录 Paste 后续待完善项：Paste Rules 只适合 Markdown-like 文本模式，复杂富文本继续走 HTML sanitizer/source normalizer，并继续沉淀真实来源 fixture。
+
+# 富文本粘贴回归 ProseMirror 原生链路（2026-04-28 12:xx）
+
+## Plan
+- [x] 移除 `handleDOMEvents.paste` 中对 `text/html` 的手动 `preventDefault()` / `pasteHTML()` / sanitizer 主动接管
+- [x] 保留媒体/文件粘贴优先处理，未处理时放行给 ProseMirror 原生 HTML paste
+- [x] 将 paste 诊断改为非侵入式记录 clipboard 与 ProseMirror slice 信息
+- [x] 补充 TableKit/标准 Table 对照、连续复杂 HTML paste 和诊断测试
+- [x] 更新 updatenote 与 lessons，并运行 TypeScript、定向 Vitest、build 验证
+
+## Progress Notes
+- 已确认本轮不降级 Tiptap，优先修复 MDPad schema 与粘贴分流链路。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已移除 `text/html` 分支里的 `preventDefault()`、手动 `view.pasteHTML()` 和 sanitizer fallback 主动接管；媒体/图片 pipeline 未处理时返回 `false`，由 ProseMirror 默认粘贴继续处理。
+- [src/features/editor/clipboard/pasteDiagnostics.ts](/D:/MyProject/MDPad/src/features/editor/clipboard/pasteDiagnostics.ts) 新增非侵入式诊断，保留剪贴板 payload 信息，并在 `handlePaste` 收到 ProseMirror slice 时记录顶层节点类型、slice size 与 open 信息。
+- [src/features/editor/tiptapMarkdownIntegration.test.ts](/D:/MyProject/MDPad/src/features/editor/tiptapMarkdownIntegration.test.ts) 已增加标准 Table 与 MDPad `TableKit` 对照，确认同一复杂 HTML 在两套表格扩展下都能保留标题、链接、表格、粗体和 code。
+- 已新增 `update/updatenote_2026042812.md`，并补充 `tasks/lessons.md`：复杂 HTML 粘贴不要在 DOM paste 中手动重放 `pasteHTML()`。
+- 验证已完成：`pnpm exec tsc --noEmit` 通过；定向 Vitest 通过（8 个文件 / 89 个测试）；`pnpm build` 通过；`git diff --check` 通过，仅提示既有 `markdownCodec` 两个文件下次 Git touch 时会从 CRLF 转 LF。
+
+## Review
+- 结果：HTML 富文本粘贴现在不再被 MDPad 手动 `pasteHTML()` 接管，复杂 HTML 会回到 ProseMirror 原生粘贴路径；MDPad 只在媒体/文件粘贴被 pipeline 明确处理时消费事件。
+- 结果：诊断信息仍可通过 `window.__MDPAD_LAST_PASTE_DEBUG__` 查看，但诊断本身不改变粘贴路径；失败时可观察 `proseMirrorHandlePasteSeen`、`sliceTopNodeTypes`、`pipelineHandled` 等字段定位下一阶段问题。
+- 说明：本轮没有降级 Tiptap，也没有引入 `@tiptap-pro/*`；保存仍保持 HTML-first 编辑状态与 Markdown 文件边界。
+
+# 全量采用 new_envdama_ui 粘贴架构（2026-04-28 12:xx）
+
+## Plan
+- [x] 清理 MDPad 自研 `clipboardPipeline`、HTML sanitizer paste、diagnostics 与 Markdown image paste handler
+- [x] 从 `MarkdownEditor` 移除全局 `handleDOMEvents.paste` / `handlePaste`，只保留链接点击处理
+- [x] 新增本地图片文件 paste 扩展，只在剪贴板包含 `image/*` 文件时消费 paste
+- [x] 保留 `tiptap-markdown` 三项配置、HTML-first 编辑状态和 Markdown 文件边界
+- [x] 更新 updatenote / lessons 并运行 TypeScript、Vitest、build、diff check
+
+## Progress Notes
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已删除生产链路中的全局 paste 接管；富文本 HTML、ProseMirror 页面复制内容、Office/网页表格都将交给 Tiptap/ProseMirror 默认粘贴。
+- 已删除 `src/features/editor/clipboard/` 下旧的 pipeline、sanitizer、diagnostics、自研 Markdown paste handler 及其测试，避免废弃分支继续影响实现方向。
+- [src/features/editor/extensions/mediaExtensions.tsx](/D:/MyProject/MDPad/src/features/editor/extensions/mediaExtensions.tsx) 新增 `ImageFilePasteExtension`，语义对齐 `new_envdama_ui` 的图片文件 paste：只有真实图片文件会 `preventDefault()` 并写入附件库后插入 `resizableImage`。
+- [src/features/editor/extensions/mediaExtensions.test.ts](/D:/MyProject/MDPad/src/features/editor/extensions/mediaExtensions.test.ts) 新增图片文件 paste / 非图片文件放行测试。
+
+## Review
+- 结果：MDPad 生产粘贴链路已移除自研 `clipboardPipeline`、`handlePaste`、`pasteHTML`、`pasteText`、sanitizer fallback 与 paste diagnostics；除图片文件扩展外，富文本 HTML 粘贴完全交还 Tiptap/ProseMirror 默认链路。
+- 结果：图片文件粘贴被收敛到局部 `ImageFilePasteExtension`，只处理剪贴板中的 `image/*` 文件；非图片文件、HTML `<img>`、Markdown 图片文本都不再被全局 paste pipeline 抢占。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor src/shared/utils/appToastOverrides.test.ts` 通过（26 个文件 / 211 个测试）；`pnpm build` 通过；`git diff --check` 通过，仅提示部分文件下次 Git touch 时 CRLF 会转 LF。
+- 说明：本轮没有降级 Tiptap，也没有引入 `@tiptap-pro/*`；仍需用用户真实 ProseMirror 来源页面做一次手工粘贴验收，以确认系统剪贴板 payload 与 jsdom/native parser 测试一致。
+# Scratch 路线迁移到 Tiptap 3 官方 Markdown（2026-04-28 14:xx）
+
+## Plan
+- [x] 将 `@tiptap/*` 统一升级到 3.22.4，移除 `tiptap-markdown` 并接入 `@tiptap/markdown`
+- [x] 将编辑器主链路改为 Markdown contentType 输入与 `editor.getMarkdown()` 保存
+- [x] 用官方 Tiptap 3 `TableKit` 替换 MDPad 自定义表格 schema/邻列 resize 主链路
+- [x] 将图片节点收敛到标准 `image` 语义，并保留图片文件 paste 能力
+- [x] 补齐/调整自定义节点的 Markdown 序列化边界，更新测试与文档
+- [x] 运行 `pnpm install`、TypeScript、编辑器 Vitest、build、diff check 验证
+
+## Progress Notes
+- 用户明确选择长期成熟路线：对齐 Scratch 的 Tiptap 3 + 官方 Markdown manager，而不是继续在 Tiptap 2 + `tiptap-markdown@0.8.10` 上修补。
+- 依赖已统一到 Tiptap 3.22.4：移除 `tiptap-markdown`，新增官方 `@tiptap/markdown@3.22.4`，React 保持 18。
+- [src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已改为 Markdown 直接入编辑器：初始化和外部同步使用 `contentType: "markdown"`，保存同步使用 `editor.getMarkdown()`。
+- 富文本 HTML 粘贴不再被 Markdown parser 抢占；只有剪贴板没有 `text/html` 且文本明显是 Markdown 时，才用官方 Markdown `insertContent(..., { contentType: "markdown" })`。
+- 表格主链路已换为官方 Tiptap 3 `TableKit.configure({ table: { resizable: true } })`，删除旧 MDPad 自定义 table schema 入口和邻列 resize 主链路。
+- 图片节点名已收敛到标准 `image`，但继续保留 MDPad 的 React NodeView、宽度属性、附件库图片文件粘贴与旧 `data-type="resizable-image"` HTML 读取兼容。
+- [src/features/editor/tiptapMarkdownIntegration.test.ts](/D:/MyProject/MDPad/src/features/editor/tiptapMarkdownIntegration.test.ts) 已切到官方 `@tiptap/markdown`，覆盖 Markdown contentType、默认 HTML paste、TableKit 富文本结构和重复复杂粘贴。
+- [update/updatenote_2026042815.md](/D:/MyProject/MDPad/update/updatenote_2026042815.md) 已记录本轮迁移。
+
+## Review
+- 结果：MDPad 已从 Tiptap 2 + `tiptap-markdown` 迁移到 Tiptap 3 + 官方 `@tiptap/markdown`，编辑器主链路采用 Scratch 路线的 Markdown manager。
+- 结果：混合富文本 HTML 继续由原生 ProseMirror paste 处理；纯 Markdown 文本仅在无 HTML 剪贴板 payload 时进入官方 Markdown 插入，避免再次把 ProseMirror 复制出的 `text/plain` 抢成 Markdown parse。
+- 结果：官方 TableKit 替换旧自定义表格 schema 后，复杂 HTML 重复粘贴测试不再出现 `Position ... outside of fragment`。
+- 验证已完成：`pnpm install` 通过；`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor src/shared/utils/appToastOverrides.test.ts` 通过（26 个文件 / 211 个测试）；`pnpm build` 通过。

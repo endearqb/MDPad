@@ -9,10 +9,14 @@ import {
   type MouseEvent as ReactMouseEvent
 } from "react";
 import { isTextSelection } from "@tiptap/core";
+import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import SubscriptExtension from "@tiptap/extension-subscript";
 import SuperscriptExtension from "@tiptap/extension-superscript";
+import { TableKit } from "@tiptap/extension-table";
+import TextAlign from "@tiptap/extension-text-align";
+import { TextStyle } from "@tiptap/extension-text-style";
 import {
   TableOfContents,
   getHierarchicalIndexes,
@@ -20,14 +24,15 @@ import {
 } from "@tiptap/extension-table-of-contents";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
+import UnderlineExtension from "@tiptap/extension-underline";
 import {
-  BubbleMenu,
   EditorContent,
   useEditor,
   type Editor
 } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
-import { Markdown } from "tiptap-markdown";
+import { Markdown } from "@tiptap/markdown";
 import { createLowlight } from "lowlight";
 import bash from "highlight.js/lib/languages/bash";
 import c from "highlight.js/lib/languages/c";
@@ -72,15 +77,6 @@ import {
   Video
 } from "lucide-react";
 import "katex/dist/katex.min.css";
-import { htmlToMarkdown } from "./markdownCodec";
-import {
-  parseObsidianEmbedImageSyntax,
-  parseMarkdownImageSyntax,
-  widthPxToPercent
-} from "./markdownImageSyntax";
-import { createClipboardPipeline } from "./clipboard/pipeline";
-import { createBinaryMediaPasteHandler } from "./clipboard/handlers/binaryMedia";
-import { createTextMarkdownImagePasteHandler } from "./clipboard/handlers/textMarkdownImage";
 import { CalloutBlockquote } from "./extensions/calloutBlockquote";
 import {
   BlockMath,
@@ -106,6 +102,7 @@ import {
 import { HighlightWithFlexibleSyntax } from "./extensions/highlightExtensions";
 import {
   AudioBlock,
+  ImageFilePasteExtension,
   ResizableImage,
   VideoBlock,
   mediaDefaults,
@@ -116,14 +113,7 @@ import { CodeBlockWithActions } from "./extensions/codeBlockWithActions";
 import {
   MermaidBlock
 } from "./extensions/mermaidExtensions";
-import {
-  TableCellKit,
-  TableHeaderKit,
-  TableKit,
-  TableRowKit
-} from "./extensions/tableKit";
 import { isCellSelection } from "./extensions/tableKit/tableSelection";
-import { NeighborColumnResize } from "./extensions/tableNeighborResize";
 import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
 import {
@@ -544,19 +534,26 @@ function formatErrorMessage(error: unknown, fallback: string): string {
 }
 
 function getEditorMarkdown(activeEditor: Editor): string {
-  const markdownStorage = (
-    activeEditor.storage as {
-      markdown?: {
-        getMarkdown?: () => string;
-      };
-    }
-  ).markdown;
-  const pluginMarkdown = markdownStorage?.getMarkdown?.();
-  if (typeof pluginMarkdown === "string") {
-    return pluginMarkdown.trimEnd();
-  }
+  return activeEditor.getMarkdown().trimEnd();
+}
 
-  return htmlToMarkdown(activeEditor.getHTML());
+function looksLikeMarkdownText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return [
+    /^#{1,6}\s+\S/m,
+    /^>\s+\S/m,
+    /^[-*+]\s+\S/m,
+    /^\d+\.\s+\S/m,
+    /^[-*+]\s+\[[ xX]\]\s+\S/m,
+    /^```[\s\S]*```$/m,
+    /^\|.+\|\s*\n\|[\s:-]+\|/m,
+    /\*\*[^*\n]+\*\*/m,
+    /`[^`\n]+`/m,
+    /\[[^\]\n]+\]\([^)]+\)/m
+  ].some((pattern) => pattern.test(trimmed));
 }
 
 function buildEditorStats(editor: Editor): EditorStats {
@@ -900,7 +897,7 @@ export default function MarkdownEditor({
             .chain()
             .focus()
             .insertContent({
-              type: "resizableImage",
+              type: "image",
               attrs: {
                 src,
                 alt,
@@ -997,33 +994,55 @@ export default function MarkdownEditor({
     return pickedPath;
   }, [requestAttachmentLibrarySetup]);
 
-  const clipboardPipeline = useMemo(
-    () =>
-      createClipboardPipeline({
-        handlers: [
-          createBinaryMediaPasteHandler({
-            detectClipboardMediaKind,
-            ensureAttachmentLibraryDirectory,
-            reportEditorError,
-            setAttachmentLibraryDir,
-            guessMediaExtension,
-            buildAttachmentMediaName,
-            getDocumentPath: () => documentPathRef.current,
-            saveAttachmentBytesToLibrary,
-            resolveMediaSource,
-            mediaDefaults: {
-              defaultWidth: mediaDefaults.defaultWidth
+  const handleImageFilePaste = useCallback(
+    async ({ editor: activeEditor, file }: { editor: Editor; file: File }) => {
+      try {
+        const currentDocumentPath = documentPathRef.current;
+        const attachmentLibraryDirectory = await ensureAttachmentLibraryDirectory();
+        if (!attachmentLibraryDirectory) {
+          reportEditorError(
+            "Image paste canceled because attachment library directory was not selected."
+          );
+          return;
+        }
+
+        await setAttachmentLibraryDir(attachmentLibraryDirectory);
+        const extension = guessMediaExtension(file, "image");
+        const mediaFileName = buildAttachmentMediaName(
+          currentDocumentPath,
+          "image",
+          extension
+        );
+        const mediaBytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+        const savedMediaPath = await saveAttachmentBytesToLibrary(
+          mediaFileName,
+          mediaBytes
+        );
+        const mediaSource = resolveMediaSource(savedMediaPath, currentDocumentPath);
+        const selection = activeEditor.state.selection;
+
+        activeEditor
+          .chain()
+          .focus()
+          .insertContentAt(
+            {
+              from: selection.from,
+              to: selection.to
             },
-            formatErrorMessage
-          }),
-          createTextMarkdownImagePasteHandler({
-            parseMarkdownImageSyntax,
-            parseObsidianEmbedImageSyntax,
-            widthPxToPercent,
-            defaultWidth: mediaDefaults.defaultWidth
-          })
-        ]
-      }),
+            {
+              type: "image",
+              attrs: {
+                src: mediaSource,
+                alt: "",
+                width: mediaDefaults.defaultWidth
+              }
+            }
+          )
+          .run();
+      } catch (error) {
+        reportEditorError(formatErrorMessage(error, "Failed to paste image from clipboard."));
+      }
+    },
     [ensureAttachmentLibraryDirectory, reportEditorError]
   );
 
@@ -1561,7 +1580,8 @@ export default function MarkdownEditor({
           levels: [1, 2, 3, 4]
         },
         blockquote: false,
-        codeBlock: false
+        codeBlock: false,
+        link: false
       }),
       TableOfContents.configure({
         anchorTypes: [...TOC_ANCHOR_TYPES],
@@ -1579,6 +1599,12 @@ export default function MarkdownEditor({
       HighlightWithFlexibleSyntax,
       SubscriptExtension,
       SuperscriptExtension,
+      UnderlineExtension,
+      TextStyle,
+      Color,
+      TextAlign.configure({
+        types: ["heading", "paragraph"]
+      }),
       slashCommandController.extension,
       Link.configure({
         openOnClick: false,
@@ -1595,21 +1621,13 @@ export default function MarkdownEditor({
         nested: true
       }),
       TableKit.configure({
-        resizable: true,
-        cellMinWidth: MD_TABLE_CELL_MIN_WIDTH,
-        dictionary: copy.tableMenu.table
+        table: {
+          resizable: true,
+          cellMinWidth: MD_TABLE_CELL_MIN_WIDTH
+        }
       }),
-      TableRowKit.configure({
-        dictionary: copy.tableMenu.row
-      }),
-      TableHeaderKit.configure({
-        dictionary: copy.tableMenu.column
-      }),
-      TableCellKit.configure({
-        dictionary: copy.tableMenu.cell
-      }),
-      NeighborColumnResize.configure({
-        cellMinWidth: MD_TABLE_CELL_MIN_WIDTH
+      ImageFilePasteExtension.configure({
+        onPasteImageFile: handleImageFilePaste
       }),
       ResizableImage,
       VideoBlock,
@@ -1624,12 +1642,14 @@ export default function MarkdownEditor({
         onRequestEdit: handleMathEditRequest
       }),
       Markdown.configure({
-        html: true,
-        transformCopiedText: true,
-        transformPastedText: true
+        markedOptions: {
+          gfm: true,
+          breaks: false
+        }
       })
     ],
     content: initialContentMarkdownRef.current,
+    contentType: "markdown",
     editable: isEditable,
     immediatelyRender: false,
     editorProps: {
@@ -1644,41 +1664,26 @@ export default function MarkdownEditor({
             return false;
           }
           return handleEditorLinkClick(event);
-        },
-        paste: (_view, event) => {
-          const activeEditor = editorRef.current;
-          if (!activeEditor) {
-            return false;
-          }
-          if (!activeEditor.isEditable) {
-            event.preventDefault();
-            reportEditorError(copy.errors.readOnlyBlocked);
-            return true;
-          }
-
-          const clipboardEvent = event as ClipboardEvent;
-          const clipboardData = clipboardEvent.clipboardData;
-          if (!clipboardData) {
-            return false;
-          }
-
-          if (clipboardPipeline.handle(clipboardEvent, activeEditor)) {
-            return true;
-          }
-
-          return false;
         }
       },
       handlePaste: (_view, event) => {
-        const activeEditor = editorRef.current;
-        if (!activeEditor) {
+        const clipboardData = event.clipboardData;
+        if (!clipboardData || clipboardData.types.includes("text/html")) {
           return false;
         }
-        if (!activeEditor.isEditable) {
-          reportEditorError(copy.errors.readOnlyBlocked);
-          return true;
+
+        const text = clipboardData.getData("text/plain");
+        if (!looksLikeMarkdownText(text)) {
+          return false;
         }
-        return clipboardPipeline.handle(event, activeEditor);
+
+        try {
+          return editorRef.current?.commands.insertContent(text, {
+            contentType: "markdown"
+          }) ?? false;
+        } catch {
+          return false;
+        }
       }
     },
     onCreate({ editor: activeEditor }) {
@@ -1837,7 +1842,8 @@ export default function MarkdownEditor({
       const setContentStart = nowMs();
       syncEditorContentSafely({
         editor,
-        html: nextMarkdownState.bodyMarkdown,
+        content: nextMarkdownState.bodyMarkdown,
+        contentType: "markdown",
         onBeforeSync: () => {
           recentTextSelectionRef.current = null;
         }
@@ -2304,7 +2310,7 @@ export default function MarkdownEditor({
       view: Editor["view"];
     }) => {
       const isMediaSelection =
-        activeEditor.isActive("resizableImage") ||
+        activeEditor.isActive("image") ||
         activeEditor.isActive("videoBlock") ||
         activeEditor.isActive("audioBlock") ||
         activeEditor.isActive("mermaidBlock");
@@ -2467,34 +2473,19 @@ export default function MarkdownEditor({
           pluginKey="mdpad-bubble-menu"
           shouldShow={shouldShowBubbleMenu}
           updateDelay={0}
-          tippyOptions={{
-            appendTo: () => document.body,
-            duration: 140,
-            hideOnClick: false,
-            interactive: true,
-            offset: [0, 10],
+          appendTo={() => document.body}
+          options={{
+            strategy: "fixed",
             placement: "top",
-            popperOptions: {
-              strategy: "fixed",
-              modifiers: [
-                {
-                  name: "flip",
-                  options: {
-                    padding: 8,
-                    rootBoundary: "viewport"
-                  }
-                },
-                {
-                  name: "preventOverflow",
-                  options: {
-                    padding: 8,
-                    rootBoundary: "viewport"
-                  }
-                }
-              ]
+            offset: 10,
+            flip: {
+              padding: 8,
+              rootBoundary: "viewport"
             },
-            zIndex: 6200,
-            theme: "mdpad-bubble"
+            shift: {
+              padding: 8,
+              rootBoundary: "viewport"
+            }
           }}
         >
           <div

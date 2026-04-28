@@ -432,12 +432,28 @@ describe("markdownCodec", () => {
     expect(diagnostics.markdown).not.toContain("<table>");
   });
 
-  it("reports merged-cell table html as complex", () => {
+  it("preserves merged-cell table html as raw markdown HTML", () => {
     const diagnostics = htmlToMarkdownWithDiagnostics(
       '<table><tbody><tr><th colspan="2"><p>A</p></th></tr><tr><td><p>1</p></td><td><p>2</p></td></tr></tbody></table>'
     );
 
     expect(diagnostics.hasComplexTables).toBe(true);
+    expect(diagnostics.markdown).toContain("<table>");
+    expect(diagnostics.markdown).toContain('colspan="2"');
+    expect(diagnostics.markdown).toContain("<th");
+    expect(diagnostics.markdown).not.toContain("| A |");
+    expect(diagnostics.markdown).not.toContain("data-mdpad-preserve-raw-html");
+  });
+
+  it("preserves nested table html instead of flattening it into a gfm table", () => {
+    const diagnostics = htmlToMarkdownWithDiagnostics(
+      '<table><tbody><tr><td><p>Outer</p><table><tbody><tr><td><p>Inner</p></td></tr></tbody></table></td></tr></tbody></table>'
+    );
+
+    expect(diagnostics.hasComplexTables).toBe(true);
+    expect(diagnostics.markdown).toContain("<table>");
+    expect(diagnostics.markdown).toContain("Inner");
+    expect(diagnostics.markdown).not.toContain("| Outer |");
   });
 
   it("keeps markdown link syntax in round trip", () => {
