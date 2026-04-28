@@ -2224,5 +2224,12 @@
 - [x] 更新 `README.md` / `README_zh.md` 的版本亮点，反映 v0.2.11 当前能力
 - [x] 编写 `docs/release-notes-v0.2.11.md`，包含安装包、SHA256、验证与已知边界
 - [x] 复核版本号、tag、安装包和 GitHub release 状态，运行发布前验证
-- [ ] 提交并推送 `main`，创建并推送 `v0.2.11` tag，发布 GitHub Release
-- [ ] 回填本节 Review，记录最终提交、release URL 和附件校验值
+- [x] 提交并推送 `main`，创建并推送 `v0.2.11` tag，发布 GitHub Release
+- [x] 回填本节 Review，记录最终提交、release URL 和附件校验值
+
+## Review
+- 结果：发布提交 `5e65f81` 已推送到 `origin/main`，版本号为 `0.2.11`。
+- 结果：已创建并推送 tag `v0.2.11`。
+- 结果：GitHub Release 已发布：`https://github.com/endearqb/MDPad/releases/tag/v0.2.11`。
+- 结果：Release 附件已上传 `MDPad_0.2.11_x64-setup.exe`，大小 `37,250,001` bytes，SHA256 为 `A0CF2493EEBBFD40D8C1424C4ED053D9E1D809F362C328260310E7E942746136`。
+- 验证：`pnpm build` 通过；`git diff --check` 通过，仅提示 `README.md` / `README_zh.md` 下次 Git touch 时会从 CRLF 转 LF；`gh release view v0.2.11 --json tagName,name,publishedAt,assets,url` 已确认附件状态为 `uploaded`。
