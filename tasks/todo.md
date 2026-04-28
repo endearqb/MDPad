@@ -2216,3 +2216,13 @@
 - 结果：混合富文本 HTML 继续由原生 ProseMirror paste 处理；纯 Markdown 文本仅在无 HTML 剪贴板 payload 时进入官方 Markdown 插入，避免再次把 ProseMirror 复制出的 `text/plain` 抢成 Markdown parse。
 - 结果：官方 TableKit 替换旧自定义表格 schema 后，复杂 HTML 重复粘贴测试不再出现 `Position ... outside of fragment`。
 - 验证已完成：`pnpm install` 通过；`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor src/shared/utils/appToastOverrides.test.ts` 通过（26 个文件 / 211 个测试）；`pnpm build` 通过。
+
+# 发布 v0.2.11（2026-04-28 23:xx）
+
+## Plan
+- [x] 编写 `update/updatenote_2026042823.md`，归纳 Tiptap 3 官方 Markdown 迁移与粘贴链路变化
+- [x] 更新 `README.md` / `README_zh.md` 的版本亮点，反映 v0.2.11 当前能力
+- [x] 编写 `docs/release-notes-v0.2.11.md`，包含安装包、SHA256、验证与已知边界
+- [x] 复核版本号、tag、安装包和 GitHub release 状态，运行发布前验证
+- [ ] 提交并推送 `main`，创建并推送 `v0.2.11` tag，发布 GitHub Release
+- [ ] 回填本节 Review，记录最终提交、release URL 和附件校验值

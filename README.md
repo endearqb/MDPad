@@ -8,7 +8,7 @@ Lightweight Markdown editor for Windows, built with Tauri + React + TipTap.
 
 -   [Overview](#overview)
 
--   [What's New in v0.2.0](#whats-new-in-v020)
+-   [What's New in v0.2.11](#whats-new-in-v0211)
     
 -   [Highlights](#highlights)
     
@@ -42,44 +42,38 @@ MDPad is designed for fast, single-document writing with a desktop-native workfl
 -   Preserve practical note-taking syntax from real-world usage (including some Obsidian-style image embeds).
     
 
-## What's New in v0.2.0
+## What's New in v0.2.11
 
-### Multi-format source workspace
+### Tiptap 3 official Markdown pipeline
 
--   MDPad now opens and edits not only Markdown, but also `.html`, `.htm`, `.py`, `.js`, `.ts`, and `.json`.
-    
--   Markdown documents still default to rich text, but can switch to a dedicated CodeMirror 6 source view when you need exact Markdown control.
-    
--   HTML documents now have a two-mode workflow: preview by default, source view on demand.
-    
--   Code files open directly in the source editor with language-aware highlighting, undo/redo history, search shortcuts, and stable cursor/scroll behavior during external content sync.
-    
+-   The rich-text editor has moved from Tiptap 2 plus `tiptap-markdown` to Tiptap 3 with the official `@tiptap/markdown` package.
 
-### Controlled HTML dynamic preview
+-   Markdown documents now enter the editor as Markdown content and save through `editor.getMarkdown()`, reducing format drift between the visual editor and the source file.
 
--   HTML preview is no longer static. Local scripts can run inside a sandboxed iframe, so document TOC buttons, collapsible sections, and common chart libraries can work during preview.
-    
--   Relative script, stylesheet, image, audio, and video paths are resolved against the current document, so local HTML files can keep their neighboring assets.
-    
--   External links and `window.open(...)` calls are intercepted and opened in the system browser instead of navigating the in-app preview away from the current file.
-    
--   The preview intentionally stays controlled: same-document `#hash` navigation works, but MDPad does not turn into a full multi-page website browser.
-    
+-   The table implementation now uses the official Tiptap 3 `TableKit`, replacing MDPad's older custom table schema and resize path.
 
-### Windows integration and editor polish
+### Safer rich-text paste behavior
 
--   Windows file association metadata now covers `.md`, `.markdown`, `.html`, `.htm`, `.py`, `.js`, `.ts`, and `.json`, so MDPad can appear in **Open with** / default-app choices for all supported text formats.
-    
--   The theme toggle moved into the right-side window controls, alongside minimize/maximize/close, for a more native frameless desktop layout.
-    
--   Dark-mode source editing received dedicated scrollbar styling for both vertical and horizontal scrolling, tuned specifically for the code editor instead of reusing the rich-text surface scrollbar.
-    
--   Each fresh app launch now starts from the rich-text-oriented default view again: Markdown opens in rich text, HTML opens in preview.
+-   Clipboard payloads that include `text/html` are handled by the native ProseMirror/Tiptap paste path instead of being intercepted by MDPad's old sanitizer or Markdown fallback.
+
+-   Plain-text Markdown insertion is only used when the clipboard does not contain HTML and the text clearly looks like Markdown.
+
+-   Image-file paste remains supported through the attachment-library workflow, but it is isolated from the general rich-text paste path.
+
+### Current workspace capabilities
+
+-   MDPad continues to open and edit `.md`, `.markdown`, `.html`, `.htm`, `.py`, `.js`, `.ts`, and `.json`.
+
+-   Markdown keeps the rich-text/source workflow, HTML keeps the preview/source workflow, and code files open directly in the CodeMirror 6 source editor.
+
+-   The controlled HTML preview still supports local asset resolution, sandboxed local scripts, and system-browser handling for external links.
     
 
 ## Highlights
 
 -   Native desktop app for Windows (Tauri v2).
+
+-   Tiptap 3 rich-text editing with the official Markdown manager.
     
 -   Multi-window workflow (`Ctrl+N` for a new empty window).
     
