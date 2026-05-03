@@ -41,7 +41,7 @@ describe("bubbleMenuSelection", () => {
     ).toBeNull();
   });
 
-  it("hides bubble menu for table CellSelection", () => {
+  it("hides the text bubble menu for table CellSelection because the dedicated table menu handles it", () => {
     expect(
       shouldDisplayBubbleMenu({
         hasEditorFocus: true,

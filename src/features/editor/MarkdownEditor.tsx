@@ -113,6 +113,8 @@ import { CodeBlockWithActions } from "./extensions/codeBlockWithActions";
 import {
   MermaidBlock
 } from "./extensions/mermaidExtensions";
+import { TableActionMenu } from "./extensions/tableActionMenu";
+import { TableSelectionGrip } from "./extensions/tableSelectionGrip";
 import { isCellSelection } from "./extensions/tableKit/tableSelection";
 import { createSlashCommandController } from "./extensions/slashCommand";
 import type { SlashCommandItem } from "./extensions/slashCommandTypes";
@@ -1625,6 +1627,10 @@ export default function MarkdownEditor({
           resizable: true,
           cellMinWidth: MD_TABLE_CELL_MIN_WIDTH
         }
+      }),
+      TableSelectionGrip,
+      TableActionMenu.configure({
+        copy: copy.tableMenu
       }),
       ImageFilePasteExtension.configure({
         onPasteImageFile: handleImageFilePaste

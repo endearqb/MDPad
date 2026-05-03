@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, CircleAlert, CircleDot, Loader2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  CircleAlert,
+  CircleDot,
+  Ellipsis,
+  Loader2
+} from "lucide-react";
 import type {
   AppLocale,
   ExternalChangeMode,
@@ -86,7 +93,9 @@ export default function StatusBar({
   onOpenSamples
 }: StatusBarProps) {
   const menuRootRef = useRef<HTMLDivElement | null>(null);
+  const optionsMenuRef = useRef<HTMLDivElement | null>(null);
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
+  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
   const currentMarkdownThemeLabel = useMemo(
     () => copy.markdownThemeNames[markdownTheme],
     [copy.markdownThemeNames, markdownTheme]
@@ -119,16 +128,48 @@ export default function StatusBar({
     };
   }, [isThemeMenuOpen]);
 
+  useEffect(() => {
+    if (!isOptionsMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target || optionsMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsOptionsMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOptionsMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOptionsMenuOpen]);
+
+  const runOptionsMenuAction = (action: () => void) => {
+    setIsOptionsMenuOpen(false);
+    action();
+  };
+
   return (
     <footer className="statusbar-shell">
       <section className="statusbar-left">
-        <span className="statusbar-pill">{encoding}</span>
+        <span className="statusbar-pill statusbar-secondary-item">{encoding}</span>
         <span className="statusbar-save-state">
           <SaveStateIcon saveState={saveState} />
           <span>{copy.saveState[saveState]}</span>
         </span>
         <button
-          className="statusbar-theme-switch"
+          className="statusbar-theme-switch statusbar-secondary-item"
           onClick={onToggleExternalChangeMode}
           title={copy.toggleExternalChangeModeTitle}
           type="button"
@@ -137,7 +178,7 @@ export default function StatusBar({
         </button>
         <button
           aria-label={copy.openSamplesAria}
-          className="statusbar-theme-switch statusbar-help-btn"
+          className="statusbar-theme-switch statusbar-help-btn statusbar-secondary-item"
           onClick={onOpenSamples}
           title={copy.openSamplesTitle}
           type="button"
@@ -148,7 +189,7 @@ export default function StatusBar({
       <section className="statusbar-right">
         <button
           aria-label={locale === "zh" ? copy.switchToEnglish : copy.switchToChinese}
-          className="statusbar-theme-switch"
+          className="statusbar-theme-switch statusbar-secondary-item"
           onClick={onToggleLocale}
           title={copy.toggleLanguageTitle}
           type="button"
@@ -156,7 +197,7 @@ export default function StatusBar({
           {copy.languageButtonLabel}
         </button>
         <div
-          className="statusbar-theme-group"
+          className="statusbar-theme-group statusbar-secondary-item"
           ref={menuRootRef}
         >
           <button
@@ -173,7 +214,10 @@ export default function StatusBar({
             aria-label={copy.selectMarkdownThemeAria}
             aria-haspopup="menu"
             className="statusbar-theme-switch statusbar-theme-menu-trigger"
-            onClick={() => setIsThemeMenuOpen((current) => !current)}
+            onClick={() => {
+              setIsOptionsMenuOpen(false);
+              setIsThemeMenuOpen((current) => !current);
+            }}
             title={copy.selectMarkdownThemeTitle}
             type="button"
           >
@@ -210,16 +254,117 @@ export default function StatusBar({
         </div>
         <button
           aria-label={uiTheme === "classic" ? copy.switchToModernUi : copy.switchToClassicUi}
-          className="statusbar-theme-switch"
+          className="statusbar-theme-switch statusbar-secondary-item"
           onClick={onToggleUiTheme}
           title={copy.switchUiTitle}
           type="button"
         >
           {uiTheme === "classic" ? copy.classicTheme : copy.modernTheme}
         </button>
-        <span>
+        <span className="statusbar-char-count">
           {charCount.toLocaleString(locale === "zh" ? "zh-CN" : "en-US")} {copy.charsUnit}
         </span>
+        <div
+          className="statusbar-options-menu"
+          ref={optionsMenuRef}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (!next || !event.currentTarget.contains(next)) {
+              setIsOptionsMenuOpen(false);
+            }
+          }}
+        >
+          <button
+            aria-expanded={isOptionsMenuOpen}
+            aria-haspopup="menu"
+            aria-label={copy.statusOptionsAria}
+            className="statusbar-theme-switch statusbar-options-trigger"
+            onClick={() => {
+              setIsThemeMenuOpen(false);
+              setIsOptionsMenuOpen((current) => !current);
+            }}
+            title={copy.statusOptionsTitle}
+            type="button"
+          >
+            <Ellipsis
+              aria-hidden="true"
+              className="statusbar-options-icon"
+            />
+          </button>
+          {isOptionsMenuOpen ? (
+            <div
+              aria-label={copy.statusOptionsAria}
+              className="statusbar-options-popover"
+              role="menu"
+            >
+              <span className="statusbar-options-meta">{encoding}</span>
+              <button
+                className="statusbar-options-item"
+                onClick={() => runOptionsMenuAction(onToggleExternalChangeMode)}
+                role="menuitem"
+                type="button"
+              >
+                {copy.externalChangeModeNames[externalChangeMode]}
+              </button>
+              <button
+                className="statusbar-options-item"
+                onClick={() => runOptionsMenuAction(onOpenSamples)}
+                role="menuitem"
+                type="button"
+              >
+                {copy.openSamplesTitle}
+              </button>
+              <button
+                className="statusbar-options-item"
+                onClick={() => runOptionsMenuAction(onToggleLocale)}
+                role="menuitem"
+                type="button"
+              >
+                {locale === "zh" ? copy.switchToEnglish : copy.switchToChinese}
+              </button>
+              <button
+                className="statusbar-options-item"
+                onClick={() => runOptionsMenuAction(onToggleMarkdownTheme)}
+                role="menuitem"
+                type="button"
+              >
+                {currentMarkdownThemeLabel}
+              </button>
+              <div
+                aria-label={copy.selectMarkdownThemeAria}
+                className="statusbar-options-theme-list"
+                role="group"
+              >
+                {markdownThemeOptions.map((themeOption) => (
+                  <button
+                    aria-checked={markdownTheme === themeOption}
+                    className={[
+                      "statusbar-theme-menu-item",
+                      markdownTheme === themeOption ? "is-active" : ""
+                    ].join(" ")}
+                    key={themeOption}
+                    onClick={() => {
+                      onSelectMarkdownTheme(themeOption);
+                      setIsOptionsMenuOpen(false);
+                    }}
+                    role="menuitemradio"
+                    type="button"
+                  >
+                    {copy.markdownThemeNames[themeOption]}
+                  </button>
+                ))}
+              </div>
+              <button
+                className="statusbar-options-item"
+                onClick={() => runOptionsMenuAction(onToggleUiTheme)}
+                role="menuitem"
+                type="button"
+              >
+                {uiTheme === "classic" ? copy.switchToModernUi : copy.switchToClassicUi}
+              </button>
+            </div>
+          ) : null}
+        </div>
       </section>
     </footer>
   );

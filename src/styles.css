@@ -300,7 +300,7 @@ body {
   position: relative;
   z-index: 20;
   display: grid;
-  grid-template-columns: max-content 1fr max-content;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: 8px;
   padding: 0 8px;
@@ -325,6 +325,7 @@ body {
   z-index: 2;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .titlebar-actions {
@@ -346,6 +347,13 @@ body {
   z-index: 9;
 }
 
+.titlebar-more-menu {
+  position: relative;
+  display: none;
+  align-items: center;
+  z-index: 9;
+}
+
 .titlebar-file-menu::after {
   content: "";
   position: absolute;
@@ -364,12 +372,22 @@ body {
   height: 12px;
 }
 
+.titlebar-more-menu::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 112px;
+  height: 12px;
+}
+
 .titlebar-file-trigger {
   position: relative;
 }
 
 .titlebar-file-popover,
-.titlebar-window-popover {
+.titlebar-window-popover,
+.titlebar-more-popover {
   position: absolute;
   top: calc(100% + 2px);
   display: inline-flex;
@@ -391,6 +409,10 @@ body {
 .titlebar-window-popover {
   left: 0;
   transform: translateX(calc(-100% + 32px));
+}
+
+.titlebar-more-popover {
+  left: 0;
 }
 
 .titlebar-icon-btn {
@@ -456,6 +478,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   pointer-events: auto;
   z-index: 2;
 }
@@ -466,6 +489,7 @@ body {
   color: inherit;
   border-radius: 8px;
   padding: 4px 8px;
+  min-width: 0;
   max-width: 100%;
   cursor: default;
 }
@@ -492,6 +516,7 @@ body {
 .titlebar-rename-input {
   width: min(340px, calc(100vw - 380px));
   min-width: 16ch;
+  max-width: 100%;
   border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--chrome-border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--editor-bg) 90%, transparent);
@@ -3019,6 +3044,24 @@ body {
   background-clip: padding-box;
 }
 
+.mdpad-editor table .ProseMirror-table-grip-col,
+.mdpad-editor table .ProseMirror-table-grip-row,
+.mdpad-editor table .ProseMirror-table-grip-table {
+  opacity: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.mdpad-editor table:hover .ProseMirror-table-grip-col,
+.mdpad-editor table:hover .ProseMirror-table-grip-row,
+.mdpad-editor table:hover .ProseMirror-table-grip-table,
+.mdpad-editor table .ProseMirror-table-grip-col.active,
+.mdpad-editor table .ProseMirror-table-grip-row.active,
+.mdpad-editor table .ProseMirror-table-grip-table.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .mdpad-editor .column-resize-handle {
   position: absolute;
   right: -2px;
@@ -3060,6 +3103,11 @@ body {
   position: absolute;
   width: 1rem;
   height: 1.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3123,6 +3171,17 @@ body {
   background: color-mix(in srgb, var(--hover-soft) 80%, transparent);
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.mdpad-editor table .ProseMirror-table-grip-col,
+.mdpad-editor table .ProseMirror-table-grip-row,
+.mdpad-editor table .ProseMirror-table-grip-table {
+  transition: opacity 120ms ease;
+}
+
+.mdpad-editor table .ProseMirror-table-grip-table.active {
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--editor-border));
+  background: color-mix(in srgb, var(--accent) 76%, transparent);
 }
 
 .mdpad-editor table .ProseMirror-table-grip-table:hover {
@@ -4456,6 +4515,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 0 10px;
   font-size: 11px;
   font-weight: 400;
@@ -4467,6 +4527,16 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.statusbar-left {
+  flex: 1 1 auto;
+}
+
+.statusbar-right {
+  flex: 0 1 auto;
+  justify-content: flex-end;
 }
 
 .statusbar-pill {
@@ -4479,6 +4549,13 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+}
+
+.statusbar-save-state span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .statusbar-theme-switch {
@@ -4518,6 +4595,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 
 .statusbar-theme-menu-trigger {
@@ -4544,6 +4622,78 @@ body {
   background: var(--slash-menu-bg);
   box-shadow: var(--slash-menu-shadow);
   z-index: 90;
+}
+
+.statusbar-char-count {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.statusbar-options-menu {
+  position: relative;
+  display: none;
+  align-items: center;
+}
+
+.statusbar-options-trigger {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+}
+
+.statusbar-options-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.statusbar-options-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  width: min(220px, calc(100vw - 24px));
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--slash-menu-border);
+  border-radius: 8px;
+  background: var(--slash-menu-bg);
+  box-shadow: var(--slash-menu-shadow);
+  z-index: 90;
+}
+
+.statusbar-options-meta {
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--slash-menu-hover) 50%, transparent);
+  color: var(--slash-menu-text-secondary);
+  line-height: 1.25;
+}
+
+.statusbar-options-item {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--slash-menu-text-primary);
+  text-align: left;
+  font: inherit;
+  line-height: 1.25;
+  padding: 6px 7px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.statusbar-options-item:hover {
+  background: color-mix(in srgb, var(--slash-menu-hover) 74%, transparent);
+  border-color: color-mix(in srgb, var(--slash-menu-border) 85%, transparent);
+}
+
+.statusbar-options-theme-list {
+  display: grid;
+  gap: 4px;
+  padding: 4px 0;
+  border-top: 1px solid color-mix(in srgb, var(--slash-menu-border) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--slash-menu-border) 70%, transparent);
 }
 
 .statusbar-theme-menu-item {
@@ -4636,7 +4786,8 @@ body {
 }
 
 .app-root.ui-classic .titlebar-file-popover,
-.app-root.ui-classic .titlebar-window-popover {
+.app-root.ui-classic .titlebar-window-popover,
+.app-root.ui-classic .titlebar-more-popover {
   border: none;
   border-radius: 6px;
   background: var(--editor-bg);
@@ -4794,7 +4945,16 @@ body {
   border-radius: 6px;
 }
 
+.app-root.ui-classic .statusbar-options-popover {
+  border-radius: 6px;
+}
+
 .app-root.ui-classic .statusbar-theme-menu-item {
+  border-radius: 4px;
+}
+
+.app-root.ui-classic .statusbar-options-item,
+.app-root.ui-classic .statusbar-options-meta {
   border-radius: 4px;
 }
 
@@ -4853,5 +5013,117 @@ body {
 
   .statusbar-shell {
     border-radius: 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .titlebar-shell {
+    gap: 4px;
+    padding: 0 6px;
+  }
+
+  .titlebar-actions {
+    gap: 2px;
+  }
+
+  .titlebar-center {
+    position: relative;
+    left: auto;
+    transform: none;
+    justify-self: center;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .titlebar-document-view-action,
+  .titlebar-theme-action {
+    display: none;
+  }
+
+  .titlebar-more-menu {
+    display: inline-flex;
+  }
+
+  .titlebar-doc-name-btn {
+    padding-inline: 6px;
+  }
+
+  .titlebar-rename-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .statusbar-shell {
+    padding-inline: 8px;
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .statusbar-left,
+  .statusbar-right {
+    gap: 8px;
+  }
+
+  .statusbar-left {
+    flex: 1 1 auto;
+  }
+
+  .statusbar-right {
+    flex: 0 0 auto;
+  }
+
+  .statusbar-secondary-item {
+    display: none;
+  }
+
+  .statusbar-options-menu {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 520px) {
+  .workspace-shell {
+    padding: 6px;
+    gap: 6px;
+  }
+
+  .titlebar-shell {
+    height: 44px;
+    min-height: 44px;
+    border-radius: 10px;
+  }
+
+  .titlebar-icon-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .titlebar-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .titlebar-center {
+    gap: 4px;
+  }
+
+  .titlebar-doc-name-btn {
+    padding-inline: 4px;
+  }
+
+  .win-btn {
+    width: 36px;
+  }
+
+  .statusbar-shell {
+    height: 26px;
+    min-height: 26px;
+    padding-inline: 7px;
+    font-size: 10.5px;
+  }
+
+  .statusbar-save-state {
+    gap: 4px;
   }
 }

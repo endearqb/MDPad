@@ -1,3 +1,52 @@
+# 恢复表格选区浮动菜单（2026-05-02）
+
+## Plan
+- [x] 新增表格专用 `TableActionMenu` 扩展，复用 `FloatMenuView`
+- [x] 接入 `MarkdownEditor`，在 `CellSelection` 时显示表格操作菜单
+- [x] 补充表格菜单单测，覆盖单元格、行、列、整表与只读态
+- [x] 新增 update note，运行类型检查、表格相关测试与 build
+- [x] 回填本节 Review
+
+## Review
+- 结果：[src/features/editor/extensions/tableActionMenu.ts](/D:/MyProject/MDPad/src/features/editor/extensions/tableActionMenu.ts) 新增表格专用浮动菜单；`CellSelection` 下按单元格/行/列/整表选区显示合并、拆分、插入、删除、对齐和表头切换动作。
+- 结果：[src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已在 `TableKit` / `TableSelectionGrip` 后接入 `TableActionMenu`，并复用 `copy.tableMenu` 中英文文案。
+- 结果：[src/features/editor/extensions/tableActionMenu.test.ts](/D:/MyProject/MDPad/src/features/editor/extensions/tableActionMenu.test.ts) 覆盖 cell / row / column / table 菜单和只读态；[src/features/editor/bubbleMenuSelection.test.ts](/D:/MyProject/MDPad/src/features/editor/bubbleMenuSelection.test.ts) 保留文本 BubbleMenu 避开 `CellSelection` 的断言。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/extensions/tableActionMenu.test.ts src/features/editor/extensions/tableSelectionGrip.test.ts src/features/editor/bubbleMenuSelection.test.ts` 通过；`pnpm build` 通过；`git diff --check` 通过，仅提示既有/触碰文件换行下次 Git touch 时会转换。
+- 说明：`pnpm test` 中新增表格菜单测试通过，完整套件仍因既有 `src/App.test.ts` 的 `localStorage.clear is not a function` 失败；该失败与本轮表格菜单修复无关。
+
+# Markdown 表格辅助选中手柄（2026-05-02）
+
+## Plan
+- [x] 新增 TipTap 表格 grip 扩展，渲染列、行、整表选中手柄
+- [x] 接入 `MarkdownEditor` 的 TableKit 后方，保持现有列宽拖拽与选区高亮
+- [x] 补充单测覆盖列、行、整表手柄点击后的 `CellSelection`
+- [x] 添加 update note 并运行测试、构建验证
+- [x] 回填本节 Review
+
+## Review
+- 结果：[src/features/editor/extensions/tableSelectionGrip.ts](/D:/MyProject/MDPad/src/features/editor/extensions/tableSelectionGrip.ts) 新增 Decoration 手柄插件；悬停表格时显示列、行、整表角手柄，并复用现有选择 helper 生成 `CellSelection`。
+- 结果：[src/features/editor/MarkdownEditor.tsx](/D:/MyProject/MDPad/src/features/editor/MarkdownEditor.tsx) 已在 `TableKit` 后接入 `TableSelectionGrip`；[src/styles.css](/D:/MyProject/MDPad/src/styles.css) 复用现有 `.ProseMirror-table-grip-*` 视觉并补充 hover 显示。
+- 结果：[src/features/editor/extensions/tableSelectionGrip.test.ts](/D:/MyProject/MDPad/src/features/editor/extensions/tableSelectionGrip.test.ts) 覆盖列、行、整表手柄点击后的选区行为；[update/updatenote_2026050218.md](/D:/MyProject/MDPad/update/updatenote_2026050218.md) 已记录本次更新。
+- 验证：`pnpm exec tsc --noEmit` 通过；`pnpm exec vitest run src/features/editor/extensions/tableSelectionGrip.test.ts` 通过；`pnpm build` 通过；`git diff --check` 通过，仅提示既有工作区文件换行下次 Git touch 时会转换。
+- 说明：`pnpm test` 中本次新增测试和其它 46 个文件通过，但全量最终仍因既有 `src/App.test.ts` 的 `localStorage.clear is not a function` 失败；该失败与本轮表格手柄改动无关。
+
+# 自动折叠标题栏与底栏（2026-04-29 11:xx）
+
+## Plan
+- [x] 更新 `TopBar`，为窄窗口提供更多菜单并折叠低频文档视图/主题操作
+- [x] 更新 `StatusBar`，增加状态选项菜单并保留保存状态/字数外露
+- [x] 更新响应式样式与中英文文案，保证 420px 最小宽度不挤压
+- [x] 补充 TopBar / StatusBar 回归测试
+- [x] 新增 updatenote 并运行定向 Vitest 与 build 验证
+
+## Review
+- 结果：[src/features/window/TopBar.tsx](/D:/MyProject/MDPad/src/features/window/TopBar.tsx) 已新增窄屏更多菜单；文档视图切换和明暗主题在 `640px` 以下折叠，保存、编辑/只读和窗口控制继续外露。
+- 结果：[src/features/window/StatusBar.tsx](/D:/MyProject/MDPad/src/features/window/StatusBar.tsx) 已新增状态选项菜单；窄屏底栏外露保存状态、字数和菜单入口，低频状态/偏好项仍可访问。
+- 结果：[src/styles.css](/D:/MyProject/MDPad/src/styles.css) 已增加 `640px` / `520px` 响应式规则，并修正标题、重命名输入、底栏文本的 `min-width`/省略/稳定尺寸。
+- 验证：`.\\node_modules\\.bin\\tsc.cmd --noEmit` 通过；`pnpm build` 通过；`git diff --check` 通过，仅提示既有/触碰文件下次 Git touch 时 CRLF 会转 LF。
+- 说明：`StatusBar` 响应式测试使用 `.test.ts` 后缀，匹配当前 Vitest `src/**/*.test.ts` include 规则。
+- 本轮回退后验证：`pnpm build` 通过；`pnpm test --run src/features/window/TopBar.test.ts src/features/window/StatusBar.test.ts src/shared/utils/documentViewPreferences.test.ts src/shared/utils/reloadSession.test.ts` 提权重跑通过（4 个文件 / 17 个测试）；`git diff --check` 通过，仅保留 CRLF/LF 提示。
+
 # 修复复杂富文本粘贴退化为纯文本（2026-04-28 10:xx）
 
 ## Plan

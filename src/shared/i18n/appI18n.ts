@@ -94,6 +94,8 @@ export interface TopBarCopy {
   switchToEditable: string;
   switchToDarkTheme: string;
   switchToLightTheme: string;
+  moreActions: string;
+  moreActionsAria: string;
   renameFileAria: string;
   renameHint: string;
   minimize: string;
@@ -127,6 +129,8 @@ export interface StatusBarCopy {
   toggleLanguageTitle: string;
   openSamplesAria: string;
   openSamplesTitle: string;
+  statusOptionsAria: string;
+  statusOptionsTitle: string;
 }
 
 export interface UnsavedModalCopy {
@@ -503,6 +507,8 @@ const enCopy: AppCopy = {
     switchToEditable: "Switch to editable",
     switchToDarkTheme: "Switch to dark theme",
     switchToLightTheme: "Switch to light theme",
+    moreActions: "More actions",
+    moreActionsAria: "More titlebar actions",
     renameFileAria: "Rename file",
     renameHint: "Double-click to rename file",
     minimize: "Minimize",
@@ -547,7 +553,9 @@ const enCopy: AppCopy = {
     switchToEnglish: "Switch to English",
     toggleLanguageTitle: "Switch language",
     openSamplesAria: "Open sample document",
-    openSamplesTitle: "Open sample document"
+    openSamplesTitle: "Open sample document",
+    statusOptionsAria: "Status options",
+    statusOptionsTitle: "Status options"
   },
   unsavedModal: {
     title: "Unsaved changes",
@@ -938,6 +946,8 @@ const zhCopy: AppCopy = {
     switchToEditable: "\u5207\u6362\u4e3a\u53ef\u7f16\u8f91",
     switchToDarkTheme: "切换到深色主题",
     switchToLightTheme: "切换到浅色主题",
+    moreActions: "更多操作",
+    moreActionsAria: "更多标题栏操作",
     renameFileAria: "重命名文件",
     renameHint: "双击重命名文件",
     minimize: "最小化",
@@ -982,7 +992,9 @@ const zhCopy: AppCopy = {
     switchToEnglish: "切换到英文",
     toggleLanguageTitle: "切换语言",
     openSamplesAria: "\u6253\u5f00\u793a\u4f8b\u6587\u6863",
-    openSamplesTitle: "\u6253\u5f00\u793a\u4f8b\u6587\u6863"
+    openSamplesTitle: "\u6253\u5f00\u793a\u4f8b\u6587\u6863",
+    statusOptionsAria: "状态选项",
+    statusOptionsTitle: "状态选项"
   },
   unsavedModal: {
     title: "未保存更改",

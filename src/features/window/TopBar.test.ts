@@ -48,20 +48,27 @@ const copy = getAppCopy("en").topBar;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
 
-function renderTopBar(options: { isFullscreen?: boolean } = {}) {
+function renderTopBar(
+  options: {
+    documentViewToggleLabel?: string | null;
+    isFullscreen?: boolean;
+  } = {}
+) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   const onRequestFullscreenChange = vi.fn(async (nextFullscreen: boolean) => {
     await appWindowMock.setFullscreen(nextFullscreen);
   });
+  const onToggleDocumentView = vi.fn();
+  const onToggleTheme = vi.fn();
 
   act(() => {
     root.render(
       React.createElement(TopBar, {
         canRename: true,
         copy,
-        documentViewToggleLabel: null,
+        documentViewToggleLabel: options.documentViewToggleLabel ?? null,
         editorMode: "editable",
         fileBaseName: "deck",
         fileName: "deck.html",
@@ -74,9 +81,11 @@ function renderTopBar(options: { isFullscreen?: boolean } = {}) {
         onRename: vi.fn(async () => true),
         onSave: vi.fn(),
         onSaveAs: vi.fn(),
-        onToggleDocumentView: null,
+        onToggleDocumentView: options.documentViewToggleLabel
+          ? onToggleDocumentView
+          : null,
         onToggleEditorMode: vi.fn(),
-        onToggleTheme: vi.fn(),
+        onToggleTheme,
         readOnlyIconBlinkTick: 0,
         themeMode: "light"
       })
@@ -86,6 +95,8 @@ function renderTopBar(options: { isFullscreen?: boolean } = {}) {
   return {
     container,
     onRequestFullscreenChange,
+    onToggleDocumentView,
+    onToggleTheme,
     unmount() {
       act(() => {
         root.unmount();
@@ -114,6 +125,74 @@ beforeEach(() => {
 });
 
 describe("TopBar window size menu", () => {
+  it("opens and closes the compact more actions menu", () => {
+    const rendered = renderTopBar({
+      documentViewToggleLabel: copy.switchToSourceView
+    });
+
+    act(() => {
+      rendered.container
+        .querySelector<HTMLButtonElement>(`button[aria-label="${copy.moreActions}"]`)
+        ?.click();
+    });
+
+    expect(rendered.container.querySelector(".titlebar-more-popover")).toBeInstanceOf(
+      HTMLDivElement
+    );
+    expect(
+      rendered.container.querySelector(".titlebar-more-popover .titlebar-more-item")
+    ).toBeInstanceOf(HTMLButtonElement);
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    expect(rendered.container.querySelector(".titlebar-more-popover")).toBeNull();
+    rendered.unmount();
+  });
+
+  it("runs folded document view and theme actions from the more menu", () => {
+    const rendered = renderTopBar({
+      documentViewToggleLabel: copy.switchToSourceView
+    });
+
+    act(() => {
+      rendered.container
+        .querySelector<HTMLButtonElement>(`button[aria-label="${copy.moreActions}"]`)
+        ?.click();
+    });
+
+    const morePopover = rendered.container.querySelector(".titlebar-more-popover");
+    act(() => {
+      morePopover
+        ?.querySelector<HTMLButtonElement>(
+          `button[aria-label="${copy.switchToSourceView}"]`
+        )
+        ?.click();
+    });
+
+    expect(rendered.onToggleDocumentView).toHaveBeenCalledTimes(1);
+    expect(rendered.container.querySelector(".titlebar-more-popover")).toBeNull();
+
+    act(() => {
+      rendered.container
+        .querySelector<HTMLButtonElement>(`button[aria-label="${copy.moreActions}"]`)
+        ?.click();
+    });
+
+    act(() => {
+      rendered.container
+        .querySelector(".titlebar-more-popover")
+        ?.querySelector<HTMLButtonElement>(
+          `button[aria-label="${copy.switchToDarkTheme}"]`
+        )
+        ?.click();
+    });
+
+    expect(rendered.onToggleTheme).toHaveBeenCalledTimes(1);
+    rendered.unmount();
+  });
+
   it("opens and closes the horizontal window size menu", () => {
     const rendered = renderTopBar();
 

@@ -10,6 +10,7 @@ import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import {
   Code2,
+  Ellipsis,
   Eye,
   File,
   FileInput,
@@ -85,12 +86,14 @@ export default function TopBar({
   }, []);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const fileMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const windowMenuRef = useRef<HTMLDivElement | null>(null);
   const readOnlyIconBlinkTimerRef = useRef<number | null>(null);
   const lastHandledReadOnlyBlinkTickRef = useRef(readOnlyIconBlinkTick);
   const [isRenaming, setIsRenaming] = useState(false);
   const [isSubmittingRename, setIsSubmittingRename] = useState(false);
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isWindowMenuOpen, setIsWindowMenuOpen] = useState(false);
   const [isReadOnlyIconBlinking, setIsReadOnlyIconBlinking] = useState(false);
   const [readOnlyIconBlinkNonce, setReadOnlyIconBlinkNonce] = useState(0);
@@ -169,6 +172,33 @@ export default function TopBar({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isWindowMenuOpen]);
+
+  useEffect(() => {
+    if (!isMoreMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target || moreMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsMoreMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMoreMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMoreMenuOpen]);
 
   useEffect(() => {
     return () => {
@@ -369,6 +399,8 @@ export default function TopBar({
   }, [fileBaseName, isRenaming, isSubmittingRename, onRename, renameDraft]);
 
   const openFileMenu = useCallback(() => {
+    setIsMoreMenuOpen(false);
+    setIsWindowMenuOpen(false);
     setIsFileMenuOpen(true);
   }, []);
 
@@ -377,11 +409,23 @@ export default function TopBar({
   }, []);
 
   const openWindowMenu = useCallback(() => {
+    setIsFileMenuOpen(false);
+    setIsMoreMenuOpen(false);
     setIsWindowMenuOpen(true);
   }, []);
 
   const closeWindowMenu = useCallback(() => {
     setIsWindowMenuOpen(false);
+  }, []);
+
+  const openMoreMenu = useCallback(() => {
+    setIsFileMenuOpen(false);
+    setIsWindowMenuOpen(false);
+    setIsMoreMenuOpen(true);
+  }, []);
+
+  const closeMoreMenu = useCallback(() => {
+    setIsMoreMenuOpen(false);
   }, []);
 
   const runFileMenuAction = useCallback(
@@ -400,22 +444,53 @@ export default function TopBar({
     [closeWindowMenu]
   );
 
+  const runMoreMenuAction = useCallback(
+    (action: () => void) => {
+      closeMoreMenu();
+      action();
+    },
+    [closeMoreMenu]
+  );
+
   const IconButton = ({
     label,
     onClick,
+    className,
     disabled,
     children
   }: {
     label: string;
     onClick: () => void;
+    className?: string;
     disabled?: boolean;
     children: ReactNode;
   }) => (
     <button
       aria-label={label}
-      className="titlebar-icon-btn"
+      className={className ? `titlebar-icon-btn ${className}` : "titlebar-icon-btn"}
       disabled={disabled}
       onClick={onClick}
+      title={label}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+
+  const MoreMenuItem = ({
+    label,
+    onClick,
+    children
+  }: {
+    label: string;
+    onClick: () => void;
+    children: ReactNode;
+  }) => (
+    <button
+      aria-label={label}
+      className="titlebar-icon-btn titlebar-more-item"
+      onClick={() => runMoreMenuAction(onClick)}
+      role="menuitem"
       title={label}
       type="button"
     >
@@ -488,6 +563,24 @@ export default function TopBar({
       {children}
     </button>
   );
+
+  const renderDocumentViewIcon = () => {
+    if (
+      documentViewToggleLabel === copy.switchToSourceView ||
+      documentViewToggleLabel === copy.switchToCodeView
+    ) {
+      return <Code2 className="titlebar-icon" />;
+    }
+
+    return <Eye className="titlebar-icon" />;
+  };
+
+  const renderThemeIcon = (className: string) =>
+    themeMode === "light" ? (
+      <Moon className={className} />
+    ) : (
+      <SunMedium className={className} />
+    );
 
   return (
     <header className="titlebar-shell">
@@ -582,17 +675,67 @@ export default function TopBar({
         </IconButton>
         {documentViewToggleLabel && onToggleDocumentView ? (
           <IconButton
+            className="titlebar-document-view-action"
             label={documentViewToggleLabel}
             onClick={onToggleDocumentView}
           >
-            {documentViewToggleLabel === copy.switchToSourceView ||
-            documentViewToggleLabel === copy.switchToCodeView ? (
-              <Code2 className="titlebar-icon" />
-            ) : (
-              <Eye className="titlebar-icon" />
-            )}
+            {renderDocumentViewIcon()}
           </IconButton>
         ) : null}
+        <div
+          className="titlebar-more-menu"
+          ref={moreMenuRef}
+          onBlur={(event) => {
+            const next = event.relatedTarget as Node | null;
+            if (!next || !event.currentTarget.contains(next)) {
+              closeMoreMenu();
+            }
+          }}
+        >
+          <button
+            aria-expanded={isMoreMenuOpen}
+            aria-haspopup="menu"
+            aria-label={copy.moreActions}
+            className="titlebar-icon-btn titlebar-more-trigger"
+            onClick={() => {
+              if (isMoreMenuOpen) {
+                closeMoreMenu();
+                return;
+              }
+              openMoreMenu();
+            }}
+            title={copy.moreActions}
+            type="button"
+          >
+            <Ellipsis className="titlebar-icon" />
+          </button>
+          {isMoreMenuOpen ? (
+            <div
+              aria-label={copy.moreActionsAria}
+              className="titlebar-more-popover"
+              role="menu"
+            >
+              {documentViewToggleLabel && onToggleDocumentView ? (
+                <MoreMenuItem
+                  label={documentViewToggleLabel}
+                  onClick={onToggleDocumentView}
+                >
+                  {renderDocumentViewIcon()}
+                </MoreMenuItem>
+              ) : null}
+              <MoreMenuItem
+                label={
+                  themeMode === "light"
+                    ? copy.switchToDarkTheme
+                    : copy.switchToLightTheme
+                }
+                onClick={onToggleTheme}
+              >
+                {renderThemeIcon("titlebar-icon")}
+              </MoreMenuItem>
+            </div>
+          ) : null}
+        </div>
       </section>
 
       <section className="titlebar-center">
@@ -638,15 +781,11 @@ export default function TopBar({
 
       <section className="win-controls">
         <WindowControlButton
-          className="utility"
+          className="utility titlebar-theme-action"
           label={themeMode === "light" ? copy.switchToDarkTheme : copy.switchToLightTheme}
           onClick={onToggleTheme}
         >
-          {themeMode === "light" ? (
-            <Moon className="win-icon" />
-          ) : (
-            <SunMedium className="win-icon" />
-          )}
+          {renderThemeIcon("win-icon")}
         </WindowControlButton>
         <WindowControlButton
           label={copy.minimize}
